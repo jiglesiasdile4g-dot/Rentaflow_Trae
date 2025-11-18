@@ -8,8 +8,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY next.config.mjs ./
 
-# Instalar dependencias
-RUN npm ci --only=production
+# Instalar todas las dependencias (incluyendo devDependencies para build)
+RUN npm ci
 
 # Copiar el código fuente
 COPY . .
