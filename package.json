@@ -38,6 +38,7 @@
     "@radix-ui/react-tooltip": "latest",
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
+    "@tailwindcss/postcss": "^4.1.17",
     "@vercel/analytics": "latest",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -52,7 +53,6 @@
     "tw-animate-css": "latest"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.17",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
