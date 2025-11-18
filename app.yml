@@ -1,0 +1,34 @@
+# Easypanel configuration for RentaFlow Dashboard
+name: rentaflow-dashboard
+description: Dashboard de gestión de leads y propiedades de RentaFlow
+
+services:
+  app:
+    type: app
+    build: .
+    port: 3000
+    domains:
+      - ${APP_DOMAIN}
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    
+    # Health check configuration
+    healthcheck:
+      path: /
+      port: 3000
+      initialDelay: 10
+      period: 30
+
+# Variables de entorno requeridas
+variables:
+  - name: NEXT_PUBLIC_SUPABASE_URL
+    description: URL de tu instancia de Supabase
+    default: https://tu-proyecto.supabase.co
+  - name: NEXT_PUBLIC_SUPABASE_ANON_KEY
+    description: API Key anónima de Supabase
+    default: tu-clave-anonima-supabase
+  - name: APP_DOMAIN
+    description: Dominio donde se desplegará la app (ej: dashboard.tudominio.com)
+    default: localhost

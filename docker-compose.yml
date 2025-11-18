@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  rentaflow-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # Agrega aquí tus variables de entorno de Supabase
+      # - NEXT_PUBLIC_SUPABASE_URL=tu_url_supabase
+      # - NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_key_supabase
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
