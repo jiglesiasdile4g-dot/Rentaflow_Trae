@@ -10,6 +10,7 @@ interface InmobiliariaContextType {
   loading: boolean
   error: string | null
   refreshProfile: () => Promise<void>
+  resetSessionTimer: () => void
 }
 
 const InmobiliariaContext = createContext<InmobiliariaContextType>({
@@ -18,6 +19,7 @@ const InmobiliariaContext = createContext<InmobiliariaContextType>({
   loading: true,
   error: null,
   refreshProfile: async () => {},
+  resetSessionTimer: () => {},
 })
 
 export function InmobiliariaProvider({ children }: { children: React.ReactNode }) {
@@ -28,6 +30,8 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
 
   const isFetchingRef = useRef(false)
   const hasInitializedRef = useRef(false)
+  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const sessionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const supabase = createClient()
 
@@ -127,6 +131,58 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
     }
   }, [supabase])
 
+  const handleSessionTimeout = useCallback(async () => {
+    console.log("[v0] Session timeout - logging out user")
+    try {
+      await supabase.auth.signOut()
+      // Clear any existing timers
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current)
+        inactivityTimerRef.current = null
+      }
+      if (sessionTimeoutRef.current) {
+        clearTimeout(sessionTimeoutRef.current)
+        sessionTimeoutRef.current = null
+      }
+    } catch (error) {
+      console.error("[v0] Error during session timeout logout:", error)
+    }
+  }, [supabase])
+
+  const resetSessionTimer = useCallback(() => {
+    // Clear existing timers
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current)
+    }
+    if (sessionTimeoutRef.current) {
+      clearTimeout(sessionTimeoutRef.current)
+    }
+
+    // Set new inactivity timer (30 minutes)
+    inactivityTimerRef.current = setTimeout(() => {
+      console.log("[v0] Session timeout due to inactivity")
+      handleSessionTimeout()
+    }, 30 * 60 * 1000) // 30 minutes
+  }, [handleSessionTimeout])
+
+  const setupActivityListeners = useCallback(() => {
+    // Reset timer on user activity
+    const activityEvents = ["mousedown", "keydown", "scroll", "touchstart"]
+    const handleActivity = () => {
+      resetSessionTimer()
+    }
+
+    activityEvents.forEach(event => {
+      window.addEventListener(event, handleActivity)
+    })
+
+    return () => {
+      activityEvents.forEach(event => {
+        window.removeEventListener(event, handleActivity)
+      })
+    }
+  }, [resetSessionTimer])
+
   useEffect(() => {
     if (!hasInitializedRef.current) {
       hasInitializedRef.current = true
@@ -139,6 +195,20 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
           console.log("[v0] Auth state changed:", event)
           if (event === "SIGNED_OUT") {
             fetchProfile()
+            // Clear timers on sign out
+            if (inactivityTimerRef.current) {
+              clearTimeout(inactivityTimerRef.current)
+              inactivityTimerRef.current = null
+            }
+            if (sessionTimeoutRef.current) {
+              clearTimeout(sessionTimeoutRef.current)
+              sessionTimeoutRef.current = null
+            }
+          } else if (event === "SIGNED_IN") {
+            // Start session timer on sign in
+            resetSessionTimer()
+            const cleanup = setupActivityListeners()
+            return cleanup
           }
         })
 
@@ -149,7 +219,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
         console.error("[v0] Error setting up auth listener:", error)
       }
     }
-  }, [fetchProfile, supabase])
+  }, [fetchProfile, supabase, resetSessionTimer, setupActivityListeners])
 
   if (error && error.includes("conectar con Supabase")) {
     return (
@@ -185,6 +255,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
         loading,
         error,
         refreshProfile: fetchProfile,
+        resetSessionTimer,
       }}
     >
       {children}

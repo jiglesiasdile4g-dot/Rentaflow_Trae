@@ -25,7 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
-import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info } from 'lucide-react'
+import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover" // Added Popover imports
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
 import { createBrowserClient } from "@/lib/supabase/client" // Added for createBrowserClient
@@ -531,6 +531,35 @@ export default function AnunciosPage() {
     }
   }
 
+  const handleUnarchiveAnuncio = async (anuncio: AnuncioCard) => {
+    setProcessingId(anuncio.id)
+    try {
+      const { error } = await supabase
+        .from("Anuncios")
+        .update({ Activacion: "Pausado" }) // Desarchivar poniéndolo en pausado
+        .eq("ida", anuncio.id)
+
+      if (error) {
+        throw error
+      } else {
+        toast({
+          title: "Éxito",
+          description: "Anuncio desarchivado correctamente",
+        })
+        await fetchAnuncios() // Refresh the list
+      }
+    } catch (err) {
+      console.log("[v0] Error in handleUnarchiveAnuncio:", err)
+      toast({
+        title: "Error",
+        description: "Error al desarchivar el anuncio",
+        variant: "destructive",
+      })
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
   const handleOpenDeleteDialog = (anuncio: AnuncioCard) => {
     setDeletingAnuncio(anuncio)
     setShowDeleteDialog(true)
@@ -920,7 +949,17 @@ export default function AnunciosPage() {
   const handleToggleEstado = async (anuncioId: string, currentActivacion: string) => {
     setProcessingId(anuncioId)
     try {
-      const newActivacion = currentActivacion === "Activo" ? "Pausado" : "Activo"
+      // If the ad is archived, first unarchive it to "Pausado"
+      let newActivacion = currentActivacion
+      let newEstado = "pausado"
+      
+      if (currentActivacion === "Archivado") {
+        newActivacion = "Pausado"
+        newEstado = "pausado"
+      } else {
+        newActivacion = currentActivacion === "Activo" ? "Pausado" : "Activo"
+        newEstado = newActivacion === "Activo" ? "activo" : "pausado"
+      }
 
       const { error } = await supabase.from("Anuncios").update({ Activacion: newActivacion }).eq("ida", anuncioId)
 
@@ -934,7 +973,7 @@ export default function AnunciosPage() {
         setAnunciosCards((prev) =>
           prev.map((anuncio) =>
             anuncio.id === anuncioId
-              ? { ...anuncio, activacion: newActivacion, estado: newActivacion === "Activo" ? "activo" : "pausado" }
+              ? { ...anuncio, activacion: newActivacion, estado: newEstado }
               : anuncio,
           ),
         )
@@ -2066,13 +2105,22 @@ export default function AnunciosPage() {
                                     Ver Estadísticas
                                   </DropdownMenuItem>
                                   {anuncio.estado === "archivado" ? (
-                                    <DropdownMenuItem
-                                      onClick={() => handleOpenDeleteDialog(anuncio)}
-                                      className="text-red-600"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5 mr-2" />
-                                      Eliminar
-                                    </DropdownMenuItem>
+                                    <>
+                                      <DropdownMenuItem
+                                        onClick={() => handleUnarchiveAnuncio(anuncio)}
+                                        className="text-green-600"
+                                      >
+                                        <RefreshCw className="h-3.5 w-3.5 mr-2" />
+                                        Desarchivar
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => handleOpenDeleteDialog(anuncio)}
+                                        className="text-red-600"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5 mr-2" />
+                                        Eliminar
+                                      </DropdownMenuItem>
+                                    </>
                                   ) : (
                                     <DropdownMenuItem
                                       onClick={() => handleOpenArchiveDialog(anuncio)}
@@ -2105,7 +2153,7 @@ export default function AnunciosPage() {
                             <Switch
                               checked={anuncio.estado === "activo"}
                               onCheckedChange={() => handleToggleEstado(anuncio.id, anuncio.activacion)}
-                              disabled={processingId === anuncio.id || anuncio.estado === "archivado"}
+                              disabled={processingId === anuncio.id}
                               className="scale-125"
                             />
                           </div>
