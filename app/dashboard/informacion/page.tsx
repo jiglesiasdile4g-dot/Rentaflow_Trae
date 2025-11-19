@@ -168,7 +168,7 @@ export default async function InformacionPage() {
                 <Database className="h-5 w-5" />
                 Base de Datos
               </CardTitle>
-              <CardDescription>Estado de conexión con Supabase</CardDescription>
+              <CardDescription>Estado de conexión con la base de datos</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 mb-4">
@@ -177,29 +177,13 @@ export default async function InformacionPage() {
                 </Badge>
               </div>
               <p className="text-sm text-muted-foreground">
-                Conexión establecida correctamente con la base de datos Supabase
+                Conexión establecida correctamente con la base de datos
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {tables.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Tablas Disponibles</CardTitle>
-              <CardDescription>Tablas encontradas en tu base de datos Supabase</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {tables.map((table, index) => (
-                  <Badge key={index} variant="outline" className="justify-center p-2">
-                    {table.table_name}
-                  </Badge>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        
 
         {tablesError && (
           <Card className="border-red-200">

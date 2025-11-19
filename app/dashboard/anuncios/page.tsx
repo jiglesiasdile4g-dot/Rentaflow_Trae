@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState } from "react"
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -180,12 +180,14 @@ export default function AnunciosPage() {
     leadId: string
     leadName: string
     selectedDate: string
+    selectedTime: string
     selectedAgenteId: string
   }>({
     open: false,
     leadId: "",
     leadName: "",
     selectedDate: "",
+    selectedTime: "",
     selectedAgenteId: "",
   })
   // </CHANGE>
@@ -199,6 +201,7 @@ export default function AnunciosPage() {
   console.log("[DEBUG] Inmobiliaria context - inmobiliariaId:", inmobiliariaId, "inmobiliariaLoading:", inmobiliariaLoading)
 
   const router = useRouter()
+  const pathname = usePathname()
   const supabase = createClient()
 
   // Variables needed for linting fixes
@@ -231,6 +234,16 @@ export default function AnunciosPage() {
       setAgentes([]);
     }
   };
+
+  useEffect(() => {
+    setVisitDateDialog((prev) => ({ ...prev, open: false }))
+    setShowCreationModal(false)
+    setShowArchiveDialog(false)
+    setShowDeleteDialog(false)
+    setShowInfoFaqsModal(false)
+    setShowStatsModal(false)
+    setShowScheduleDialog(false)
+  }, [pathname])
 
 
 
@@ -1745,33 +1758,52 @@ export default function AnunciosPage() {
   }
 
   const handleProgramarVisita = (leadId: string, leadName: string) => {
+    const existingLead = completosLeads.find((l: any) => String(l.id) === String(leadId))
     setVisitDateDialog({
       open: true,
       leadId: leadId,
       leadName: leadName,
       selectedDate: "",
-      selectedAgenteId: "",
+      selectedTime: "12:00",
+      selectedAgenteId: existingLead?.idag ? String(existingLead.idag) : "",
     })
   }
 
   const handleSaveVisitDate = async () => {
-    if (!visitDateDialog.selectedDate || !visitDateDialog.leadId) {
+    if (!visitDateDialog.selectedDate || !visitDateDialog.selectedTime || !visitDateDialog.leadId) {
       toast({
         title: "Error",
-        description: "Por favor selecciona una fecha y hora",
+        description: "Por favor selecciona una fecha y una hora (24h)",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!visitDateDialog.selectedAgenteId) {
+      toast({
+        title: "Agente requerido",
+        description: "Selecciona un agente antes de guardar la visita.",
         variant: "destructive",
       })
       return
     }
 
     try {
+      const localDateTime = `${visitDateDialog.selectedDate}T${visitDateDialog.selectedTime}`
+      const d = new Date(localDateTime)
+      const off = d.getTimezoneOffset()
+      const sign = off <= 0 ? "+" : "-"
+      const hh = String(Math.floor(Math.abs(off) / 60)).padStart(2, "0")
+      const mm = String(Math.abs(off) % 60).padStart(2, "0")
+      const offset = `${sign}${hh}:${mm}`
+      const valueWithOffset = `${visitDateDialog.selectedDate}T${visitDateDialog.selectedTime}:00${offset}`
       const { error } = await supabase
         .from("Clientes")
         .update({
-              fecha_de_visita: new Date(visitDateDialog.selectedDate).toISOString(),
-              idag: visitDateDialog.selectedAgenteId || null,
+              fecha_de_visita: valueWithOffset,
+              idag: visitDateDialog.selectedAgenteId ? Number(visitDateDialog.selectedAgenteId) : null,
             })
-        .eq("IDC", visitDateDialog.leadId)
+        .eq("id", visitDateDialog.leadId)
 
       if (error) {
         console.error("[v0] Error saving visit date:", error)
@@ -2291,7 +2323,7 @@ export default function AnunciosPage() {
                             <div className="space-y-2">
                               {completosLeads.map((lead) => (
                                 <div
-                                  key={lead.IDC}
+                                  key={lead.id}
                                   className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
                                     lead.fecha_de_visita
                                       ? 'bg-blue-50 border-blue-200 hover:border-blue-300'
@@ -2337,7 +2369,7 @@ export default function AnunciosPage() {
                                   <Button
                                     size="sm"
                                     variant={lead.fecha_de_visita ? "outline" : "default"}
-                                    onClick={() => handleProgramarVisita(lead.IDC, lead.Nombre)}
+                                    onClick={() => handleProgramarVisita(lead.id, lead.Nombre)}
                                     className="ml-2"
                                   >
                                     <UserCheck className="h-3.5 w-3.5 mr-1" />
@@ -3336,13 +3368,37 @@ export default function AnunciosPage() {
                 <label htmlFor="visit-date" className="text-sm font-medium">
                   Fecha y hora de visita
                 </label>
-                <input
-                  id="visit-date"
-                  type="datetime-local"
-                  value={visitDateDialog.selectedDate}
-                  onChange={(e) => setVisitDateDialog({ ...visitDateDialog, selectedDate: e.target.value })}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    id="visit-date"
+                    type="date"
+                    value={visitDateDialog.selectedDate}
+                    onChange={(e) => setVisitDateDialog({ ...visitDateDialog, selectedDate: e.target.value })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  <Select
+                    value={visitDateDialog.selectedTime}
+                    onValueChange={(value) => setVisitDateDialog({ ...visitDateDialog, selectedTime: value })}
+                  >
+                    <SelectTrigger className="h-10 text-sm">
+                      <SelectValue placeholder="Hora (24h)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 24 }, (_, h) => h).map((hour) => (
+                        ["00","15","30","45"].map((m) => {
+                          const hh = String(hour).padStart(2, "0")
+                          const mm = m
+                          const val = `${hh}:${mm}`
+                          return (
+                            <SelectItem key={val} value={val}>
+                              {val}
+                            </SelectItem>
+                          )
+                        })
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="space-y-2">
                 <label htmlFor="agente-select" className="text-sm font-medium">
@@ -3356,7 +3412,7 @@ export default function AnunciosPage() {
                 >
                   <option value="">Sin asignar</option>
                   {agentes.map((agente) => (
-              <option key={agente.idag} value={agente.idag}>
+              <option key={agente.idag} value={String(agente.idag)}>
                 {agente.Nombre}
               </option>
             ))}
@@ -3364,10 +3420,10 @@ export default function AnunciosPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setVisitDateDialog({ open: false, leadId: "", leadName: "", selectedDate: "", selectedAgenteId: "" })}>
+              <Button variant="outline" onClick={() => setVisitDateDialog({ open: false, leadId: "", leadName: "", selectedDate: "", selectedTime: "", selectedAgenteId: "" })}>
                 Cancelar
               </Button>
-              <Button onClick={handleSaveVisitDate}>
+              <Button onClick={handleSaveVisitDate} disabled={!visitDateDialog.selectedDate || !visitDateDialog.selectedTime || !visitDateDialog.selectedAgenteId}>
                 <Calendar className="h-4 w-4 mr-2" />
                 Guardar Fecha
               </Button>

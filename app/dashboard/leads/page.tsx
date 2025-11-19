@@ -6,11 +6,13 @@
 // import { DialogContent } from "@/components/ui/dialog"
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
 
 import { useState, useEffect } from "react"
+import { usePathname } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -134,6 +136,7 @@ export default function LeadsPage() {
   const [communications, setCommunications] = useState<Communication[]>([])
   const [selectedCommunication, setSelectedCommunication] = useState<Communication | null>(null)
   const [isCommDialogOpen, setIsCommDialogOpen] = useState(false)
+  const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
@@ -187,6 +190,7 @@ export default function LeadsPage() {
   const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading } = useInmobiliaria() // Added inmobiliariaNombre
 
   const supabase = createClient()
+  const pathname = usePathname()
 
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
   const [isBulkSelectionMode, setIsBulkSelectionMode] = useState(false)
@@ -195,7 +199,8 @@ export default function LeadsPage() {
 
   const [visitDateDialogOpen, setVisitDateDialogOpen] = useState(false)
   const [selectedLeadForVisit, setSelectedLeadForVisit] = useState<Lead | null>(null)
-  const [newVisitDate, setNewVisitDate] = useState("")
+  const [newVisitDateDate, setNewVisitDateDate] = useState("")
+  const [newVisitDateTime, setNewVisitDateTime] = useState("")
   const [selectedAgenteId, setSelectedAgenteId] = useState("")
   const [agentes, setAgentes] = useState<any[]>([])
 
@@ -222,6 +227,12 @@ export default function LeadsPage() {
       setAgentes([])
     }
   }
+
+  useEffect(() => {
+    setVisitDateDialogOpen(false)
+    setIsCommDialogOpen(false)
+    setIsAvalDialogOpen(false)
+  }, [pathname])
 
   useEffect(() => {
     if (!inmobiliariaLoading && inmobiliariaId !== null) {
@@ -1045,13 +1056,29 @@ export default function LeadsPage() {
     }
 
     const handleReprogramVisit = async () => {
-      if (!selectedLeadForVisit || !newVisitDate) return
+      if (!selectedLeadForVisit || !newVisitDateDate || !newVisitDateTime) return
+      if (!selectedAgenteId) {
+        toast({
+          title: "Agente requerido",
+          description: "Selecciona un agente antes de guardar la visita.",
+          variant: "destructive",
+        })
+        return
+      }
 
       try {
         const supabase = createClient()
+        const d = new Date(`${newVisitDateDate}T${newVisitDateTime}`)
+        const off = d.getTimezoneOffset()
+        const sign = off <= 0 ? "+" : "-"
+        const hh = String(Math.floor(Math.abs(off) / 60)).padStart(2, "0")
+        const mm = String(Math.abs(off) % 60).padStart(2, "0")
+        const offset = `${sign}${hh}:${mm}`
+        const valueWithOffset = `${newVisitDateDate}T${newVisitDateTime}:00${offset}`
         const updateData: any = {
-          fecha_de_visita: new Date(newVisitDate).toISOString(),
+          fecha_de_visita: valueWithOffset,
           visita_completada: "visita propuesta",
+          idag: selectedAgenteId ? Number(selectedAgenteId) : null,
         }
         
         // Add agent idag if selected
@@ -1062,20 +1089,30 @@ export default function LeadsPage() {
         const { error } = await supabase
           .from("Clientes")
           .update(updateData)
-          .eq("IDC", selectedLeadForVisit.IDC) // Assuming IDC is the correct field to filter by
+          .eq("id", selectedLeadForVisit.id)
 
         if (error) throw error
 
-        toast({
-          title: "Fecha de visita actualizada",
-          description: "La fecha de visita se ha reprogramado correctamente.",
-        })
+      toast({
+        title: "Fecha de visita actualizada",
+        description: "La fecha de visita se ha reprogramado correctamente.",
+      })
 
-        // Refresh leads to show updated date
+      // Refresh leads to show updated date
         fetchLeads()
-        setVisitDateDialogOpen(false)
-        setSelectedLeadForVisit(null)
-        setNewVisitDate("")
+        // Update selectedLead panel immediately
+        setSelectedLead((prev) => {
+          if (!prev) return prev
+          if (prev.id !== selectedLeadForVisit!.id) return prev
+          return {
+            ...prev,
+            fecha_de_visita: valueWithOffset,
+          }
+        })
+      setVisitDateDialogOpen(false)
+      setSelectedLeadForVisit(null)
+      setNewVisitDateDate("")
+      setNewVisitDateTime("")
       } catch (error) {
         console.error("[v0] Error updating visit date:", error)
         toast({
@@ -1095,9 +1132,9 @@ export default function LeadsPage() {
           .from("Clientes")
           .update({
             visita_completada: "cancelada",
-            fecha_de_visita: null // También limpiamos la fecha de visita
+            fecha_de_visita: null
           })
-          .eq("IDC", selectedLeadForVisit.IDC)
+          .eq("id", selectedLeadForVisit.id)
 
         if (error) throw error
 
@@ -1108,9 +1145,20 @@ export default function LeadsPage() {
 
         // Refresh leads to show updated status
         fetchLeads()
+        // Update selectedLead panel immediately
+        setSelectedLead((prev) => {
+          if (!prev) return prev
+          if (prev.id !== selectedLeadForVisit!.id) return prev
+          return {
+            ...prev,
+            fecha_de_visita: null as any,
+            visita_completada: "cancelada" as any,
+          }
+        })
         setVisitDateDialogOpen(false)
         setSelectedLeadForVisit(null)
-        setNewVisitDate("")
+        setNewVisitDateDate("")
+        setNewVisitDateTime("")
       } catch (error) {
         console.error("[v0] Error canceling visit:", error)
         toast({
@@ -1531,13 +1579,22 @@ export default function LeadsPage() {
                                                       if (lead.Estado === "Visita Propuesta") {
                                                         console.log("[v0] Opening visit date dialog for lead:", lead.Nombre, lead.Apellidos)
                                                         console.log("[v0] Current fecha_de_visita:", lead.fecha_de_visita)
-                                                        setSelectedLeadForVisit(lead)
-                                                        setNewVisitDate(
-                                                          lead.fecha_de_visita
-                                                            ? new Date(lead.fecha_de_visita).toISOString().slice(0, 16)
-                                                            : ""
-                                                        )
-                                                        setVisitDateDialogOpen(true)
+                                                    setSelectedLeadForVisit(lead)
+                                                      setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
+                                                      if (lead.fecha_de_visita) {
+                                                        const d = new Date(lead.fecha_de_visita)
+                                                        const yyyy = d.getFullYear()
+                                                        const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                                        const dd = String(d.getDate()).padStart(2, "0")
+                                                        const hh = String(d.getHours()).padStart(2, "0")
+                                                        const min = String(d.getMinutes()).padStart(2, "0")
+                                                        setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                                        setNewVisitDateTime(`${hh}:${min}`)
+                                                      } else {
+                                                        setNewVisitDateDate("")
+                                                        setNewVisitDateTime("12:00")
+                                                      }
+                                                      setVisitDateDialogOpen(true)
                                                         console.log("[v0] Dialog should now be open")
                                                       } else {
                                                         console.log("[v0] Estado is not 'Visita Propuesta', dialog not opened")
@@ -1877,12 +1934,21 @@ export default function LeadsPage() {
                                                     if (lead.Estado === "Visita Propuesta") {
                                                       console.log("[v0] Opening visit date dialog for lead:", lead.Nombre, lead.Apellidos)
                                                       console.log("[v0] Current fecha_de_visita:", lead.fecha_de_visita)
-                                                      setSelectedLeadForVisit(lead)
-                                                      setNewVisitDate(
-                                                        lead.fecha_de_visita
-                                                          ? new Date(lead.fecha_de_visita).toISOString().slice(0, 16)
-                                                          : ""
-                                                      )
+                                                    setSelectedLeadForVisit(lead)
+                                                      setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
+                                                      if (lead.fecha_de_visita) {
+                                                        const d = new Date(lead.fecha_de_visita)
+                                                        const yyyy = d.getFullYear()
+                                                        const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                                        const dd = String(d.getDate()).padStart(2, "0")
+                                                        const hh = String(d.getHours()).padStart(2, "0")
+                                                        const min = String(d.getMinutes()).padStart(2, "0")
+                                                        setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                                        setNewVisitDateTime(`${hh}:${min}`)
+                                                      } else {
+                                                        setNewVisitDateDate("")
+                                                        setNewVisitDateTime("12:00")
+                                                      }
                                                       setVisitDateDialogOpen(true)
                                                       console.log("[v0] Dialog should now be open")
                                                     } else {
@@ -3725,11 +3791,20 @@ export default function LeadsPage() {
                                 console.log("[v0] Opening visit date dialog for lead:", selectedLead.Nombre, selectedLead.Apellidos)
                                 console.log("[v0] Current fecha_de_visita:", selectedLead.fecha_de_visita)
                                 setSelectedLeadForVisit(selectedLead)
-                                setNewVisitDate(
-                                  selectedLead.fecha_de_visita
-                                    ? new Date(selectedLead.fecha_de_visita).toISOString().slice(0, 16)
-                                    : ""
-                                )
+                                setSelectedAgenteId(selectedLead.idag ? String(selectedLead.idag) : "")
+                                if (selectedLead.fecha_de_visita) {
+                                  const d = new Date(selectedLead.fecha_de_visita)
+                                  const yyyy = d.getFullYear()
+                                  const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                  const dd = String(d.getDate()).padStart(2, "0")
+                                  const hh = String(d.getHours()).padStart(2, "0")
+                                  const min = String(d.getMinutes()).padStart(2, "0")
+                                  setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                  setNewVisitDateTime(`${hh}:${min}`)
+                                } else {
+                                  setNewVisitDateDate("")
+                                  setNewVisitDateTime("12:00")
+                                }
                                 setVisitDateDialogOpen(true)
                                 console.log("[v0] Dialog should now be open")
                               } else {
@@ -4664,7 +4739,7 @@ export default function LeadsPage() {
                 >
                   <option value="">Seleccionar agente</option>
                   {agentes.map((agente) => (
-                    <option key={agente.idag} value={agente.idag}>
+                    <option key={agente.idag} value={String(agente.idag)}>
                       {agente.Nombre}
                     </option>
                   ))}
@@ -4674,19 +4749,43 @@ export default function LeadsPage() {
                 <label htmlFor="visit-date" className="text-sm font-medium">
                   Nueva fecha y hora de visita
                 </label>
-                <Input
-                  id="visit-date"
-                  type="datetime-local"
-                  value={newVisitDate}
-                  onChange={(e) => setNewVisitDate(e.target.value)}
-                  className="w-full"
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Input
+                    id="visit-date"
+                    type="date"
+                    value={newVisitDateDate}
+                    onChange={(e) => setNewVisitDateDate(e.target.value)}
+                    className="w-full"
+                  />
+                  <Select
+                    value={newVisitDateTime}
+                    onValueChange={(value) => setNewVisitDateTime(value)}
+                  >
+                    <SelectTrigger className="h-10 text-sm">
+                      <SelectValue placeholder="Hora (24h)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 24 }, (_, h) => h).map((hour) => (
+                        ["00","15","30","45"].map((m) => {
+                          const hh = String(hour).padStart(2, "0")
+                          const mm = m
+                          const val = `${hh}:${mm}`
+                          return (
+                            <SelectItem key={val} value={val}>
+                              {val}
+                            </SelectItem>
+                          )
+                        })
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
             <div className="flex justify-between">
               <Button 
                 variant="destructive" 
-                onClick={handleCancelVisit}
+                onClick={() => setIsCancelConfirmOpen(true)}
                 className="bg-red-600 hover:bg-red-700"
               >
                 Cancelar Visita
@@ -4695,17 +4794,41 @@ export default function LeadsPage() {
                 <Button variant="outline" onClick={() => {
                   setVisitDateDialogOpen(false)
                   setSelectedAgenteId("")
-                  setNewVisitDate("")
+                  setNewVisitDateDate("")
+                  setNewVisitDateTime("")
                 }}>
                   Cerrar
                 </Button>
-                <Button onClick={handleReprogramVisit} disabled={!newVisitDate}>
+                <Button onClick={handleReprogramVisit} disabled={!newVisitDateDate || !newVisitDateTime || !selectedAgenteId}>
                   Guardar
                 </Button>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={isCancelConfirmOpen} onOpenChange={setIsCancelConfirmOpen}>
+        <AlertDialogContent className="z-[500]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar cancelación</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción cancelará la visita y eliminará la fecha programada. ¿Deseas continuar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setIsCancelConfirmOpen(false)}>No cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={async () => {
+                await handleCancelVisit()
+                setIsCancelConfirmOpen(false)
+              }}
+            >
+              Sí, cancelar visita
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
         <Dialog open={isCommDialogOpen} onOpenChange={setIsCommDialogOpen}>
           <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto z-[300]">

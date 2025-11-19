@@ -31,14 +31,14 @@ const menuItems = [
     icon: Users,
   },
   {
-    title: "Información",
-    href: "/dashboard/informacion",
-    icon: Info,
-  },
-  {
     title: "Configuración",
     href: "/dashboard/configuracion",
     icon: Settings,
+  },
+  {
+    title: "Información",
+    href: "/dashboard/informacion",
+    icon: Info,
   },
 ]
 
@@ -67,6 +67,7 @@ export default function Sidebar({ user }: SidebarProps) {
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  prefetch={false}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                     isActive
