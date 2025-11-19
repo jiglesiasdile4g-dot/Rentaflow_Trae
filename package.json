@@ -60,6 +60,8 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "conventional-changelog-angular": "^8.1.0",
+    "conventional-changelog-cli": "^5.0.0",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "typescript": "^5"
