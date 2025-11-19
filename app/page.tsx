@@ -1,7 +1,11 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
+import { isSupabaseConfigured } from "@/lib/utils"
 
 export default async function HomePage() {
+  if (!isSupabaseConfigured()) {
+    redirect("/setup")
+  }
   const supabase = await createClient()
 
   const {

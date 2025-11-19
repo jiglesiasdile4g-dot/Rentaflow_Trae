@@ -4,12 +4,16 @@ import { redirect } from "next/navigation"
 import { InmobiliariaProvider } from "@/lib/contexts/inmobiliaria-context"
 import SidebarLayout from "@/components/sidebar-layout"
 import { Toaster } from "@/components/ui/toaster"
+import { isSupabaseConfigured } from "@/lib/utils"
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  if (!isSupabaseConfigured()) {
+    redirect("/setup")
+  }
   const supabase = await createClient()
 
   const {

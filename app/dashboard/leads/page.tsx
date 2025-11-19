@@ -476,11 +476,16 @@ export default function LeadsPage() {
     let filtered = leads
 
     if (searchTerm) {
+      const term = searchTerm.toLowerCase()
+      const toLowerStr = (v: unknown) => String(v ?? "").toLowerCase()
       filtered = filtered.filter(
         (lead) =>
-          lead.Nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          lead.Correo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          lead.Inmueble?.toLowerCase().includes(searchTerm.toLowerCase()),
+          toLowerStr(lead.Nombre).includes(term) ||
+          toLowerStr(lead.Correo).includes(term) ||
+          toLowerStr(lead.Inmueble).includes(term) ||
+          toLowerStr((lead as any).id).includes(term) ||
+          toLowerStr((lead as any).idc).includes(term) ||
+          toLowerStr((lead as any).IDC).includes(term),
       )
     }
 
@@ -1359,7 +1364,7 @@ export default function LeadsPage() {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Buscar por nombre, email o inmueble..."
+                    placeholder="Buscar por nombre, email, inmueble o ID..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-10 pr-10"
@@ -1509,11 +1514,11 @@ export default function LeadsPage() {
                             return (
                               <Card
                                 key={lead.id}
-                                className={`hover:shadow-md transition-all cursor-pointer ${
+                                className={`relative hover:shadow-md transition-all cursor-pointer ${
                                   isSelected // Highlight selected leads
                                     ? "ring-2 ring-primary ring-offset-2"
                                     : ""
-                                } ${
+                                  } ${
                                   isDescartado
                                     ? "opacity-40 bg-gray-50 border-gray-300"
                                     : isAceptado
@@ -1521,9 +1526,12 @@ export default function LeadsPage() {
                                       : isDataComplete
                                         ? "border-green-200 bg-green-50/30 hover:bg-green-50/50"
                                         : "border-amber-200 bg-amber-50/30 hover:bg-amber-50/50"
-                                }`}
+                                  }`}
                                 onClick={() => openLeadDetail(lead)}
                               >
+                                <Badge variant="secondary" className="absolute top-1 left-1 z-10 font-mono text-[10px] text-muted-foreground">
+                                  ID: {String((lead as any).id ?? (lead as any).idc ?? (lead as any).IDC ?? "")}
+                                </Badge>
                                 <CardContent className="p-2">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3 flex-1">
@@ -1870,7 +1878,7 @@ export default function LeadsPage() {
                           return (
                             <Card
                               key={lead.id}
-                              className={`hover:shadow-md transition-all cursor-pointer ${
+                              className={`relative hover:shadow-md transition-all cursor-pointer ${
                                 isDescartado
                                   ? "opacity-40 bg-gray-50 border-gray-300"
                                   : isAceptado
@@ -1881,6 +1889,9 @@ export default function LeadsPage() {
                               }`}
                               onClick={() => openLeadDetail(lead)}
                             >
+                              <Badge variant="secondary" className="absolute top-1 left-1 z-10 font-mono text-[10px] text-muted-foreground">
+                                ID: {String((lead as any).id ?? (lead as any).idc ?? (lead as any).IDC ?? "")}
+                              </Badge>
                               <CardContent className="p-2">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-3 flex-1">

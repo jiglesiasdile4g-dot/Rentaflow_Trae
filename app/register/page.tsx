@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { UserPlus, Mail, Lock, Building2 } from "lucide-react"
 import Link from "next/link"
+import { isSupabaseConfigured } from "@/lib/utils"
 
 interface Inmobiliaria {
   idi: number
@@ -30,6 +31,7 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const router = useRouter()
+  const configured = isSupabaseConfigured()
 
   useEffect(() => {
     const fetchInmobiliarias = async () => {
@@ -55,9 +57,12 @@ export default function RegisterPage() {
         setLoadingInmobiliarias(false)
       }
     }
-
+    if (!configured) {
+      setLoadingInmobiliarias(false)
+      return
+    }
     fetchInmobiliarias()
-  }, [])
+  }, [configured])
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -221,13 +226,20 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        {!configured && (
+          <Alert variant="destructive">
+            <AlertDescription>
+              Configura las variables de entorno NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY.
+            </AlertDescription>
+          </Alert>
+        )}
 
-            <Button type="submit" className="w-full" disabled={loading || loadingInmobiliarias}>
+            <Button type="submit" className="w-full" disabled={loading || loadingInmobiliarias || !configured}>
               {loading ? "Creando cuenta..." : "Crear Cuenta"}
             </Button>
           </form>
