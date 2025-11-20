@@ -1,3 +1,7 @@
+## [0.2.5](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.4...v0.2.5) (2025-11-20)
+
+
+
 ## [0.2.4](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.3...v0.2.4) (2025-11-19)
 
 
