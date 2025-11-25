@@ -76,8 +76,7 @@ export default async function InformacionPage() {
   } catch {}
 
   const changelogPath = path.join(process.cwd(), "CHANGELOG.md")
-  let whatsNewHeading: string = ""
-  let whatsNewBlocks: { title: string; subitems: string[] }[] = []
+  let whatsNewGroups: { heading: string; blocks: { title: string; subitems: string[] }[] }[] = []
   let clText: string = ""
   try {
     clText = fs.readFileSync(changelogPath, "utf-8")
@@ -91,24 +90,50 @@ export default async function InformacionPage() {
       if (res.ok) clText = await res.text()
     } catch {}
   }
+  const sanitize = (s: string) =>
+    s
+      .replace(/\[([^\]]+)\]\([^\)]+\)/g, "$1")
+      .replace(/https?:\/\/\S+/g, "")
+      .replace(/\s{2,}/g, " ")
+      .trim()
   if (clText) {
     const clRawNormalized = clText.replace(/\r\n/g, "\n")
     const sectionMatch = clRawNormalized.match(/##\s*\[?([^\]]+)\]?[^\n]*\n([\s\S]*?)(?=\n##\s|\n#\s|$)/)
     if (sectionMatch) {
       const body = sectionMatch[2].replace(/\\n/g, "\n")
-      const headingMatch = body.match(/###\s+([^\n]+)/)
-      if (headingMatch) whatsNewHeading = headingMatch[1].trim()
-      const topItems = body.split(/^\*\s+/m).slice(1)
-      whatsNewBlocks = topItems.map((block) => {
-        const lines = block.split(/\r?\n/)
-        const title = (lines[0] || "").trim()
-        const subitems = lines
-          .slice(1)
-          .filter((l) => /^\s*-\s+/.test(l))
-          .map((l) => l.replace(/^\s*-\s+/, "").trim())
-        return { title, subitems }
-      })
-      whatsNewBlocks = whatsNewBlocks.slice(0, 3).map((b) => ({ ...b, subitems: b.subitems.slice(0, 5) }))
+      const groupMatches = Array.from(body.matchAll(/###\s+([^\n]+)\n([\s\S]*?)(?=\n###\s|\n##\s|$)/g))
+      if (groupMatches.length > 0) {
+        whatsNewGroups = groupMatches.map((gm) => {
+          const heading = gm[1].trim()
+          const content = gm[2]
+          const topItems = content.split(/^\*\s+/m).slice(1)
+          const blocks = topItems.map((block) => {
+            const lines = block.split(/\r?\n/)
+            const title = sanitize((lines[0] || "").trim())
+            const subitems = lines
+              .slice(1)
+              .filter((l) => /^\s*-\s+/.test(l))
+              .map((l) => sanitize(l.replace(/^\s*-\s+/, "").trim()))
+            return { title, subitems }
+          })
+          return { heading, blocks }
+        })
+        whatsNewGroups = whatsNewGroups.map((g) => ({ heading: g.heading, blocks: g.blocks.slice(0, 3).map((b) => ({ title: b.title, subitems: b.subitems.slice(0, 5) })) }))
+      } else {
+        const headingMatch = body.match(/###\s+([^\n]+)/)
+        const singleHeading = headingMatch ? headingMatch[1].trim() : ""
+        const topItems = body.split(/^\*\s+/m).slice(1)
+        const blocks = topItems.map((block) => {
+          const lines = block.split(/\r?\n/)
+          const title = sanitize((lines[0] || "").trim())
+          const subitems = lines
+            .slice(1)
+            .filter((l) => /^\s*-\s+/.test(l))
+            .map((l) => sanitize(l.replace(/^\s*-\s+/, "").trim()))
+          return { title, subitems }
+        })
+        whatsNewGroups = [{ heading: singleHeading, blocks: blocks.slice(0, 3).map((b) => ({ title: b.title, subitems: b.subitems.slice(0, 5) })) }]
+      }
     }
   }
 
@@ -220,23 +245,51 @@ export default async function InformacionPage() {
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
                 {appVersion && <Badge variant="secondary">v{appVersion}</Badge>}
-                {whatsNewHeading && <span className="text-xs text-muted-foreground">{whatsNewHeading}</span>}
               </div>
-              {whatsNewBlocks.length > 0 ? (
-                <ul className="space-y-2 text-sm">
-                  {whatsNewBlocks.map((block, idx) => (
-                    <li key={idx}>
-                      <div className="font-medium">{block.title}</div>
-                      {block.subitems.length > 0 && (
-                        <ul className="list-disc pl-5 space-y-0.5">
-                          {block.subitems.map((s, j) => (
-                            <li key={j}>{s}</li>
+              {whatsNewGroups.length > 0 ? (
+                <div className="space-y-4">
+                  {whatsNewGroups.map((group, gi) => {
+                    const labelMap: Record<string, string> = {
+                      "Bug Fixes": "Correcciones",
+                      Features: "Nuevas funcionalidades",
+                      "Performance Improvements": "Mejoras de rendimiento",
+                      Chore: "Mantenimiento",
+                      Docs: "Documentación",
+                      Refactor: "Refactorizaciones",
+                    }
+                    const variantMap: Record<string, string> = {
+                      "Bug Fixes": "bug",
+                      Features: "feature",
+                      "Performance Improvements": "performance",
+                      Chore: "chore",
+                      Docs: "docs",
+                      Refactor: "refactor",
+                    }
+                    const label = labelMap[group.heading] || group.heading
+                    const variant = (variantMap[group.heading] || "secondary") as any
+                    return (
+                      <div key={gi} className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant={variant} className="text-xs">{label}</Badge>
+                        </div>
+                        <ul className="space-y-2 text-sm">
+                          {group.blocks.map((block, idx) => (
+                            <li key={idx}>
+                              <div className="font-medium">{block.title}</div>
+                              {block.subitems.length > 0 && (
+                                <ul className="list-disc pl-5 space-y-0.5">
+                                  {block.subitems.map((s, j) => (
+                                    <li key={j}>{s}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </li>
                           ))}
                         </ul>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                      </div>
+                    )
+                  })}
+                </div>
               ) : (
                 <p className="text-sm text-muted-foreground">Sin novedades</p>
               )}
