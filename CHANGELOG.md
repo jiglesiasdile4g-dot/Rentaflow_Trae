@@ -1,3 +1,12 @@
+## [0.2.6](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.5...v0.2.6) (2025-11-25)
+
+
+### Bug Fixes
+
+* estabiliza assets en dev y corrige subida de archivos en Crear anuncio\n\n- elimina desactivación de cache en dev (Next)\n- valida inmobiliaria antes de subir en creación\n- refresca y muestra archivos existentes en paso 3\n- ajustes menores de UI en Anuncios ([97c76b5](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/97c76b54978518761ca689338c6ef1378a452594))
+
+
+
 ## [0.2.5](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.4...v0.2.5) (2025-11-20)
 
 
