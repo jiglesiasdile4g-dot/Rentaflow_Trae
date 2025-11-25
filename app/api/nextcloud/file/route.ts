@@ -38,13 +38,22 @@ export async function GET(req: Request) {
       return s.split("/").map((seg) => encodeURIComponent(seg)).join("/")
     }
     const encodedPath = ensureEncoded(path)
+    const safeFetch = async (u: string, opts: any) => {
+      try { return await fetch(u, opts) } catch { return null as any }
+    }
+    const root = baseUrl.replace(/\/$/, "")
     const userEnc = encodeURIComponent(user)
     const userLowerEnc = encodeURIComponent(user.toLowerCase())
-    let url = `${baseUrl.replace(/\/$/, "")}/remote.php/dav/files/${userEnc}/${encodedPath}`
-    let res = await fetch(url, { headers: { Authorization: basicAuthHeader(user, pass) } })
-    if (!res.ok && res.status === 404 && userLowerEnc !== userEnc) {
-      url = `${baseUrl.replace(/\/$/, "")}/remote.php/dav/files/${userLowerEnc}/${encodedPath}`
-      res = await fetch(url, { headers: { Authorization: basicAuthHeader(user, pass) } })
+    const auth = { Authorization: basicAuthHeader(user, pass) }
+    let url = `${root}/remote.php/dav/files/${userEnc}/${encodedPath}`
+    let res = await safeFetch(url, { headers: auth })
+    if (!res || (!res.ok && res.status === 404 && userLowerEnc !== userEnc)) {
+      url = `${root}/remote.php/dav/files/${userLowerEnc}/${encodedPath}`
+      res = await safeFetch(url, { headers: auth })
+    }
+    if (!res || (!res.ok && res.status === 404)) {
+      url = `${root}/remote.php/webdav/${encodedPath}`
+      res = await safeFetch(url, { headers: auth })
     }
     if (!res.ok) {
       return NextResponse.json({ error: `Error WebDAV ${res.status}` }, { status: 502 })
@@ -84,13 +93,22 @@ export async function DELETE(req: Request) {
       return s.split("/").map((seg) => encodeURIComponent(seg)).join("/")
     }
     const encodedPath = ensureEncoded(path)
+    const safeFetch = async (u: string, opts: any) => {
+      try { return await fetch(u, opts) } catch { return null as any }
+    }
+    const root = baseUrl.replace(/\/$/, "")
     const userEnc = encodeURIComponent(user)
     const userLowerEnc = encodeURIComponent(user.toLowerCase())
-    let url = `${baseUrl.replace(/\/$/, "")}/remote.php/dav/files/${userEnc}/${encodedPath}`
-    let res = await fetch(url, { method: "DELETE", headers: { Authorization: basicAuthHeader(user, pass) } })
-    if (!res.ok && res.status === 404 && userLowerEnc !== userEnc) {
-      url = `${baseUrl.replace(/\/$/, "")}/remote.php/dav/files/${userLowerEnc}/${encodedPath}`
-      res = await fetch(url, { method: "DELETE", headers: { Authorization: basicAuthHeader(user, pass) } })
+    const auth = { Authorization: basicAuthHeader(user, pass) }
+    let url = `${root}/remote.php/dav/files/${userEnc}/${encodedPath}`
+    let res = await safeFetch(url, { method: "DELETE", headers: auth })
+    if (!res || (!res.ok && res.status === 404 && userLowerEnc !== userEnc)) {
+      url = `${root}/remote.php/dav/files/${userLowerEnc}/${encodedPath}`
+      res = await safeFetch(url, { method: "DELETE", headers: auth })
+    }
+    if (!res || (!res.ok && res.status === 404)) {
+      url = `${root}/remote.php/webdav/${encodedPath}`
+      res = await safeFetch(url, { method: "DELETE", headers: auth })
     }
     if (res.status === 404) {
       return NextResponse.json({ ok: true, status: 404 })
