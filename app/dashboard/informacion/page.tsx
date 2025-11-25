@@ -78,9 +78,21 @@ export default async function InformacionPage() {
   const changelogPath = path.join(process.cwd(), "CHANGELOG.md")
   let whatsNewHeading: string = ""
   let whatsNewBlocks: { title: string; subitems: string[] }[] = []
+  let clText: string = ""
   try {
-    const clRaw = fs.readFileSync(changelogPath, "utf-8")
-    const clRawNormalized = clRaw.replace(/\r\n/g, "\n")
+    clText = fs.readFileSync(changelogPath, "utf-8")
+  } catch {}
+  if (!clText) {
+    try {
+      const res = await fetch(
+        "https://raw.githubusercontent.com/jiglesiasdile4g-dot/Rentaflow_Trae/main/dashboard/v0-dashboard-basico-alfa-0-2-main/CHANGELOG.md",
+        { cache: "no-store" }
+      )
+      if (res.ok) clText = await res.text()
+    } catch {}
+  }
+  if (clText) {
+    const clRawNormalized = clText.replace(/\r\n/g, "\n")
     const sectionMatch = clRawNormalized.match(/##\s*\[?([^\]]+)\]?[^\n]*\n([\s\S]*?)(?=\n##\s|\n#\s|$)/)
     if (sectionMatch) {
       const body = sectionMatch[2].replace(/\\n/g, "\n")
@@ -98,7 +110,7 @@ export default async function InformacionPage() {
       })
       whatsNewBlocks = whatsNewBlocks.slice(0, 3).map((b) => ({ ...b, subitems: b.subitems.slice(0, 5) }))
     }
-  } catch {}
+  }
 
   return (
     <div className="p-8">
