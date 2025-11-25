@@ -2,8 +2,10 @@ import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Database, User, Package } from "lucide-react"
+import { Database, User, Package, Sparkles } from "lucide-react"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
+import fs from "node:fs"
+import path from "node:path"
 
 export default async function InformacionPage() {
   const supabase = await createClient()
@@ -64,6 +66,39 @@ export default async function InformacionPage() {
   } catch (err) {
     tablesError = "Error al conectar con la base de datos"
   }
+
+  const pkgPath = path.join(process.cwd(), "package.json")
+  let appVersion: string = ""
+  try {
+    const pkgRaw = fs.readFileSync(pkgPath, "utf-8")
+    const pkg = JSON.parse(pkgRaw)
+    appVersion = typeof pkg.version === "string" ? pkg.version : ""
+  } catch {}
+
+  const changelogPath = path.join(process.cwd(), "CHANGELOG.md")
+  let whatsNewHeading: string = ""
+  let whatsNewBlocks: { title: string; subitems: string[] }[] = []
+  try {
+    const clRaw = fs.readFileSync(changelogPath, "utf-8")
+    const clRawNormalized = clRaw.replace(/\r\n/g, "\n")
+    const sectionMatch = clRawNormalized.match(/##\s*\[?([^\]]+)\]?[^\n]*\n([\s\S]*?)(?=\n##\s|\n#\s|$)/)
+    if (sectionMatch) {
+      const body = sectionMatch[2].replace(/\\n/g, "\n")
+      const headingMatch = body.match(/###\s+([^\n]+)/)
+      if (headingMatch) whatsNewHeading = headingMatch[1].trim()
+      const topItems = body.split(/^\*\s+/m).slice(1)
+      whatsNewBlocks = topItems.map((block) => {
+        const lines = block.split(/\r?\n/)
+        const title = (lines[0] || "").trim()
+        const subitems = lines
+          .slice(1)
+          .filter((l) => /^\s*-\s+/.test(l))
+          .map((l) => l.replace(/^\s*-\s+/, "").trim())
+        return { title, subitems }
+      })
+      whatsNewBlocks = whatsNewBlocks.slice(0, 3).map((b) => ({ ...b, subitems: b.subitems.slice(0, 5) }))
+    }
+  } catch {}
 
   return (
     <div className="p-8">
@@ -161,6 +196,40 @@ export default async function InformacionPage() {
               </CardContent>
             </Card>
           )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5" />
+                Novedades
+              </CardTitle>
+              <CardDescription>Últimos cambios en la aplicación</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2">
+                {appVersion && <Badge variant="secondary">v{appVersion}</Badge>}
+                {whatsNewHeading && <span className="text-xs text-muted-foreground">{whatsNewHeading}</span>}
+              </div>
+              {whatsNewBlocks.length > 0 ? (
+                <ul className="space-y-2 text-sm">
+                  {whatsNewBlocks.map((block, idx) => (
+                    <li key={idx}>
+                      <div className="font-medium">{block.title}</div>
+                      {block.subitems.length > 0 && (
+                        <ul className="list-disc pl-5 space-y-0.5">
+                          {block.subitems.map((s, j) => (
+                            <li key={j}>{s}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">Sin novedades</p>
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
