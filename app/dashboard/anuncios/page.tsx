@@ -325,7 +325,7 @@ export default function AnunciosPage() {
         } catch {}
         toast({ title: "Error", description: errMsg, variant: "destructive" })
       } else {
-        toast({ title: "Éxito", description: "Archivos subidos a Nextcloud" })
+        toast({ title: "Éxito", description: "Archivos subidos correctamente" })
         if (mode === "creation") {
           await loadCreationFiles()
         }
@@ -376,7 +376,7 @@ export default function AnunciosPage() {
       const params = new URLSearchParams({ path })
       await fetch(`/api/nextcloud/file?${params.toString()}`, { method: "DELETE" })
       await loadEditFiles()
-      toast({ title: "Archivo eliminado", description: "Se ha eliminado de Nextcloud" })
+      toast({ title: "Archivo eliminado", description: "Archivo eliminado correctamente" })
     } catch {
       toast({ title: "Error", description: "No se pudo eliminar", variant: "destructive" })
     }
@@ -389,7 +389,7 @@ export default function AnunciosPage() {
       const params = new URLSearchParams({ path })
       await fetch(`/api/nextcloud/file?${params.toString()}`, { method: "DELETE" })
       await refreshNextcloudDialog()
-      toast({ title: "Archivo eliminado", description: "Se ha eliminado de Nextcloud" })
+      toast({ title: "Archivo eliminado", description: "Archivo eliminado correctamente" })
     } catch {
       toast({ title: "Error", description: "No se pudo eliminar", variant: "destructive" })
     } finally {
@@ -417,7 +417,7 @@ export default function AnunciosPage() {
         toast({ title: "Error", description: errMsg, variant: "destructive" })
       } else {
         await refreshNextcloudDialog()
-        toast({ title: "Éxito", description: "Archivos subidos a Nextcloud" })
+        toast({ title: "Éxito", description: "Archivos subidos correctamente" })
       }
     } catch {
       toast({ title: "Error", description: "Error al subir archivos", variant: "destructive" })
@@ -1958,7 +1958,7 @@ export default function AnunciosPage() {
         borderColor: "border-red-500",
         icon: "⚠️",
         title: `Solo queda ${percentageRemaining.toFixed(0)}% del plan`,
-        message: `Quedan ${remainingExecutions} ejecuciones. A este ritmo, alcanzarás el límite en ${daysUntilLimit} días.`,
+        message: `Quedan ${remainingExecutions} leads. A este ritmo, alcanzarás el límite en ${daysUntilLimit} días.`,
         showUpgrade: true,
         cardHighlight: true,
       }
@@ -1971,7 +1971,7 @@ export default function AnunciosPage() {
         borderColor: "border-orange-500",
         icon: "⚠️",
         title: `Queda ${percentageRemaining.toFixed(0)}% del plan`,
-        message: `Consumo diario promedio: ${Math.round(dailyRate)} ejecuciones/día. Estimado ${daysUntilLimit} días restantes.`,
+        message: `Consumo diario promedio: ${Math.round(dailyRate)} leads/día. Estimado ${daysUntilLimit} días restantes.`,
         showUpgrade: true,
         cardHighlight: false,
       }
@@ -1984,7 +1984,7 @@ export default function AnunciosPage() {
         borderColor: "border-yellow-500",
         icon: "📊",
         title: `Queda ${percentageRemaining.toFixed(0)}% del plan`,
-        message: `Has usado la mitad de tu plan. Ritmo actual: ${Math.round(dailyRate)} ejecuciones/día.`,
+        message: `Has usado la mitad de tu plan. Ritmo actual: ${Math.round(dailyRate)} leads/día.`,
         showUpgrade: false,
         cardHighlight: false,
       }
@@ -1996,7 +1996,7 @@ export default function AnunciosPage() {
       borderColor: "border-green-500",
       icon: "✅",
       title: `Queda ${percentageRemaining.toFixed(0)}% del plan`,
-      message: `Consumo saludable. Promedio: ${Math.round(dailyRate)} ejecuciones/día.`,
+      message: `Consumo saludable. Promedio: ${Math.round(dailyRate)} leads/día.`,
       showUpgrade: false,
       cardHighlight: false,
     }
@@ -2207,7 +2207,7 @@ export default function AnunciosPage() {
                               </div>
                               <div className="text-xs text-muted-foreground space-y-0.5">
                                 <div>
-                                  {plan.Usuarios} usuarios • {formatPlanValue(plan.ejecuciones)} ejecuciones
+                                  {plan.Usuarios} usuarios • {formatPlanValue(plan.ejecuciones)} leads
                                 </div>
                                 <div>
                                   {formatPlanValue(plan.Anuncios)} anuncios • Soporte: {plan.Soporte}
@@ -2233,11 +2233,11 @@ export default function AnunciosPage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem>
                           <ShoppingCart className="h-3 w-3 mr-2" />
-                          +50 ejecuciones - €29
+                          +50 leads - €29
                         </DropdownMenuItem>
                         <DropdownMenuItem>
                           <ShoppingCart className="h-3 w-3 mr-2" />
-                          +100 ejecuciones - €49
+                          +100 leads - €49
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={handleOpenPlanSelector}>
                           <Settings className="h-3 w-3 mr-2" />
@@ -2271,7 +2271,7 @@ export default function AnunciosPage() {
                   <div className="space-y-1.5">
                     <div className="flex justify-between text-[10px] text-muted-foreground">
                       <span>
-                        {totalEjecuciones.toLocaleString()} / {formatPlanValue(planLimit)} ejecuciones
+                        {totalEjecuciones.toLocaleString()} / {formatPlanValue(planLimit)} leads
                       </span>
                       <span className="font-semibold">{percentageUsed.toFixed(1)}% usado</span>
                     </div>
@@ -2298,7 +2298,7 @@ export default function AnunciosPage() {
                   <div className="text-center py-1">
                     <p className="text-xs font-medium text-green-600">✅ Plan Ilimitado - Sin restricciones</p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Ejecuciones utilizadas este mes: {totalEjecuciones.toLocaleString()}
+                      Leads utilizados este mes: {totalEjecuciones.toLocaleString()}
                     </p>
                   </div>
                 )}
@@ -2529,7 +2529,7 @@ export default function AnunciosPage() {
                           </div>
 
                           <div className="flex items-center justify-between mb-0.5">
-                            <span className="text-xs">Ejecuciones: {anuncio.ejecuciones}</span>
+                            <span className="text-xs">Leads: {anuncio.ejecuciones}</span>
                             <span className="text-xs">
                               {planLimit > 0 && ((anuncio.ejecuciones / planLimit) * 100).toFixed(1)}% del plan
                             </span>
@@ -2876,7 +2876,7 @@ export default function AnunciosPage() {
                           <Input type="file" multiple disabled={creationUploadUploading || (!inmobiliariaNombre && inmobiliariaId == null)} onChange={(e) => uploadFilesForAnuncio(e.target.files, creationStep.data.referencia, "creation")} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                           <div className="pointer-events-none text-muted-foreground">Arrastra y suelta archivos o haz clic</div>
                         </div>
-                        <div className="text-[11px] text-muted-foreground">Se subirán a Nextcloud bajo la referencia indicada.</div>
+                        <div className="text-[11px] text-muted-foreground">Se subirán bajo la referencia indicada.</div>
                         {creationUploadUploading && (
                           <div className="text-[12px] text-muted-foreground flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" /> Subiendo archivos...</div>
                         )}
@@ -2989,7 +2989,7 @@ export default function AnunciosPage() {
 
                 <div className="text-sm text-muted-foreground">
                   <p>Atajos: N (siguiente), A (agendar), C (completo)</p>
-                  <p>Ejecuciones consumidas: 3/100</p>
+                  <p>Leads consumidos: 3/100</p>
                 </div>
               </div>
             </div>
@@ -3531,7 +3531,7 @@ export default function AnunciosPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
-                          <span>Ejecuciones del mes</span>
+                          <span>Leads del mes</span>
                           <span className="font-medium">{selectedAnuncioForStats.ejecuciones}</span>
                         </div>
                         <Progress
@@ -3656,7 +3656,7 @@ export default function AnunciosPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <CheckCircle className="h-4 w-4 text-green-600" />
-                        <span>{formatPlanValue(plan.ejecuciones)} ejecuciones</span>
+                        <span>{formatPlanValue(plan.ejecuciones)} leads</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <CheckCircle className="h-4 w-4 text-green-600" />

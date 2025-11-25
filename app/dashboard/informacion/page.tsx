@@ -129,7 +129,7 @@ export default async function InformacionPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <p className="text-sm font-medium">Ejecuciones:</p>
+                        <p className="text-sm font-medium">Leads:</p>
                         <p className="text-2xl font-bold text-foreground">{formatPlanValue(planInfo.ejecuciones)}</p>
                       </div>
                       <div>
