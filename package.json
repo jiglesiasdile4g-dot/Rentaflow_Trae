@@ -64,6 +64,8 @@
     "@types/react-dom": "^19",
     "conventional-changelog-angular": "^8.1.0",
     "conventional-changelog-cli": "^5.0.0",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "^16.0.3",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "typescript": "^5"

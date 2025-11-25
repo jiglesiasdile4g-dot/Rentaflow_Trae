@@ -25,7 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
-import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw } from 'lucide-react'
+import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover" // Added Popover imports
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
 import { createBrowserClient } from "@/lib/supabase/client" // Added for createBrowserClient
@@ -33,6 +33,7 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tool
 
 interface AnuncioCard {
   id: string
+  codPortal: string // From Anuncios.CodPortal
   referencia: string // From Anuncios.Referencia
   direccion: string // From Anuncios.Direccion
   precio: number // From Anuncios.Precio
@@ -40,6 +41,7 @@ interface AnuncioCard {
   descripcion: string // From Anuncios.Descripcion
   activacion: string // From Anuncios.Activacion
   fotoUrl: string // From Anuncios.Foto_Url
+  adjuntos?: string[]
   // Calculated metrics
   nuevosHoy: number // Count from Clientes where created_at is last 24h
   emailsEnviados: number // Count from Correos table
@@ -77,6 +79,7 @@ interface AnuncioCard {
 interface CreationStep {
   step: number
   data: {
+    codPortal: string
     referencia: string
     direccion: string
     portal: string
@@ -87,6 +90,7 @@ interface CreationStep {
 }
 
 interface EditFormData {
+  codPortal: string
   referencia: string
   direccion: string
   descripcion: string
@@ -103,6 +107,7 @@ export default function AnunciosPage() {
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [editingAnuncio, setEditingAnuncio] = useState<AnuncioCard | null>(null)
   const [editFormData, setEditFormData] = useState<EditFormData>({
+    codPortal: "",
     referencia: "",
     direccion: "",
     descripcion: "",
@@ -131,6 +136,7 @@ export default function AnunciosPage() {
   const [creationStep, setCreationStep] = useState<CreationStep>({
     step: 1,
     data: {
+      codPortal: "",
       referencia: "",
       direccion: "",
       portal: "",
@@ -149,6 +155,18 @@ export default function AnunciosPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [deletingAnuncio, setDeletingAnuncio] = useState<AnuncioCard | null>(null)
   const [expandedLeadsAnuncio, setExpandedLeadsAnuncio] = useState<string | null>(null)
+  const [nextcloudDialog, setNextcloudDialog] = useState<{ open: boolean; inmobiliaria: string; referencia: string; folder?: string; files: any[]; recent: any[]; loading: boolean; error: string | null }>({ open: false, inmobiliaria: "", referencia: "", folder: undefined, files: [], recent: [], loading: false, error: null })
+  const [nextcloudUploading, setNextcloudUploading] = useState(false)
+  const [nextcloudDragActive, setNextcloudDragActive] = useState(false)
+  const [creationUploadUploading, setCreationUploadUploading] = useState(false)
+  const [editUploadUploading, setEditUploadUploading] = useState(false)
+  const [creationDragActive, setCreationDragActive] = useState(false)
+  const [editDragActive, setEditDragActive] = useState(false)
+  const [editFilesList, setEditFilesList] = useState<any[]>([])
+  const [editFilesLoading, setEditFilesLoading] = useState(false)
+  const [creationFilesList, setCreationFilesList] = useState<any[]>([])
+  const [creationFilesLoading, setCreationFilesLoading] = useState(false)
+  const [nextcloudDeletingPath, setNextcloudDeletingPath] = useState<string | null>(null)
   const [completosLeads, setCompletosLeads] = useState<any[]>([])
   const [loadingCompletos, setLoadingCompletos] = useState(false)
   const [infoFaqsData, setInfoFaqsData] = useState({
@@ -195,10 +213,7 @@ export default function AnunciosPage() {
   // Add isStatsModalOpen state to track the visibility of the stats modal
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false)
 
-  const { inmobiliariaId, loading: inmobiliariaLoading } = useInmobiliaria()
   
-  // Debug: log inmobiliaria context values
-  console.log("[DEBUG] Inmobiliaria context - inmobiliariaId:", inmobiliariaId, "inmobiliariaLoading:", inmobiliariaLoading)
 
   const router = useRouter()
   const pathname = usePathname()
@@ -206,6 +221,210 @@ export default function AnunciosPage() {
 
   // Variables needed for linting fixes
   const [creatingAnuncio, setCreatingAnuncio] = useState(false)
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
+  const [attachmentPreviewKind, setAttachmentPreviewKind] = useState<"pdf" | "image" | "unknown">("unknown")
+  const [attachmentPreviewName, setAttachmentPreviewName] = useState<string>("")
+
+  
+
+  const closeAttachmentPreview = (open?: boolean) => {
+    if (open === false || open === undefined) {
+      if (attachmentPreviewUrl && attachmentPreviewUrl.startsWith("blob:")) {
+        try { URL.revokeObjectURL(attachmentPreviewUrl) } catch {}
+      }
+      setAttachmentPreviewUrl(null)
+      setAttachmentPreviewKind("unknown")
+      setAttachmentPreviewName("")
+    }
+  }
+
+  const openAttachmentPreview = (url: string, name?: string, file?: File) => {
+    const n = name || url.split("?")[0].split("/").pop() || ""
+    const lower = (n || url).toLowerCase()
+    const kind: "pdf" | "image" | "unknown" = lower.endsWith(".pdf")
+      ? "pdf"
+      : lower.match(/\.(png|jpg|jpeg|gif|webp|bmp|svg)$/)
+      ? "image"
+      : "unknown"
+    const effective = url.startsWith("blob:") && file ? URL.createObjectURL(file) : url
+    const proxied = kind === "pdf" && !effective.startsWith("blob:") ? `/api/proxy/pdf?url=${encodeURIComponent(effective)}` : effective
+    setAttachmentPreviewName(n)
+    setAttachmentPreviewKind(kind)
+    setAttachmentPreviewUrl(proxied)
+  }
+
+  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading } = useInmobiliaria()
+
+  const openNextcloudFiles = async (anuncio: AnuncioCard) => {
+    const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
+    setNextcloudDialog({ open: true, inmobiliaria: inmo, referencia: anuncio.referencia, folder: undefined, files: [], recent: [], loading: true, error: null })
+    try {
+      const params = new URLSearchParams({ referencia: anuncio.referencia, inmobiliaria: inmo })
+      const res = await fetch(`/api/nextcloud/list?${params.toString()}`)
+      if (!res.ok) {
+        let errMsg = `Error ${res.status}`
+        try {
+          const j = await res.json()
+          if (j && typeof j.error === "string") errMsg = j.error
+        } catch {}
+        setNextcloudDialog((prev) => ({ ...prev, loading: false, error: errMsg }))
+        return
+      }
+      const json = await res.json()
+      setNextcloudDialog({ open: true, inmobiliaria: inmo, referencia: anuncio.referencia, folder: json.folder, files: json.files || [], recent: json.recent || [], loading: false, error: null })
+    } catch (e) {
+      setNextcloudDialog((prev) => ({ ...prev, loading: false, error: "Error de red" }))
+    }
+  }
+
+  const refreshNextcloudDialog = async () => {
+    if (!nextcloudDialog.referencia) return
+    setNextcloudDialog((prev) => ({ ...prev, loading: true }))
+    try {
+      const params = new URLSearchParams({ referencia: nextcloudDialog.referencia, inmobiliaria: nextcloudDialog.inmobiliaria })
+      const res = await fetch(`/api/nextcloud/list?${params.toString()}`)
+      if (!res.ok) {
+        let errMsg = `Error ${res.status}`
+        try {
+          const j = await res.json()
+          if (j && typeof j.error === "string") errMsg = j.error
+        } catch {}
+        setNextcloudDialog((prev) => ({ ...prev, loading: false, error: errMsg }))
+        return
+      }
+      const json = await res.json()
+      setNextcloudDialog((prev) => ({ ...prev, folder: json.folder, files: json.files || [], recent: json.recent || [], loading: false, error: null }))
+    } catch {
+      setNextcloudDialog((prev) => ({ ...prev, loading: false }))
+    }
+  }
+
+  const uploadFilesForAnuncio = async (files: FileList | null, referenciaTarget: string, mode?: "creation" | "edit") => {
+    if (!files || files.length === 0 || !referenciaTarget) return
+    const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
+    if (!inmo) {
+      toast({ title: "Error", description: "Inmobiliaria no cargada", variant: "destructive" })
+      return
+    }
+    try {
+      if (mode === "creation") setCreationUploadUploading(true)
+      if (mode === "edit") setEditUploadUploading(true)
+      const fd = new FormData()
+      fd.append("referencia", referenciaTarget)
+      fd.append("inmobiliaria", inmo)
+      for (let i = 0; i < files.length; i++) {
+        const f = files.item(i)
+        if (f) fd.append("files", f)
+      }
+      const res = await fetch(`/api/nextcloud/upload`, { method: "POST", body: fd })
+      if (!res.ok) {
+        let errMsg = `No se pudieron subir archivos`
+        try {
+          const j = await res.json()
+          if (j && typeof j.error === "string") errMsg = j.error
+        } catch {}
+        toast({ title: "Error", description: errMsg, variant: "destructive" })
+      } else {
+        toast({ title: "Éxito", description: "Archivos subidos a Nextcloud" })
+        if (mode === "creation") {
+          await loadCreationFiles()
+        }
+      }
+    } catch {
+      toast({ title: "Error", description: "Error al subir archivos", variant: "destructive" })
+    } finally {
+      if (mode === "creation") setCreationUploadUploading(false)
+      if (mode === "edit") setEditUploadUploading(false)
+    }
+  }
+
+  const loadEditFiles = async () => {
+    if (!editFormData.referencia) return
+    const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
+    setEditFilesLoading(true)
+    try {
+      const params = new URLSearchParams({ referencia: editFormData.referencia, inmobiliaria: inmo })
+      const res = await fetch(`/api/nextcloud/list?${params.toString()}`)
+      if (res.ok) {
+        const j = await res.json()
+        setEditFilesList(j.files || [])
+      }
+    } finally {
+      setEditFilesLoading(false)
+    }
+  }
+
+  const loadCreationFiles = async () => {
+    if (!creationStep.data.referencia) return
+    const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
+    setCreationFilesLoading(true)
+    try {
+      const params = new URLSearchParams({ referencia: creationStep.data.referencia, inmobiliaria: inmo })
+      const res = await fetch(`/api/nextcloud/list?${params.toString()}`)
+      if (res.ok) {
+        const j = await res.json()
+        setCreationFilesList(j.files || [])
+      }
+    } finally {
+      setCreationFilesLoading(false)
+    }
+  }
+
+  const deleteEditFile = async (path: string) => {
+    if (!path) return
+    try {
+      const params = new URLSearchParams({ path })
+      await fetch(`/api/nextcloud/file?${params.toString()}`, { method: "DELETE" })
+      await loadEditFiles()
+      toast({ title: "Archivo eliminado", description: "Se ha eliminado de Nextcloud" })
+    } catch {
+      toast({ title: "Error", description: "No se pudo eliminar", variant: "destructive" })
+    }
+  }
+
+  const deleteNextcloudFile = async (path: string) => {
+    if (!path) return
+    setNextcloudDeletingPath(path)
+    try {
+      const params = new URLSearchParams({ path })
+      await fetch(`/api/nextcloud/file?${params.toString()}`, { method: "DELETE" })
+      await refreshNextcloudDialog()
+      toast({ title: "Archivo eliminado", description: "Se ha eliminado de Nextcloud" })
+    } catch {
+      toast({ title: "Error", description: "No se pudo eliminar", variant: "destructive" })
+    } finally {
+      setNextcloudDeletingPath(null)
+    }
+  }
+
+  const uploadDirectToNextcloud = async (files: FileList | null) => {
+    if (!files || files.length === 0 || !nextcloudDialog.referencia) return
+    setNextcloudUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append("referencia", nextcloudDialog.referencia)
+      fd.append("inmobiliaria", nextcloudDialog.inmobiliaria)
+      for (let i = 0; i < files.length; i++) {
+        fd.append("files", files.item(i) as File)
+      }
+      const res = await fetch(`/api/nextcloud/upload`, { method: "POST", body: fd })
+      if (!res.ok) {
+        let errMsg = `No se pudieron subir archivos`
+        try {
+          const j = await res.json()
+          if (j && typeof j.error === "string") errMsg = j.error
+        } catch {}
+        toast({ title: "Error", description: errMsg, variant: "destructive" })
+      } else {
+        await refreshNextcloudDialog()
+        toast({ title: "Éxito", description: "Archivos subidos a Nextcloud" })
+      }
+    } catch {
+      toast({ title: "Error", description: "Error al subir archivos", variant: "destructive" })
+    } finally {
+      setNextcloudUploading(false)
+    }
+  }
 
   const [agentes, setAgentes] = useState<any[]>([]);
 
@@ -389,6 +608,8 @@ export default function AnunciosPage() {
     }
     return data || []
   }
+
+  
 
   const handlePhaseMetricClick = async (phase: "aceptado" | "visita_propuesta" | "visita_completada") => {
     if (!selectedAnuncioForStats) return
@@ -744,19 +965,30 @@ export default function AnunciosPage() {
 
       const query = supabase
         .from("Anuncios")
-        .select("ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada") // Added Fecha_Activacion_Programada
+        .select("ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos")
         .eq("usuario", inmobiliariaId) // Always filter by the logged-in agency's IDI
         .order("created_at", { ascending: false })
 
       // All users can now see their own archived anuncios
       // The client-side filtering (filterEstado) handles showing/hiding them
 
-      const { data: anuncios, error: anunciosErr } = await query
+      let { data: anuncios, error: anunciosErr } = await query
 
       if (anunciosErr) {
-        console.log("[v0] Error fetching anuncios:", anunciosErr)
-        setAnunciosError("Error al cargar anuncios")
-        return
+        const fallbackQuery = supabase
+          .from("Anuncios")
+          .select(
+            "ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal",
+          )
+          .eq("usuario", inmobiliariaId)
+          .order("created_at", { ascending: false })
+        const { data: anunciosFallback, error: fallbackErr } = await fallbackQuery
+        if (fallbackErr) {
+          console.log("[v0] Error fetching anuncios (fallback):", fallbackErr)
+          setAnunciosError("Error al cargar anuncios")
+          return
+        }
+        anuncios = anunciosFallback || []
       }
 
       console.log("[v0] Anuncios fetched for agency IDI", inmobiliariaId, ":", anuncios?.length || 0)
@@ -900,6 +1132,7 @@ export default function AnunciosPage() {
 
         cards.push({
           id: anuncio.ida, // Use "ida" instead of "id"
+          codPortal: anuncio.CodPortal || "",
           referencia,
           direccion: anuncio.Direccion || "",
           precio: anuncio.Precio || 0,
@@ -907,6 +1140,7 @@ export default function AnunciosPage() {
           descripcion: anuncio.Descripcion || "",
           activacion: anuncio.Activacion || "Inactivo",
           fotoUrl: anuncio.Foto_Url || "",
+          adjuntos: anuncio.Adjuntos || [],
           nuevosHoy,
           emailsEnviados,
           datosCompletos: datosCompletosCount,
@@ -1150,6 +1384,7 @@ export default function AnunciosPage() {
       // Precargar el formulario con los datos reales de la base de datos
       setEditingAnuncio(anuncio)
       setEditFormData({
+        codPortal: anuncioData.CodPortal || "",
         referencia: anuncioData.Referencia || "",
         direccion: anuncioData.Direccion || "",
         descripcion: anuncioData.Descripcion || "",
@@ -1176,33 +1411,49 @@ export default function AnunciosPage() {
     console.log("[v0] Form data to save:", editFormData)
 
     try {
-      // Actualizar todos los campos en la base de datos
       const updateData = {
+        CodPortal: editFormData.codPortal,
         Referencia: editFormData.referencia,
         Direccion: editFormData.direccion,
         Descripcion: editFormData.descripcion,
         Precio: Number.parseFloat(editFormData.precio) || 0,
         Portal: editFormData.portal,
         Activacion: editFormData.activacion,
+        
       }
 
       const { error } = await supabase.from("Anuncios").update(updateData).eq("ida", editingAnuncio.id)
 
       if (error) {
         console.log("[v0] Error saving changes:", error)
-        toast({
-          title: "Error",
-          description: "No se pudieron guardar los cambios",
-          variant: "destructive",
-        })
+        const fallbackUpdate = {
+          Referencia: updateData.Referencia,
+          Direccion: updateData.Direccion,
+          Descripcion: updateData.Descripcion,
+          Precio: updateData.Precio,
+          Portal: updateData.Portal,
+          Activacion: updateData.Activacion,
+        }
+        const { error: fallbackError } = await supabase
+          .from("Anuncios")
+          .update(fallbackUpdate)
+          .eq("ida", editingAnuncio.id)
+
+        if (fallbackError) {
+          toast({ title: "Error", description: "No se pudieron guardar los cambios", variant: "destructive" })
+          return
+        }
+
+        
+
+        console.log("[v0] Changes saved with fallback")
+        toast({ title: "Éxito", description: "Anuncio actualizado correctamente" })
+        setEditingAnuncio(null)
+        await fetchAnuncios()
       } else {
         console.log("[v0] Changes saved successfully")
-        toast({
-          title: "Éxito",
-          description: "Anuncio actualizado correctamente",
-        })
+        toast({ title: "Éxito", description: "Anuncio actualizado correctamente" })
         setEditingAnuncio(null)
-        // Refrescar datos para mostrar los cambios inmediatamente
         await fetchAnuncios()
       }
     } catch (err) {
@@ -1392,9 +1643,11 @@ export default function AnunciosPage() {
         Referencia: creationStep.data.referencia,
         Direccion: creationStep.data.direccion,
         Portal: creationStep.data.portal,
+        CodPortal: creationStep.data.codPortal,
         Descripcion: creationStep.data.descripcion,
         Precio: Number.parseFloat(creationStep.data.precio) || 0,
         Activacion: creationStep.data.activacion,
+        
         usuario: inmobiliariaId, // Assigns the logged-in agency's IDI to this anuncio
         Foto_Url: "", // Empty for now
         // Fecha_Activacion_Programada: null, // Ensure it's null for new announcements
@@ -1406,11 +1659,49 @@ export default function AnunciosPage() {
 
       if (error) {
         console.log("[v0] Error creating anuncio:", error)
+        const fallbackAnuncio = {
+          Referencia: newAnuncio.Referencia,
+          Direccion: newAnuncio.Direccion,
+          Portal: newAnuncio.Portal,
+          Descripcion: newAnuncio.Descripcion,
+          Precio: newAnuncio.Precio,
+          Activacion: newAnuncio.Activacion,
+          usuario: newAnuncio.usuario,
+          Foto_Url: newAnuncio.Foto_Url,
+        }
+        const { data: dataFallback, error: fallbackError } = await supabase
+          .from("Anuncios")
+          .insert([fallbackAnuncio])
+          .select()
+        if (fallbackError) {
+          toast({
+            title: "Error",
+            description: `No se pudo crear el anuncio: ${fallbackError.message}`,
+            variant: "destructive",
+          })
+          return
+        }
+        
+        console.log("[v0] Anuncio created successfully with fallback:", dataFallback)
         toast({
-          title: "Error",
-          description: `No se pudo crear el anuncio: ${error.message}`,
-          variant: "destructive",
+          title: "Éxito",
+          description: `${creationStep.data.referencia} se ha creado correctamente`,
         })
+        setShowCreationModal(false)
+        setCreationStep({
+          step: 1,
+          data: {
+            codPortal: "",
+            referencia: "",
+            direccion: "",
+            portal: "",
+            descripcion: "",
+            precio: "",
+            activacion: "Pausado",
+            
+          },
+        })
+        await fetchAnuncios()
         return
       }
 
@@ -1426,12 +1717,14 @@ export default function AnunciosPage() {
       setCreationStep({
         step: 1,
         data: {
+          codPortal: "",
           referencia: "",
           direccion: "",
           portal: "",
           descripcion: "",
           precio: "",
           activacion: "Pausado",
+          
         },
       })
 
@@ -2280,6 +2573,14 @@ export default function AnunciosPage() {
                           <Button
                             size="sm"
                             variant="outline"
+                            className="flex-1 bg-transparent text-xs h-7"
+                            onClick={() => openNextcloudFiles(anuncio)}
+                          >
+                            Archivos
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
                             className="h-7 bg-transparent"
                             onClick={() => handleShowStats(anuncio)}
                           >
@@ -2444,6 +2745,20 @@ export default function AnunciosPage() {
                       />
                     </div>
                     <div>
+                      <Label htmlFor="codPortal">Código del anuncio</Label>
+                      <Input
+                        id="codPortal"
+                        value={creationStep.data.codPortal}
+                        onChange={(e) =>
+                          setCreationStep((prev) => ({
+                            ...prev,
+                            data: { ...prev.data, codPortal: e.target.value },
+                          }))
+                        }
+                        placeholder="Código del anuncio en el portal"
+                      />
+                    </div>
+                    <div>
                       <Label htmlFor="direccion">Dirección</Label>
                       <Input
                         id="direccion"
@@ -2501,23 +2816,24 @@ export default function AnunciosPage() {
                         placeholder="Descripción del inmueble"
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="precio">Precio</Label>
-                        <Input
-                          id="precio"
-                          type="number"
-                          value={creationStep.data.precio}
-                          onChange={(e) =>
-                            setCreationStep((prev) => ({
-                              ...prev,
-                              data: { ...prev.data, precio: e.target.value },
-                            }))
-                          }
-                          placeholder="0"
-                        />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="precio">Precio</Label>
+                          <Input
+                            id="precio"
+                            type="number"
+                            value={creationStep.data.precio}
+                            onChange={(e) =>
+                              setCreationStep((prev) => ({
+                                ...prev,
+                                data: { ...prev.data, precio: e.target.value },
+                              }))
+                            }
+                            placeholder="0"
+                          />
+                        </div>
+                        
                       </div>
-                    </div>
                   </div>
                 </div>
               )}
@@ -2547,23 +2863,79 @@ export default function AnunciosPage() {
                       </Select>
                     </div>
 
-                    <div className="bg-muted p-4 rounded-lg">
-                      <h4 className="font-medium mb-2">Resumen</h4>
-                      <div className="text-sm space-y-1">
-                        <p>
-                          <span className="font-medium">Referencia:</span> {creationStep.data.referencia}
-                        </p>
-                        <p>
-                          <span className="font-medium">Dirección:</span> {creationStep.data.direccion}
-                        </p>
-                        <p>
-                          <span className="font-medium">Portal:</span> {creationStep.data.portal}
-                        </p>
-                        <p>
-                          <span className="font-medium">Estado:</span> {creationStep.data.activacion}
-                        </p>
+                      <div className="space-y-2 mt-2">
+                        <Label>Archivos del anuncio</Label>
+                        <div
+                          className={`relative border-2 border-dashed rounded-md p-4 h-28 flex items-center justify-center text-sm ${
+                            creationDragActive ? "border-ring bg-muted/40" : "border-input bg-transparent"
+                          }`}
+                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setCreationDragActive(true) }}
+                          onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setCreationDragActive(false) }}
+                          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); uploadFilesForAnuncio(e.dataTransfer.files, creationStep.data.referencia, "creation"); setCreationDragActive(false) }}
+                        >
+                          <Input type="file" multiple disabled={creationUploadUploading || (!inmobiliariaNombre && inmobiliariaId == null)} onChange={(e) => uploadFilesForAnuncio(e.target.files, creationStep.data.referencia, "creation")} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                          <div className="pointer-events-none text-muted-foreground">Arrastra y suelta archivos o haz clic</div>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">Se subirán a Nextcloud bajo la referencia indicada.</div>
+                        {creationUploadUploading && (
+                          <div className="text-[12px] text-muted-foreground flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" /> Subiendo archivos...</div>
+                        )}
+                        <div className="mt-3">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button size="sm" variant="outline" onClick={loadCreationFiles}>Refrescar</Button>
+                          </div>
+                          <h4 className="text-sm font-semibold mt-2">Archivos existentes</h4>
+                          {creationFilesLoading ? (
+                            <div className="text-xs text-muted-foreground">Cargando…</div>
+                          ) : creationFilesList.length === 0 ? (
+                            <div className="text-xs text-muted-foreground">Sin archivos</div>
+                          ) : (
+                            <div className="space-y-2">
+                              {creationFilesList.map((f: any, idx: number) => {
+                                const label = f.name || (f.path ? decodeURIComponent(String(f.path).split("/").pop() || "") : "") || "Archivo"
+                                const href = f.path ? `/api/nextcloud/file?path=${encodeURIComponent(f.path)}` : "#"
+                                const lower = (f.name || f.path || "").toLowerCase()
+                                const ct = String(f.contentType || "")
+                                const isPdf = /\.pdf$/.test(lower) || /application\/pdf/.test(ct)
+                                const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(lower) || /image\//.test(ct)
+                                const sizeLabel = typeof f.size === "number" ? (f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)} MB` : f.size >= 1024 ? `${(f.size / 1024).toFixed(1)} KB` : `${f.size} B`) : "-"
+                                return (
+                                  <div key={`creation-file-${idx}-${f.path || f.name}`} className="flex items-center justify-between gap-2 text-xs">
+                                    <div className="truncate">
+                                      <a href={href} target="_blank" rel="noreferrer" className="hover:underline">
+                                        {label}
+                                      </a>
+                                    </div>
+                                    <div className="text-muted-foreground">
+                                      {isPdf ? "PDF" : isImage ? "Imagen" : "Archivo"} · {sizeLabel}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                      <div className="bg-muted p-4 rounded-lg">
+                        <h4 className="font-medium mb-2">Resumen</h4>
+                        <div className="text-sm space-y-1">
+                          <p>
+                            <span className="font-medium">Referencia:</span> {creationStep.data.referencia}
+                          </p>
+                          <p>
+                            <span className="font-medium">Código del anuncio:</span> {creationStep.data.codPortal}
+                          </p>
+                          <p>
+                            <span className="font-medium">Dirección:</span> {creationStep.data.direccion}
+                          </p>
+                          <p>
+                            <span className="font-medium">Portal:</span> {creationStep.data.portal}
+                          </p>
+                          <p>
+                            <span className="font-medium">Estado:</span> {creationStep.data.activacion}
+                          </p>
+                        </div>
+                      </div>
                   </div>
                 </div>
               )}
@@ -2739,6 +3111,69 @@ export default function AnunciosPage() {
                   placeholder="Portal de publicación"
                 />
               </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="codPortal" className="text-right">
+                  Código del anuncio
+                </Label>
+                <Input
+                  id="codPortal"
+                  value={editFormData.codPortal}
+                  onChange={(e) => setEditFormData((prev) => ({ ...prev, codPortal: e.target.value }))}
+                  className="col-span-3"
+                  placeholder="Código del anuncio en el portal"
+                />
+              </div>
+                      <div className="grid grid-cols-4 items-center gap-4">
+                        <Label className="text-right">Archivos del anuncio</Label>
+                        <div
+                          className={`relative border-2 border-dashed rounded-md p-2 h-20 flex items-center justify-center text-sm col-span-3 ${
+                            editDragActive ? "border-ring bg-muted/40" : "border-input bg-transparent"
+                          }`}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setEditDragActive(true) }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setEditDragActive(false) }}
+                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); uploadFilesForAnuncio(e.dataTransfer.files, editFormData.referencia, "edit"); setEditDragActive(false) }}
+                >
+                  <Input type="file" multiple disabled={editUploadUploading} onChange={(e) => uploadFilesForAnuncio(e.target.files, editFormData.referencia, "edit")} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                  <div className="pointer-events-none text-muted-foreground">Arrastra y suelta archivos o haz clic</div>
+                </div>
+                {editUploadUploading && (
+                  <div className="col-span-4 text-[12px] text-muted-foreground flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" /> Subiendo archivos...</div>
+                )}
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <div className="col-span-4 flex items-center justify-end gap-2">
+                  <Button size="sm" variant="outline" onClick={loadEditFiles}>Refrescar</Button>
+                </div>
+                <div className="col-span-4 space-y-2">
+                  <h4 className="text-sm font-semibold">Archivos existentes</h4>
+                  {editFilesLoading ? (
+                    <div className="text-xs text-muted-foreground">Cargando…</div>
+                  ) : editFilesList.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">Sin archivos</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {editFilesList.map((f: any, idx: number) => (
+                        <div key={`edit-file-${idx}-${f.path || f.name}`} className="flex items-center justify-between gap-2 text-xs">
+                          {(() => {
+                            const label = f.name || (f.path ? decodeURIComponent(String(f.path).split("/").pop() || "") : "") || "Archivo"
+                            const href = f.path ? `/api/nextcloud/file?path=${encodeURIComponent(f.path)}` : "#"
+                            return (
+                              <a href={href} className="underline truncate" onClick={(e) => { e.preventDefault(); if (f.path) openAttachmentPreview(href, f.name || label) }}>
+                                {label}
+                              </a>
+                            )
+                          })()}
+                          <div className="flex items-center gap-2">
+                            <div className="text-muted-foreground shrink-0">{f.lastModified}</div>
+                            <Button size="sm" variant="destructive" onClick={() => f.path && deleteEditFile(f.path)}>Eliminar</Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="activacion" className="text-right">
                   Estado
@@ -3427,6 +3862,184 @@ export default function AnunciosPage() {
                 <Calendar className="h-4 w-4 mr-2" />
                 Guardar Fecha
               </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+        
+        <Dialog open={!!attachmentPreviewUrl} onOpenChange={closeAttachmentPreview}>
+          <DialogContent className="sm:max-w-[900px] max-h-[85vh] overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>Vista previa del archivo</DialogTitle>
+              <DialogDescription>{attachmentPreviewName || ""}</DialogDescription>
+            </DialogHeader>
+            {attachmentPreviewUrl && (
+              <div className="w-full h-[70vh] flex flex-col gap-3">
+                <div className="flex items-center justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={() => window.open(attachmentPreviewUrl, "_blank", "noopener,noreferrer")}>Abrir en pestaña</Button>
+                  <Button asChild variant="outline" size="sm">
+                    <a href={attachmentPreviewUrl} download>Descargar</a>
+                  </Button>
+                </div>
+                {attachmentPreviewKind === "pdf" ? (
+                  <object data={attachmentPreviewUrl} type="application/pdf" className="w-full h-full rounded-md border">
+                    <div className="text-sm">No se pudo mostrar el PDF. Usa los botones arriba.</div>
+                  </object>
+                ) : attachmentPreviewKind === "image" ? (
+                  <img src={attachmentPreviewUrl} alt={attachmentPreviewName || "Imagen"} className="w-full h-full object-contain rounded-md border" />
+                ) : (
+                  <iframe src={attachmentPreviewUrl} className="w-full h-full rounded-md border" />
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={nextcloudDialog.open} onOpenChange={(open) => setNextcloudDialog((prev) => ({ ...prev, open: !!open }))}>
+          <DialogContent className="sm:max-w-[900px] max-h-[85vh] overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>{`Archivos subidos a ${nextcloudDialog.referencia || ""}`}</DialogTitle>
+              <DialogDescription>{`${nextcloudDialog.inmobiliaria} / ${nextcloudDialog.referencia}`}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div
+                  className={`relative border-2 border-dashed rounded-md p-4 h-28 flex items-center justify-center text-sm ${
+                    nextcloudDragActive ? "border-ring bg-muted/40" : "border-input bg-transparent"
+                  }`}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setNextcloudDragActive(true) }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setNextcloudDragActive(false) }}
+                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); uploadDirectToNextcloud(e.dataTransfer.files); setNextcloudDragActive(false) }}
+                >
+                  <Input type="file" multiple disabled={nextcloudUploading} onChange={(e) => uploadDirectToNextcloud(e.target.files)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                  <div className="pointer-events-none text-muted-foreground">Arrastra y suelta archivos o haz clic</div>
+                </div>
+                {nextcloudUploading && (
+                  <div className="text-[12px] text-muted-foreground flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" /> Subiendo archivos...</div>
+                )}
+                <div className="flex items-center justify-end gap-2">
+                  <Button size="sm" variant="outline" onClick={refreshNextcloudDialog}>Refrescar</Button>
+                </div>
+              </div>
+              {nextcloudDialog.loading ? (
+                <div className="flex items-center justify-center py-6"><Loader2 className="h-6 w-6 animate-spin" /></div>
+              ) : nextcloudDialog.error ? (
+                <div className="text-sm text-red-600">{nextcloudDialog.error}</div>
+              ) : (
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-sm font-semibold">Recientes (24h)</h4>
+                    {nextcloudDialog.recent.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">Sin archivos recientes</div>
+                    ) : (
+                      <div className="rounded-md border overflow-hidden">
+                        <div className="grid grid-cols-[minmax(0,1fr)_110px_160px_100px_180px] items-center gap-3 px-3 py-2 bg-muted text-xs font-medium">
+                          <div>Nombre</div>
+                          <div>Tipo</div>
+                          <div className="hidden sm:block">Modificado</div>
+                          <div className="hidden sm:block text-right">Tamaño</div>
+                          <div className="text-right">Acciones</div>
+                        </div>
+                        <div className="divide-y">
+                          {nextcloudDialog.recent.map((f: any, idx: number) => {
+                            const label = f.name || (f.path ? decodeURIComponent(String(f.path).split("/").pop() || "") : "") || "Archivo"
+                            const href = f.path ? `/api/nextcloud/file?path=${encodeURIComponent(f.path)}` : "#"
+                            const lower = (f.name || f.path || "").toLowerCase()
+                            const ct = String(f.contentType || "")
+                            const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(lower) || /image\//.test(ct)
+                            const isPdf = /\.pdf$/.test(lower) || /application\/pdf/.test(ct)
+                            const isText = /text\//.test(ct)
+                            const typeLabel = isPdf ? "PDF" : isImage ? "Imagen" : isText ? "Texto" : "Archivo"
+                            const IconEl = isImage ? ImageIcon : FileText
+                            const sizeLabel = typeof f.size === "number" ? (f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)} MB` : f.size >= 1024 ? `${(f.size / 1024).toFixed(1)} KB` : `${f.size} B`) : "-"
+                            return (
+                              <div key={`recent-${idx}-${f.path || f.name}`} className="grid grid-cols-[minmax(0,1fr)_110px_160px_100px_180px] items-center gap-3 px-3 py-2">
+                                <div className="truncate">
+                                  <a href={href} onClick={(e) => { e.preventDefault(); if (f.path) openAttachmentPreview(href, f.name || label) }} className="underline">
+                                    {label}
+                                  </a>
+                                </div>
+                                <div className="flex items-center gap-2 text-[12px]">
+                                  <IconEl className="h-4 w-4 text-muted-foreground" />
+                                  <span className="truncate">{typeLabel}</span>
+                                </div>
+                                <div className="hidden sm:block text-[11px] text-muted-foreground truncate">{f.lastModified}</div>
+                                <div className="hidden sm:block text-right text-[11px] text-muted-foreground">{sizeLabel}</div>
+                                <div className="flex justify-end items-center gap-2">
+                                  <Button size="sm" variant="outline" onClick={() => f.path && openAttachmentPreview(href, f.name || label)}>
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center h-8 rounded-md border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground gap-1.5 px-2.5 text-sm">
+                                    <ExternalLink className="h-4 w-4" />
+                                  </a>
+                                  <Button size="sm" variant="destructive" disabled={nextcloudDeletingPath === f.path} onClick={() => f.path && deleteNextcloudFile(f.path)}>
+                                    {nextcloudDeletingPath === f.path ? "Eliminando…" : "Eliminar"}
+                                  </Button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold">Todos</h4>
+                    {nextcloudDialog.files.length === 0 ? (
+                      <div className="text-xs text-muted-foreground">Sin archivos</div>
+                    ) : (
+                      <div className="rounded-md border overflow-hidden">
+                        <div className="grid grid-cols-[minmax(0,1fr)_110px_160px_100px_180px] items-center gap-3 px-3 py-2 bg-muted text-xs font-medium">
+                          <div>Nombre</div>
+                          <div>Tipo</div>
+                          <div className="hidden sm:block">Modificado</div>
+                          <div className="hidden sm:block text-right">Tamaño</div>
+                          <div className="text-right">Acciones</div>
+                        </div>
+                        <div className="divide-y">
+                          {nextcloudDialog.files.map((f: any, idx: number) => {
+                            const label = f.name || (f.path ? decodeURIComponent(String(f.path).split("/").pop() || "") : "") || "Archivo"
+                            const href = f.path ? `/api/nextcloud/file?path=${encodeURIComponent(f.path)}` : "#"
+                            const lower = (f.name || f.path || "").toLowerCase()
+                            const ct = String(f.contentType || "")
+                            const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(lower) || /image\//.test(ct)
+                            const isPdf = /\.pdf$/.test(lower) || /application\/pdf/.test(ct)
+                            const isText = /text\//.test(ct)
+                            const typeLabel = isPdf ? "PDF" : isImage ? "Imagen" : isText ? "Texto" : "Archivo"
+                            const IconEl = isImage ? ImageIcon : FileText
+                            const sizeLabel = typeof f.size === "number" ? (f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)} MB` : f.size >= 1024 ? `${(f.size / 1024).toFixed(1)} KB` : `${f.size} B`) : "-"
+                            return (
+                              <div key={`all-${idx}-${f.path || f.name}`} className="grid grid-cols-[minmax(0,1fr)_110px_160px_100px_180px] items-center gap-3 px-3 py-2">
+                                <div className="truncate">
+                                  <a href={href} onClick={(e) => { e.preventDefault(); if (f.path) openAttachmentPreview(href, f.name || label) }} className="underline">
+                                    {label}
+                                  </a>
+                                </div>
+                                <div className="flex items-center gap-2 text-[12px]">
+                                  <IconEl className="h-4 w-4 text-muted-foreground" />
+                                  <span className="truncate">{typeLabel}</span>
+                                </div>
+                                <div className="hidden sm:block text-[11px] text-muted-foreground truncate">{f.lastModified}</div>
+                                <div className="hidden sm:block text-right text-[11px] text-muted-foreground">{sizeLabel}</div>
+                                <div className="flex justify-end items-center gap-2">
+                                  <Button size="sm" variant="outline" onClick={() => f.path && openAttachmentPreview(href, f.name || label)}>
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center h-8 rounded-md border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground gap-1.5 px-2.5 text-sm">
+                                    <ExternalLink className="h-4 w-4" />
+                                  </a>
+                                  <Button size="sm" variant="destructive" disabled={nextcloudDeletingPath === f.path} onClick={() => f.path && deleteNextcloudFile(f.path)}>
+                                    {nextcloudDeletingPath === f.path ? "Eliminando…" : "Eliminar"}
+                                  </Button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </DialogContent>
         </Dialog>
