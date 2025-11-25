@@ -1,3 +1,19 @@
+## [0.2.7](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.6...v0.2.7) (2025-11-25)
+
+
+### Bug Fixes
+
+* **nextcloud:** fallback a /remote.php/webdav en descarga y borrado para compatibilidad ([be7dc24](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/be7dc24faea1094d69e5157be587311ea1be5a5c))
+* **nextcloud:** soporta usuario en minúsculas, opción TLS inseguro y variables de entorno en app.yml\n\n- fallback a username lowercase en descarga/borrado\n- permite NEXTCLOUD_ALLOW_INSECURE=1 para entornos con TLS no válido\n- añade NEXTCLOUD_* al app.yml para despliegue\n- habilita lista/subida con TLS opcional ([fb8c66f](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/fb8c66fdace163b311257c11ab21f6b55a4766ea))
+* **proxy:** evitar self-fetch; descarga directa desde Nextcloud si target es /api/nextcloud/file\n\n- inline disposition\n- TLS opcional\n- fallback rutas WebDAV ([96d3fc9](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/96d3fc9b7a39e525251864ed6cc2b9f41e2f2476))
+
+
+### Features
+
+* **informacion:** añadir tarjeta Novedades y separar subpuntos del changelog ([b56eb4a](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/b56eb4a70840f3e03faf99fe70536ad06dfd4c76))
+
+
+
 ## [0.2.6](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.5...v0.2.6) (2025-11-25)
 
 
