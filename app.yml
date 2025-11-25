@@ -13,6 +13,11 @@ services:
       - NODE_ENV=production
       - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - NEXTCLOUD_URL=${NEXTCLOUD_URL}
+      - NEXTCLOUD_USERNAME=${NEXTCLOUD_USERNAME}
+      - NEXTCLOUD_PASSWORD=${NEXTCLOUD_PASSWORD}
+      - NEXTCLOUD_ROOT_PATH=${NEXTCLOUD_ROOT_PATH}
+      - NEXTCLOUD_ALLOW_INSECURE=${NEXTCLOUD_ALLOW_INSECURE}
     
     # Health check configuration
     healthcheck:
@@ -29,6 +34,21 @@ variables:
   - name: NEXT_PUBLIC_SUPABASE_ANON_KEY
     description: API Key anónima de Supabase
     default: tu-clave-anonima-supabase
+  - name: NEXTCLOUD_URL
+    description: URL base de Nextcloud (ej: https://nextcloud.tudominio.com)
+    default: https://nextcloud.local
+  - name: NEXTCLOUD_USERNAME
+    description: Usuario de Nextcloud para WebDAV
+    default: usuario
+  - name: NEXTCLOUD_PASSWORD
+    description: Password de Nextcloud para WebDAV
+    default: password
+  - name: NEXTCLOUD_ROOT_PATH
+    description: Carpeta raíz opcional bajo WebDAV (ej: Rentaflow)
+    default: Rentaflow
+  - name: NEXTCLOUD_ALLOW_INSECURE
+    description: Usa 1 para permitir certificados TLS no válidos en Nextcloud
+    default: "0"
   - name: APP_DOMAIN
     description: Dominio donde se desplegará la app (ej: dashboard.tudominio.com)
     default: localhost

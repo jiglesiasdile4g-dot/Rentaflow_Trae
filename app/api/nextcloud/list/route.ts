@@ -2,6 +2,10 @@ import { NextResponse } from "next/server"
 
 export const runtime = "nodejs"
 
+if (process.env.NEXTCLOUD_ALLOW_INSECURE === "1") {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+}
+
 function basicAuthHeader(user: string, pass: string) {
   const token = Buffer.from(`${user}:${pass}`).toString("base64")
   return `Basic ${token}`

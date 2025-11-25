@@ -2,6 +2,10 @@ import { NextResponse } from "next/server"
 
 export const runtime = "nodejs"
 
+if (process.env.NEXTCLOUD_ALLOW_INSECURE === "1") {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+}
+
 function basicAuthHeader(user: string, pass: string) {
   const token = Buffer.from(`${user}:${pass}`).toString("base64")
   return `Basic ${token}`
@@ -34,8 +38,14 @@ export async function GET(req: Request) {
       return s.split("/").map((seg) => encodeURIComponent(seg)).join("/")
     }
     const encodedPath = ensureEncoded(path)
-    const url = `${baseUrl.replace(/\/$/, "")}/remote.php/dav/files/${encodeURIComponent(user)}/${encodedPath}`
-    const res = await fetch(url, { headers: { Authorization: basicAuthHeader(user, pass) } })
+    const userEnc = encodeURIComponent(user)
+    const userLowerEnc = encodeURIComponent(user.toLowerCase())
+    let url = `${baseUrl.replace(/\/$/, "")}/remote.php/dav/files/${userEnc}/${encodedPath}`
+    let res = await fetch(url, { headers: { Authorization: basicAuthHeader(user, pass) } })
+    if (!res.ok && res.status === 404 && userLowerEnc !== userEnc) {
+      url = `${baseUrl.replace(/\/$/, "")}/remote.php/dav/files/${userLowerEnc}/${encodedPath}`
+      res = await fetch(url, { headers: { Authorization: basicAuthHeader(user, pass) } })
+    }
     if (!res.ok) {
       return NextResponse.json({ error: `Error WebDAV ${res.status}` }, { status: 502 })
     }
@@ -74,8 +84,14 @@ export async function DELETE(req: Request) {
       return s.split("/").map((seg) => encodeURIComponent(seg)).join("/")
     }
     const encodedPath = ensureEncoded(path)
-    const url = `${baseUrl.replace(/\/$/, "")}/remote.php/dav/files/${encodeURIComponent(user)}/${encodedPath}`
-    const res = await fetch(url, { method: "DELETE", headers: { Authorization: basicAuthHeader(user, pass) } })
+    const userEnc = encodeURIComponent(user)
+    const userLowerEnc = encodeURIComponent(user.toLowerCase())
+    let url = `${baseUrl.replace(/\/$/, "")}/remote.php/dav/files/${userEnc}/${encodedPath}`
+    let res = await fetch(url, { method: "DELETE", headers: { Authorization: basicAuthHeader(user, pass) } })
+    if (!res.ok && res.status === 404 && userLowerEnc !== userEnc) {
+      url = `${baseUrl.replace(/\/$/, "")}/remote.php/dav/files/${userLowerEnc}/${encodedPath}`
+      res = await fetch(url, { method: "DELETE", headers: { Authorization: basicAuthHeader(user, pass) } })
+    }
     if (res.status === 404) {
       return NextResponse.json({ ok: true, status: 404 })
     }
