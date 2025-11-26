@@ -1,3 +1,12 @@
+## [0.2.9](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.8...v0.2.9) (2025-11-26)
+
+
+### Bug Fixes
+
+* **css:** usar postcss.config.mjs para Tailwind v4; chore: eliminar postcss.config.js ([a32204b](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/a32204b9df64c3ae4ad43b3eb5c9a32f2a09e7dc))
+
+
+
 ## [0.2.8](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.7...v0.2.8) (2025-11-26)
 
 
