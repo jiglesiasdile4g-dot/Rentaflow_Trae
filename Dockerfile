@@ -33,6 +33,7 @@ RUN npm ci --only=production
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.mjs ./
+COPY --from=builder /app/CHANGELOG.md ./CHANGELOG.md
 
 # Exponer el puerto
 EXPOSE 3000
