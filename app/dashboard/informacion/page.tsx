@@ -1,13 +1,18 @@
 import { createClient } from "@/lib/supabase/server"
 import { redirect } from "next/navigation"
+import { revalidatePath } from "next/cache"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Database, User, Package, Sparkles } from "lucide-react"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
 import fs from "node:fs"
 import path from "node:path"
+import ChangePlanButton from "@/components/change-plan-button"
 
-export default async function InformacionPage() {
+export default async function InformacionPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const supabase = await createClient()
 
   const {
@@ -20,6 +25,7 @@ export default async function InformacionPage() {
 
   let inmobiliariaInfo: any = null
   let planInfo: any = null
+  let availablePlans: any[] = []
 
   try {
     const { data: perfil } = await supabase.from("Perfiles").select("inmobiliaria").eq("usuario", user.email).single()
@@ -37,19 +43,72 @@ export default async function InformacionPage() {
         const { data: planesData, error: planesError } = await supabase.from("Planes").select("*")
 
         if (planesError || !planesData || planesData.length === 0) {
-          console.log("[v0] Could not load plans from database, using fallback data")
           planInfo = getPlanData(inmobiliaria.Plan)
         } else {
-          planInfo = planesData.find((p: any) => p.idp === inmobiliaria.Plan || p.id === inmobiliaria.Plan)
-
-          if (!planInfo) {
-            planInfo = getPlanData(inmobiliaria.Plan)
-          }
+          const normalize = (p: any) => ({
+            ...p,
+            ejecuciones: p?.ejecuciones ?? p?.leads ?? p?.Leads ?? 0,
+            Anuncios: p?.Anuncios ?? p?.anuncios_activos ?? p?.AnunciosActivos ?? 0,
+            Precio: p?.Precio ?? p?.precio ?? 0,
+          })
+          const normalizedPlans = (planesData || []).map(normalize)
+          availablePlans = normalizedPlans
+          planInfo = normalizedPlans.find((p: any) => p.idp === inmobiliaria.Plan || (p as any).id === inmobiliaria.Plan) || getPlanData(inmobiliaria.Plan)
         }
       }
-    }
+  }
   } catch (err) {
     console.log("[v0] Error fetching inmobiliaria/plan info:", err)
+  }
+
+  async function changePlanAction(formData: FormData) {
+    "use server"
+    const supa = await createClient()
+    const rawPlanId = formData.get("planId")
+    const planIdNum = Number(rawPlanId)
+    const planId = Number.isFinite(planIdNum) ? planIdNum : (() => {
+      const s = String(rawPlanId || "").trim()
+      const m = s.match(/\d+/)
+      return m ? Number(m[0]) : NaN
+    })()
+    const idi = Number(formData.get("idi"))
+    console.log("[v0] changePlanAction", { planId, idi })
+    if (!planId || !idi) {
+      revalidatePath("/dashboard/informacion")
+      redirect(`/dashboard/informacion?planUpdate=error&msg=${encodeURIComponent("Parámetros inválidos")}`)
+    }
+    let updatedRows = 0
+    let lastError: any = null
+    try {
+      const { data, error } = await supa
+        .from("Inmobiliarias")
+        .update({ Plan: planId })
+        .eq("idi", idi)
+        .select("idi, Plan")
+      if (error) {
+        lastError = error
+      }
+      updatedRows = Array.isArray(data) ? data.length : 0
+      if (!lastError && updatedRows === 0) {
+        const { data: checkRow, error: readErr } = await supa
+          .from("Inmobiliarias")
+          .select("idi, Plan")
+          .eq("idi", idi)
+          .maybeSingle()
+        if (readErr) {
+          lastError = readErr
+        } else if (checkRow && typeof checkRow.Plan !== "undefined") {
+          updatedRows = 1
+        }
+      }
+    } catch (e: any) {
+      lastError = e
+    }
+    console.log("[v0] changePlanAction result", { updatedRows, error: lastError })
+    revalidatePath("/dashboard/informacion")
+    const ok = updatedRows > 0 && !lastError
+    const msg = ok ? "Plan actualizado correctamente" : (lastError?.message || "No se pudo actualizar el plan")
+    redirect(`/dashboard/informacion?planUpdate=${ok ? "success" : "error"}&planId=${planId}&msg=${encodeURIComponent(msg)}`)
   }
 
   let tables: any[] = []
@@ -89,6 +148,19 @@ export default async function InformacionPage() {
       )
       if (res.ok) clText = await res.text()
     } catch {}
+  }
+
+  const prioritizedNames = ["Starter", "Agency", "Profesional"]
+  const orderedPlans = (availablePlans || [])
+    .filter((p) => prioritizedNames.includes(p?.Nombre))
+    .sort((a, b) => (a?.ejecuciones ?? 0) - (b?.ejecuciones ?? 0))
+  const fallbackOrderedPlans = (availablePlans || [])
+    .sort((a, b) => (a?.ejecuciones ?? 0) - (b?.ejecuciones ?? 0))
+  const planStyle = (name: string) => {
+    if (name === "Starter") return "border-green-200 bg-green-50/40"
+    if (name === "Agency") return "border-blue-200 bg-blue-50/40"
+    if (name === "Profesional") return "border-purple-200 bg-purple-50/40"
+    return "border-muted"
   }
   const sanitize = (s: string) =>
     s
@@ -137,8 +209,21 @@ export default async function InformacionPage() {
     }
   }
 
+  const sp = (searchParams ? await searchParams : undefined) as Record<string, string | string[] | undefined> | undefined
+  const planUpdate = typeof sp?.planUpdate === "string" ? sp?.planUpdate : undefined
+  const updateMsg = typeof sp?.msg === "string" ? sp?.msg : undefined
+
   return (
     <div className="p-8">
+      {planUpdate && (
+        <div className="mb-4">
+          <Alert variant={planUpdate === "error" ? "destructive" : "default"}>
+            <AlertDescription>
+              {updateMsg || (planUpdate === "success" ? "Plan actualizado correctamente" : "No se pudo actualizar el plan")}
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
       <div className="space-y-8">
         <div>
           <h2 className="text-3xl font-bold text-foreground">Información</h2>
@@ -223,6 +308,43 @@ export default async function InformacionPage() {
                       <p className="text-sm font-medium">Precio:</p>
                       <p className="text-xl font-bold text-green-600">€{planInfo.Precio?.toLocaleString()}/mes</p>
                     </div>
+                    {availablePlans && availablePlans.length > 0 && (
+                      <div className="space-y-2 pt-2">
+                        <p className="text-sm font-medium">Cambiar plan</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                          {(orderedPlans.length > 0 ? orderedPlans : fallbackOrderedPlans).map((p) => (
+                            <form id={`change-plan-form-${String(p.idp)}`} key={p.idp} action={changePlanAction} className={`rounded-md`}>
+                              <input type="hidden" name="idi" value={String(inmobiliariaInfo.idi)} />
+                              <input type="hidden" name="planId" value={String(p.idp)} />
+                              <Card className={`cursor-pointer overflow-hidden transition-all ${inmobiliariaInfo.Plan === p.idp ? "border-primary border-2 bg-primary/5" : planStyle(p.Nombre)} rounded-lg`}>
+                                <CardContent className="p-4 flex flex-col gap-3">
+                                  <div className="flex items-center justify-start gap-2">
+                                    <h3 className="text-sm font-semibold break-words leading-tight">{p.Nombre}</h3>
+                                    {p.Nombre === "Agency" && (
+                                      <Badge variant="feature" className="text-xs">Recomendado</Badge>
+                                    )}
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="text-sm font-bold">€{p.Precio}/mes</span>
+                                  </div>
+                                  <div className="text-xs text-muted-foreground leading-snug whitespace-normal break-words">
+                                    {p.Usuarios} usuarios • {formatPlanValue(p.ejecuciones)} leads • {formatPlanValue(p.Anuncios)} anuncios
+                                  </div>
+                                  <div className="flex items-center justify-between gap-2">
+                                    {inmobiliariaInfo.Plan === p.idp ? (
+                                      <Badge variant="secondary" className="text-xs shrink-0">Plan actual</Badge>
+                                    ) : (
+                                      <span />
+                                    )}
+                                    <ChangePlanButton idi={Number(inmobiliariaInfo.idi)} planId={Number(p.idp)} current={inmobiliariaInfo.Plan === p.idp} />
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            </form>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="text-center py-4">

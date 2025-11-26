@@ -123,6 +123,7 @@ export default function AnunciosPage() {
   const [availablePlans, setAvailablePlans] = useState<any[]>([])
   const [showPlanSelector, setShowPlanSelector] = useState(false)
   const [currentPlanId, setCurrentPlanId] = useState<number | null>(null)
+  const [planResetAt, setPlanResetAt] = useState<Date | null>(null)
   const [selectedAnuncios, setSelectedAnuncios] = useState<Set<string>>(new Set())
   const [showFilters, setShowFilters] = useState(false)
   const [showProcessingDrawer, setShowProcessingDrawer] = useState(false)
@@ -478,7 +479,30 @@ export default function AnunciosPage() {
     } else {
       console.log("[DEBUG] Skipping fetch calls - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
     }
-  }, [inmobiliariaId, inmobiliariaLoading])
+  }, [inmobiliariaId, inmobiliariaLoading, planResetAt])
+
+  useEffect(() => {
+    try {
+      if (typeof window !== "undefined" && inmobiliariaId != null) {
+        const key = `rf_planResetAt_${String(inmobiliariaId)}`
+        const saved = window.localStorage.getItem(key)
+        if (saved) {
+          const d = new Date(saved)
+          if (!isNaN(d.getTime())) {
+            setPlanResetAt(d)
+          } else {
+            setPlanResetAt(null)
+          }
+        } else {
+          setPlanResetAt(null)
+        }
+      } else {
+        setPlanResetAt(null)
+      }
+    } catch {
+      setPlanResetAt(null)
+    }
+  }, [inmobiliariaId])
 
   useEffect(() => {
     if (selectedAnuncioForStats && showStatsModal) {
@@ -846,8 +870,15 @@ export default function AnunciosPage() {
       }
 
       if (planesData && planesData.length > 0) {
-        console.log("[v0] Available plans loaded:", planesData)
-        setAvailablePlans(planesData)
+        const normalize = (p: any) => ({
+          ...p,
+          ejecuciones: p?.ejecuciones ?? p?.leads ?? p?.Leads ?? 0,
+          Anuncios: p?.Anuncios ?? p?.anuncios_activos ?? p?.AnunciosActivos ?? 0,
+          Precio: p?.Precio ?? p?.precio ?? 0,
+        })
+        const normalized = planesData.map(normalize)
+        console.log("[v0] Available plans loaded:", normalized)
+        setAvailablePlans(normalized)
       }
     } catch (err) {
       console.log("[v0] Error in fetchAvailablePlans:", err)
@@ -884,6 +915,19 @@ export default function AnunciosPage() {
       setCurrentPlanId(planId)
       console.log(`[v0] Inmobiliaria plan ID: ${planId} (type: ${typeof planId})`)
 
+      try {
+        const lastKey = `rf_lastPlanId_${String(inmobiliariaId)}`
+        const resetKey = `rf_planResetAt_${String(inmobiliariaId)}`
+        const prev = typeof window !== "undefined" ? window.localStorage.getItem(lastKey) : null
+        const curr = String(planId)
+        if (!prev || prev !== curr) {
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(resetKey, new Date().toISOString())
+            window.localStorage.setItem(lastKey, curr)
+          }
+        }
+      } catch {}
+
       const { data: planesData, error: planesError } = await supabase.from("Planes").select("*")
 
       if (planesError || !planesData || planesData.length === 0) {
@@ -902,7 +946,14 @@ export default function AnunciosPage() {
         return
       }
 
-      const matchingPlan = planesData.find((p: any) => p.idp === planId || p.id === planId)
+      const normalize = (p: any) => ({
+        ...p,
+        ejecuciones: p?.ejecuciones ?? p?.leads ?? p?.Leads ?? 0,
+        Anuncios: p?.Anuncios ?? p?.anuncios_activos ?? p?.AnunciosActivos ?? 0,
+        Precio: p?.Precio ?? p?.precio ?? 0,
+      })
+      const normalizedPlans = (planesData || []).map(normalize)
+      const matchingPlan = normalizedPlans.find((p: any) => p.idp === planId || (p as any).id === planId)
 
       if (matchingPlan) {
         console.log(
@@ -978,7 +1029,7 @@ export default function AnunciosPage() {
         const fallbackQuery = supabase
           .from("Anuncios")
           .select(
-            "ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal",
+            "ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos",
           )
           .eq("usuario", inmobiliariaId)
           .order("created_at", { ascending: false })
@@ -1012,6 +1063,8 @@ export default function AnunciosPage() {
       const now = new Date()
       const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      const cutoffDate = planResetAt ? planResetAt : monthStart
 
       for (const anuncio of anuncios) {
         const referencia = anuncio.Referencia || `REF-${anuncio.ida}`
@@ -1029,6 +1082,11 @@ export default function AnunciosPage() {
         }
 
         const leadsTotales = allLeads?.length || 0
+        const leadsDesdeCorte = allLeads?.filter((lead) => {
+          const createdAt = new Date(lead.created_at)
+          return createdAt >= cutoffDate
+        }) || []
+        const leadsMes = leadsDesdeCorte.length
         console.log(`[v0] Total leads for ${referencia}: ${leadsTotales}`)
 
         const nuevosHoy =
@@ -1049,16 +1107,17 @@ export default function AnunciosPage() {
 
         // We'll match by email addresses from the leads
         const leadEmails = allLeads?.map((lead) => lead.Correo).filter(Boolean) || []
-        let emailsEnviados = 0
+        let emailsEnviadosMes = 0
 
         if (leadEmails.length > 0) {
           const { data: correos, error: correosError } = await supabase
             .from("Correos")
-            .select("id")
+            .select("id, created_at")
             .in("to", leadEmails)
+            .gte("created_at", cutoffDate.toISOString())
 
           if (!correosError && correos) {
-            emailsEnviados = correos.length
+            emailsEnviadosMes = correos.length
           }
         }
 
@@ -1101,7 +1160,7 @@ export default function AnunciosPage() {
         }
 
         const porcentajeCompletos = leadsTotales > 0 ? (datosCompletosCount / leadsTotales) * 100 : 0
-        const tiempoAhorrado = (emailsEnviados * 2.27) / 60 // 2.27 minutes per email, converted to hours
+        const tiempoAhorrado = (emailsEnviadosMes * 2.27) / 60
 
         const estado: "activo" | "pausado" | "error" | "archivado" =
           anuncio.Activacion === "Activo"
@@ -1118,7 +1177,7 @@ export default function AnunciosPage() {
         if (nuevosHoy === 0 && leadsTotales > 0) healthScore -= 15 // No new leads today
         if (leadsTotales === 0) healthScore -= 40 // No leads at all
 
-        const ejecuciones = leadsTotales + emailsEnviados
+        const ejecuciones = leadsMes + emailsEnviadosMes
 
         // Add fechaCreacion for stats modal
         const fechaCreacion = anuncio.created_at ? new Date(anuncio.created_at).toLocaleDateString("es-ES") : "N/A"
@@ -1142,7 +1201,7 @@ export default function AnunciosPage() {
           fotoUrl: anuncio.Foto_Url || "",
           adjuntos: anuncio.Adjuntos || [],
           nuevosHoy,
-          emailsEnviados,
+          emailsEnviados: emailsEnviadosMes,
           datosCompletos: datosCompletosCount,
           leadsTotales,
           aLaEspera,
@@ -1217,10 +1276,11 @@ export default function AnunciosPage() {
           variant: "destructive",
         })
       } else {
+        const estadoLiteral: AnuncioCard["estado"] = newEstado === "activo" ? "activo" : "pausado"
         setAnunciosCards((prev) =>
           prev.map((anuncio) =>
             anuncio.id === anuncioId
-              ? { ...anuncio, activacion: newActivacion, estado: newEstado }
+              ? { ...anuncio, activacion: newActivacion, estado: estadoLiteral }
               : anuncio,
           ),
         )
@@ -1929,10 +1989,12 @@ export default function AnunciosPage() {
   const percentageRemaining = 100 - percentageUsed
   const remainingExecutions = planLimit - totalEjecuciones
 
-  // Calculate daily consumption rate (assuming we're partway through the month)
   const today = new Date()
-  const dayOfMonth = today.getDate()
-  const dailyRate = dayOfMonth > 0 ? totalEjecuciones / dayOfMonth : 0
+  const defaultMonthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+  const resetBase = planResetAt ? planResetAt : defaultMonthStart
+  const msPerDay = 1000 * 60 * 60 * 24
+  const daysElapsed = Math.max(1, Math.ceil((today.getTime() - resetBase.getTime()) / msPerDay))
+  const dailyRate = daysElapsed > 0 ? totalEjecuciones / daysElapsed : 0
   const daysUntilLimit = dailyRate > 0 ? Math.floor(remainingExecutions / dailyRate) : 999
 
   // Determine alert level and messaging
@@ -2017,10 +2079,31 @@ export default function AnunciosPage() {
     try {
       console.log(`[v0] Changing plan to ID: ${newPlanId}`)
 
-      const { error } = await supabase.from("Inmobiliarias").update({ Plan: newPlanId }).eq("idi", inmobiliariaId)
-
-      if (error) {
-        console.log("[v0] Error updating plan:", error)
+      const tables = ["Inmobiliarias", "inmobiliarias", "Inmobiliaria", "inmobiliaria"]
+      const idiVals = [Number(inmobiliariaId), String(inmobiliariaId)]
+      let updatedRows = 0
+      let lastError: any = null
+      for (const t of tables) {
+        for (const v of idiVals) {
+          const { data, error } = await supabase
+            .from(t)
+            .update({ Plan: newPlanId })
+            .eq("idi", v)
+            .select("idi, Plan")
+          if (error) {
+            lastError = error
+          }
+          if (data && data.length > 0) {
+            updatedRows = data.length
+            break
+          }
+        }
+        if (updatedRows > 0) {
+          break
+        }
+      }
+      if (updatedRows === 0) {
+        console.log("[v0] Plan update failed", { error: lastError })
         toast({
           title: "Error",
           description: "No se pudo cambiar el plan",
@@ -2112,7 +2195,7 @@ export default function AnunciosPage() {
         })
 
         // Close dialog and refresh leads list
-        setVisitDateDialog({ open: false, leadId: "", leadName: "", selectedDate: "", selectedAgenteId: "" })
+        setVisitDateDialog({ open: false, leadId: "", leadName: "", selectedDate: "", selectedTime: "", selectedAgenteId: "" })
 
         // Refresh completos leads if expanded
         if (expandedLeadsAnuncio) {
