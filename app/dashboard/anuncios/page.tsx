@@ -28,6 +28,7 @@ import { toast } from "@/hooks/use-toast"
 import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover" // Added Popover imports
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
+import ChangePlanButton from "@/components/change-plan-button"
 import { createBrowserClient } from "@/lib/supabase/client" // Added for createBrowserClient
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts" // Added recharts imports
 
@@ -120,10 +121,14 @@ export default function AnunciosPage() {
   const [totalCompletos, setTotalCompletos] = useState(0)
   const [totalEjecuciones, setTotalEjecuciones] = useState(0)
   const [planLimit, setPlanLimit] = useState(1000)
+  const [anunciosLimit, setAnunciosLimit] = useState(0)
+  const [cardsLoading, setCardsLoading] = useState(false)
   const [availablePlans, setAvailablePlans] = useState<any[]>([])
   const [showPlanSelector, setShowPlanSelector] = useState(false)
   const [currentPlanId, setCurrentPlanId] = useState<number | null>(null)
   const [planResetAt, setPlanResetAt] = useState<Date | null>(null)
+  const [scheduledPlanId, setScheduledPlanId] = useState<number>(0)
+  const [scheduledEffectiveAt, setScheduledEffectiveAt] = useState<Date | null>(null)
   const [selectedAnuncios, setSelectedAnuncios] = useState<Set<string>>(new Set())
   const [showFilters, setShowFilters] = useState(false)
   const [showProcessingDrawer, setShowProcessingDrawer] = useState(false)
@@ -470,39 +475,34 @@ export default function AnunciosPage() {
   useEffect(() => {
     console.log("[DEBUG] useEffect triggered - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
     if (!inmobiliariaLoading && inmobiliariaId !== null) {
-      console.log("[DEBUG] Calling all fetch functions with inmobiliariaId:", inmobiliariaId);
-      checkUser()
-      fetchAnuncios()
-      fetchPlanLimit()
-      fetchAvailablePlans()
-      fetchAgentes(inmobiliariaId);
+      console.log("[DEBUG] Calling ordered fetch with inmobiliariaId:", inmobiliariaId);
+      const run = async () => {
+        await fetchPlanLimit()
+        await fetchAvailablePlans()
+        await fetchAnuncios()
+        await fetchAgentes(inmobiliariaId)
+        checkUser()
+      }
+      run()
     } else {
       console.log("[DEBUG] Skipping fetch calls - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
     }
-  }, [inmobiliariaId, inmobiliariaLoading, planResetAt])
+  }, [inmobiliariaId, inmobiliariaLoading])
 
   useEffect(() => {
     try {
-      if (typeof window !== "undefined" && inmobiliariaId != null) {
+      if (planResetAt == null && typeof window !== "undefined" && inmobiliariaId != null) {
         const key = `rf_planResetAt_${String(inmobiliariaId)}`
         const saved = window.localStorage.getItem(key)
         if (saved) {
           const d = new Date(saved)
           if (!isNaN(d.getTime())) {
             setPlanResetAt(d)
-          } else {
-            setPlanResetAt(null)
           }
-        } else {
-          setPlanResetAt(null)
         }
-      } else {
-        setPlanResetAt(null)
       }
-    } catch {
-      setPlanResetAt(null)
-    }
-  }, [inmobiliariaId])
+    } catch {}
+  }, [inmobiliariaId, planResetAt])
 
   useEffect(() => {
     if (selectedAnuncioForStats && showStatsModal) {
@@ -890,14 +890,14 @@ export default function AnunciosPage() {
       console.log("[v0] Fetching plan limit from Planes table...")
 
       if (!inmobiliariaId) {
-        console.log("[v0] No inmobiliaria ID available, using default limit: 1000")
-        setPlanLimit(1000)
+        console.log("[v0] No inmobiliaria ID available, using default limit: 1000000")
+        setPlanLimit(1000000)
         return
       }
 
       const { data: inmobiliariaData, error: inmobiliariaError } = await supabase
         .from("Inmobiliarias")
-        .select("Plan")
+        .select("Plan, PlanResetAt, PlanNext, PlanNextEffectiveAt")
         .eq("idi", inmobiliariaId)
         .single()
 
@@ -906,13 +906,19 @@ export default function AnunciosPage() {
 
       if (inmobiliariaError || !inmobiliariaData?.Plan) {
         console.log("[v0] Error fetching inmobiliaria plan:", inmobiliariaError)
-        console.log("[v0] Using default limit: 1000")
-        setPlanLimit(1000)
+        console.log("[v0] Using default limit: 1000000")
+        setPlanLimit(1000000)
+        setAnunciosLimit(1000000)
         return
       }
 
       const planId = inmobiliariaData.Plan
+      const dbResetAt = inmobiliariaData.PlanResetAt ? new Date(inmobiliariaData.PlanResetAt) : null
       setCurrentPlanId(planId)
+      const scheduledId = inmobiliariaData.PlanNext ? Number(inmobiliariaData.PlanNext) : 0
+      const scheduledAt = inmobiliariaData.PlanNextEffectiveAt ? new Date(inmobiliariaData.PlanNextEffectiveAt) : null
+      setScheduledPlanId(scheduledId)
+      setScheduledEffectiveAt(scheduledAt)
       console.log(`[v0] Inmobiliaria plan ID: ${planId} (type: ${typeof planId})`)
 
       try {
@@ -920,10 +926,20 @@ export default function AnunciosPage() {
         const resetKey = `rf_planResetAt_${String(inmobiliariaId)}`
         const prev = typeof window !== "undefined" ? window.localStorage.getItem(lastKey) : null
         const curr = String(planId)
-        if (!prev || prev !== curr) {
-          if (typeof window !== "undefined") {
-            window.localStorage.setItem(resetKey, new Date().toISOString())
+        if (typeof window !== "undefined") {
+          if (dbResetAt && !isNaN(dbResetAt.getTime())) {
+            window.localStorage.setItem(resetKey, dbResetAt.toISOString())
+          }
+          if (!prev || prev !== curr) {
             window.localStorage.setItem(lastKey, curr)
+            if (!dbResetAt) {
+              window.localStorage.setItem(resetKey, new Date().toISOString())
+            }
+          }
+        }
+        if (dbResetAt && !isNaN(dbResetAt.getTime())) {
+          if (!planResetAt || planResetAt.getTime() !== dbResetAt.getTime()) {
+            setPlanResetAt(dbResetAt)
           }
         }
       } catch {}
@@ -939,9 +955,11 @@ export default function AnunciosPage() {
             `[v0] Plan limit loaded from fallback: ${fallbackPlan.ejecuciones} ejecuciones (${fallbackPlan.Nombre} plan)`,
           )
           setPlanLimit(fallbackPlan.ejecuciones)
+          setAnunciosLimit(fallbackPlan.Anuncios)
         } else {
-          console.log("[v0] No fallback plan found for ID:", planId, "using default: 1000")
-          setPlanLimit(1000)
+          console.log("[v0] No fallback plan found for ID:", planId, "using default: 1000000")
+          setPlanLimit(1000000)
+          setAnunciosLimit(1000000)
         }
         return
       }
@@ -960,19 +978,23 @@ export default function AnunciosPage() {
           `[v0] ✅ Plan limit loaded from database: ${matchingPlan.ejecuciones} ejecuciones (${matchingPlan.Nombre} plan)`,
         )
         setPlanLimit(matchingPlan.ejecuciones)
+        setAnunciosLimit(matchingPlan.Anuncios)
       } else {
         console.log("[v0] No matching plan found in database, using fallback")
         const fallbackPlan = getPlanData(planId)
 
         if (fallbackPlan) {
           setPlanLimit(fallbackPlan.ejecuciones)
+          setAnunciosLimit(fallbackPlan.Anuncios)
         } else {
-          setPlanLimit(1000)
+          setPlanLimit(1000000)
+          setAnunciosLimit(1000000)
         }
       }
     } catch (err) {
       console.log("[v0] Error fetching plan limit:", err)
-      setPlanLimit(1000)
+      setPlanLimit(1000000)
+      setAnunciosLimit(1000000)
     }
   }
 
@@ -991,6 +1013,7 @@ export default function AnunciosPage() {
     try {
       console.log("[v0] Fetching anuncios from database with proper schema mapping...")
       setLoading(true)
+      setCardsLoading(true)
 
       const {
         data: { user },
@@ -1009,6 +1032,7 @@ export default function AnunciosPage() {
         setAnunciosCards([])
         setTotalAnuncios(0)
         setLoading(false)
+        setCardsLoading(false)
         return
       }
 
@@ -1050,6 +1074,8 @@ export default function AnunciosPage() {
         setTotalLeads(0)
         setTotalCompletos(0)
         setTotalEjecuciones(0)
+        setLoading(false)
+        setCardsLoading(false)
         return
       }
 
@@ -1059,12 +1085,26 @@ export default function AnunciosPage() {
       let totalLeadsSum = 0
       let totalCompletosSum = 0
       let totalEjecucionesSum = 0
+      let totalLeadsMesSum = 0
 
       const now = new Date()
       const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      const cutoffDate = planResetAt ? planResetAt : monthStart
+      let cutoffDate = planResetAt ? planResetAt : monthStart
+      try {
+        const { data: inmRow } = await supabase
+          .from("Inmobiliarias")
+          .select("PlanResetAt")
+          .eq("idi", inmobiliariaId)
+          .maybeSingle()
+        if (inmRow?.PlanResetAt) {
+          const dbReset = new Date(inmRow.PlanResetAt)
+          if (!isNaN(dbReset.getTime())) {
+            cutoffDate = dbReset
+          }
+        }
+      } catch {}
 
       for (const anuncio of anuncios) {
         const referencia = anuncio.Referencia || `REF-${anuncio.ida}`
@@ -1227,6 +1267,7 @@ export default function AnunciosPage() {
         totalLeadsSum += leadsTotales
         totalCompletosSum += datosCompletosCount
         totalEjecucionesSum += ejecuciones
+        totalLeadsMesSum += leadsMes
       }
 
       // Sort by last activity, keeping archived ads at the bottom
@@ -1242,13 +1283,32 @@ export default function AnunciosPage() {
       setAnunciosCards(cards)
       setTotalLeads(totalLeadsSum)
       setTotalCompletos(totalCompletosSum)
-      setTotalEjecuciones(totalEjecucionesSum)
+
+      let consumo = 0
+      try {
+        const prIso = cutoffDate.toISOString()
+        const dateFields = ["created_at", "fecha_creacion", "fecha_registro"]
+        for (const field of dateFields) {
+          const { count, error } = await supabase
+            .from("Clientes")
+            .select("*", { count: "exact", head: true })
+            .eq("usuario", inmobiliariaId)
+            .gte(field, prIso)
+          if (!error) {
+            consumo = count || 0
+            break
+          }
+        }
+        
+      } catch {}
+      setTotalEjecuciones(consumo)
       console.log("[v0] Anuncios processing complete. Total cards:", cards.length)
     } catch (err) {
       setAnunciosError("Error al conectar con la base de datos")
       console.log("[v0] Anuncios fetch error:", err)
     } finally {
       setLoading(false)
+      setCardsLoading(false)
     }
   }
 
@@ -1265,6 +1325,21 @@ export default function AnunciosPage() {
       } else {
         newActivacion = currentActivacion === "Activo" ? "Pausado" : "Activo"
         newEstado = newActivacion === "Activo" ? "activo" : "pausado"
+      }
+
+      const willActivate = newActivacion === "Activo"
+      const unlimitedAds = anunciosLimit >= 1000000
+      if (willActivate && !unlimitedAds) {
+        const currentActive = anunciosCards.filter((a) => a.estado === "activo").length
+        const projectedActive = currentActive + 1
+        if (anunciosLimit > 0 && projectedActive > anunciosLimit) {
+          toast({
+            title: "Límite alcanzado",
+            description: "Has alcanzado el límite de anuncios activos de tu plan. Archiva alguno o cambia de plan.",
+            variant: "destructive",
+          })
+          return
+        }
       }
 
       const { error } = await supabase.from("Anuncios").update({ Activacion: newActivacion }).eq("ida", anuncioId)
@@ -1861,6 +1936,14 @@ export default function AnunciosPage() {
 
   const uniquePortals = [...new Set(anunciosCards.map((a) => a.portal))]
 
+  useEffect(() => {
+    try {
+      setCardsLoading(true)
+      const t = setTimeout(() => setCardsLoading(false), 300)
+      return () => clearTimeout(t)
+    } catch {}
+  }, [searchQuery, filterPortal, filterEstado, anunciosCards])
+
   const getHealthColor = (score: number) => {
     if (score >= 80) return "text-green-600"
     if (score >= 60) return "text-yellow-600"
@@ -1996,57 +2079,71 @@ export default function AnunciosPage() {
   const daysElapsed = Math.max(1, Math.ceil((today.getTime() - resetBase.getTime()) / msPerDay))
   const dailyRate = daysElapsed > 0 ? totalEjecuciones / daysElapsed : 0
   const daysUntilLimit = dailyRate > 0 ? Math.floor(remainingExecutions / dailyRate) : 999
+  const nextRenewalDate = (() => {
+    const y = resetBase.getFullYear()
+    const mNext = resetBase.getMonth() + 1
+    const d = resetBase.getDate()
+    const last = new Date(y, mNext + 1, 0).getDate()
+    return new Date(y, mNext, Math.min(d, last))
+  })()
+  const activeAnuncios = anunciosCards.filter((a) => a.estado === "activo").length
+  const activeAnunciosList = anunciosCards.filter((a) => a.estado === "activo")
+  const anunciosRemaining = anunciosLimit >= 1000000 ? "∞" : Math.max(0, anunciosLimit - activeAnuncios)
+  const anunciosPercentUsed = anunciosLimit >= 1000000 || anunciosLimit === 0 ? 0 : Math.min(100, (activeAnuncios / anunciosLimit) * 100)
 
   // Determine alert level and messaging
   const getAlertConfig = () => {
-    if (percentageUsed >= 100) {
+    const adsPercent = anunciosLimit > 0 && anunciosLimit < 1000000 ? anunciosPercentUsed : 0
+    const combinedUsed = Math.max(percentageUsed, adsPercent)
+    const combinedRemaining = 100 - combinedUsed
+    if (combinedUsed >= 100) {
       return {
         level: "critical",
         color: "bg-red-600",
         textColor: "text-red-600",
         borderColor: "border-red-600",
         icon: "🚨",
-        title: "Límite Alcanzado",
-        message: "Has consumido el 100% de tu plan. Actualiza ahora para continuar.",
+        title: `Límite Alcanzado`,
+        message: `Has consumido el 100% de tu plan. Leads ${totalEjecuciones}/${formatPlanValue(planLimit)} · Anuncios ${activeAnuncios}/${formatPlanValue(anunciosLimit)}.`,
         showUpgrade: true,
         cardHighlight: true,
       }
     }
-    if (percentageUsed >= 90) {
+    if (combinedUsed >= 90) {
       return {
         level: "danger",
         color: "bg-red-500",
         textColor: "text-red-600",
         borderColor: "border-red-500",
         icon: "⚠️",
-        title: `Solo queda ${percentageRemaining.toFixed(0)}% del plan`,
-        message: `Quedan ${remainingExecutions} leads. A este ritmo, alcanzarás el límite en ${daysUntilLimit} días.`,
+        title: `Queda ${combinedRemaining.toFixed(0)}% del plan`,
+        message: `Leads ${remainingExecutions} restantes · Anuncios ${typeof anunciosRemaining === "string" ? "ilimitados" : anunciosRemaining}. Ritmo leads: ${Math.round(dailyRate)}/día.`,
         showUpgrade: true,
         cardHighlight: true,
       }
     }
-    if (percentageUsed >= 75) {
+    if (combinedUsed >= 75) {
       return {
         level: "warning",
         color: "bg-orange-500",
         textColor: "text-orange-600",
         borderColor: "border-orange-500",
         icon: "⚠️",
-        title: `Queda ${percentageRemaining.toFixed(0)}% del plan`,
-        message: `Consumo diario promedio: ${Math.round(dailyRate)} leads/día. Estimado ${daysUntilLimit} días restantes.`,
+        title: `Queda ${combinedRemaining.toFixed(0)}% del plan`,
+        message: `Leads: ${Math.round(dailyRate)} al día · Estimado ${daysUntilLimit} días. Anuncios: ${activeAnuncios}/${formatPlanValue(anunciosLimit)}.`,
         showUpgrade: true,
         cardHighlight: false,
       }
     }
-    if (percentageUsed >= 50) {
+    if (combinedUsed >= 50) {
       return {
         level: "caution",
         color: "bg-yellow-500",
         textColor: "text-yellow-700",
         borderColor: "border-yellow-500",
         icon: "📊",
-        title: `Queda ${percentageRemaining.toFixed(0)}% del plan`,
-        message: `Has usado la mitad de tu plan. Ritmo actual: ${Math.round(dailyRate)} leads/día.`,
+        title: `Queda ${combinedRemaining.toFixed(0)}% del plan`,
+        message: `Has usado la mitad del plan. Leads: ${Math.round(dailyRate)} al día · Anuncios: ${activeAnuncios}/${formatPlanValue(anunciosLimit)}.`,
         showUpgrade: false,
         cardHighlight: false,
       }
@@ -2057,12 +2154,21 @@ export default function AnunciosPage() {
       textColor: "text-green-600",
       borderColor: "border-green-500",
       icon: "✅",
-      title: `Queda ${percentageRemaining.toFixed(0)}% del plan`,
-      message: `Consumo saludable. Promedio: ${Math.round(dailyRate)} leads/día.`,
+      title: `Queda ${combinedRemaining.toFixed(0)}% del plan`,
+      message: `Consumo saludable. Leads: ${Math.round(dailyRate)} al día · Anuncios: ${activeAnuncios}/${formatPlanValue(anunciosLimit)}.`,
       showUpgrade: false,
       cardHighlight: false,
     }
   }
+
+  const currentPlanName = (() => {
+    try {
+      const m = (availablePlans || []).find((p: any) => p?.idp === currentPlanId || (p as any)?.id === currentPlanId)
+      return m?.Nombre || (typeof currentPlanId === "number" ? getPlanData(currentPlanId)?.Nombre : "") || ""
+    } catch {
+      return (typeof currentPlanId === "number" ? getPlanData(currentPlanId)?.Nombre : "") || ""
+    }
+  })()
 
   const alertConfig = planLimit < 1000000 ? getAlertConfig() : null
 
@@ -2229,10 +2335,10 @@ export default function AnunciosPage() {
 
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs px-2 py-0">
-                  {anunciosCards.filter((a) => a.estado === "activo").length} Activos
+                  Anuncios activos {activeAnuncios}/{formatPlanValue(anunciosLimit)}
                 </Badge>
                 <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs px-2 py-0">
-                  {totalCompletos} Completos
+                  {totalCompletos} Leads completos (hoy)
                 </Badge>
               </div>
             </div>
@@ -2259,53 +2365,25 @@ export default function AnunciosPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-1.5">
-                    {alertConfig?.showUpgrade && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            size="sm"
-                            className={`h-7 text-xs ${
-                              percentageUsed >= 100
-                                ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold shadow-lg"
-                                : "border border-muted-foreground/30 bg-transparent hover:bg-muted/50 text-foreground"
-                            }`}
-                          >
-                            <ShoppingCart className="h-3 w-3 mr-1" />
-                            Cambiar Plan
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-80">
-                          <div className="px-2 py-1.5 text-sm font-semibold">Planes Disponibles</div>
-                          {availablePlans.map((plan) => (
-                            <DropdownMenuItem
-                              key={plan.idp}
-                              onClick={() => handleChangePlan(plan.idp)}
-                              className={`flex flex-col items-start gap-1 p-3 ${
-                                currentPlanId === plan.idp ? "bg-primary/10" : ""
-                              }`}
-                            >
-                              <div className="flex items-center justify-between w-full">
-                                <span className="font-semibold">{plan.Nombre}</span>
-                                <span className="text-sm font-bold">€{plan.Precio}/mes</span>
-                              </div>
-                              <div className="text-xs text-muted-foreground space-y-0.5">
-                                <div>
-                                  {plan.Usuarios} usuarios • {formatPlanValue(plan.ejecuciones)} leads
-                                </div>
-                                <div>
-                                  {formatPlanValue(plan.Anuncios)} anuncios • Soporte: {plan.Soporte}
-                                </div>
-                              </div>
-                              {currentPlanId === plan.idp && (
-                                <Badge variant="secondary" className="text-xs mt-1">
-                                  Plan Actual
-                                </Badge>
-                              )}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
+                    <div className="hidden sm:flex items-center gap-2 text-[10px] text-muted-foreground mr-2">
+                      <span>Renovación: {nextRenewalDate.toLocaleDateString("es-ES")}</span>
+                      <span>• Plan: {currentPlanName || ""}</span>
+                      {scheduledPlanId > 0 && scheduledEffectiveAt && (
+                        <span>• Downgrade programado: {scheduledEffectiveAt.toLocaleDateString("es-ES")}</span>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      className={`h-7 text-xs ${
+                        percentageUsed >= 100
+                          ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold shadow-lg"
+                          : "border border-muted-foreground/30 bg-transparent hover:bg-muted/50 text-foreground"
+                      }`}
+                      onClick={handleOpenPlanSelector}
+                    >
+                      <ShoppingCart className="h-3 w-3 mr-1" />
+                      Cambiar Plan
+                    </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button size="sm" variant="outline" className="h-7 text-xs bg-transparent">
@@ -2332,6 +2410,7 @@ export default function AnunciosPage() {
                 </div>
 
                 {/* Usage stats */}
+                <div className="text-[10px] text-muted-foreground">Leads</div>
                 <div className="grid grid-cols-3 gap-2 text-sm">
                   <div className="text-center p-1.5 bg-muted/50 rounded-lg">
                     <div className="text-lg font-bold">{totalEjecuciones.toLocaleString()}</div>
@@ -2348,6 +2427,51 @@ export default function AnunciosPage() {
                     <div className="text-[10px] text-muted-foreground">Días estimados</div>
                   </div>
                 </div>
+                
+                <div className="text-[10px] text-muted-foreground mt-1.5">Anuncios</div>
+                <div className="grid grid-cols-3 gap-2 text-sm mt-0.5">
+                  <div className="text-center p-1.5 bg-muted/50 rounded-lg">
+                    <div className="text-lg font-bold">{activeAnuncios}</div>
+                    <div className="text-[10px] text-muted-foreground">Activos</div>
+                  </div>
+                  <div className="text-center p-1.5 bg-muted/50 rounded-lg">
+                    <div className="text-lg font-bold">{formatPlanValue(anunciosLimit)}</div>
+                    <div className="text-[10px] text-muted-foreground">Límite (plan)</div>
+                  </div>
+                  <div className="text-center p-1.5 bg-muted/50 rounded-lg">
+                    <div className="text-lg font-bold">{typeof anunciosRemaining === "string" ? anunciosRemaining : anunciosRemaining}</div>
+                    <div className="text-[10px] text-muted-foreground">Restantes</div>
+                  </div>
+                </div>
+                {anunciosLimit < 1000000 && anunciosLimit > 0 && (
+                  <div className="mt-1.5">
+                    <Progress value={anunciosPercentUsed} className="h-1.5 bg-green-500" />
+                  </div>
+                )}
+                {anunciosLimit > 0 && activeAnuncios >= anunciosLimit && (
+                  <div className="mt-1.5 flex items-start gap-2 p-2 rounded-lg border border-red-500 bg-red-50">
+                    <span className="text-sm">🚨</span>
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-red-600">Has alcanzado el límite de anuncios activos de tu plan.</p>
+                      <div className="mt-1 flex gap-2">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="sm" variant="outline" className="h-7 text-xs bg-transparent">Archivar uno…</Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            {activeAnunciosList.map((an) => (
+                              <DropdownMenuItem key={an.id} onClick={() => handleOpenArchiveDialog(an)}>
+                                <Archive className="h-3 w-3 mr-2" />
+                                {an.referencia}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <Button size="sm" variant="default" className="h-7 text-xs" onClick={handleOpenPlanSelector}>Upgrade plan</Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Progress bar and details */}
                 {planLimit < 1000000 ? (
@@ -2435,6 +2559,12 @@ export default function AnunciosPage() {
             </div>
 
             <div className="space-y-3">
+              {cardsLoading && (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                  <span className="text-sm text-muted-foreground">Cargando anuncios…</span>
+                </div>
+              )}
               {filteredAnuncios.map((anuncio) => {
                 const isExpanded = expandedCard === anuncio.id
 
@@ -2502,7 +2632,7 @@ export default function AnunciosPage() {
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => handleVerCompletos(anuncio.referencia)}>
                                     <CheckCircle className="h-3.5 w-3.5 mr-2" />
-                                    Ver "Datos completos"
+                                    Ver &quot;Datos completos&quot;
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => handleInfoFaqs(anuncio)}>
                                     <Settings className="h-3.5 w-3.5 mr-2" />
@@ -2561,7 +2691,10 @@ export default function AnunciosPage() {
                             <Switch
                               checked={anuncio.estado === "activo"}
                               onCheckedChange={() => handleToggleEstado(anuncio.id, anuncio.activacion)}
-                              disabled={processingId === anuncio.id}
+                              disabled={
+                                processingId === anuncio.id ||
+                                (anuncio.estado !== "activo" && anunciosLimit > 0 && anunciosLimit < 1000000 && activeAnuncios >= anunciosLimit)
+                              }
                               className="scale-125"
                             />
                           </div>
@@ -3119,7 +3252,7 @@ export default function AnunciosPage() {
                       <div>
                         <p className="font-semibold">Campo crítico:</p>
                         <p className="mt-0.5">
-                          Este campo debe coincidir exactamente con la "Referencia Interna" de Idealista o Fotocasa para
+                          Este campo debe coincidir exactamente con la &quot;Referencia Interna&quot; de Idealista o Fotocasa para
                           que los leads se listen correctamente y evitar conflictos.
                         </p>
                       </div>
@@ -3719,10 +3852,7 @@ export default function AnunciosPage() {
                   className={`cursor-pointer transition-all hover:shadow-md ${
                     currentPlanId === plan.idp ? "border-primary border-2 bg-primary/5" : ""
                   }`}
-                  onClick={() => {
-                    handleChangePlan(plan.idp)
-                    setShowPlanSelector(false)
-                  }}
+                  onClick={() => {}}
                 >
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between mb-3">
@@ -3755,6 +3885,28 @@ export default function AnunciosPage() {
                         Plan Actual
                       </Badge>
                     )}
+                    <div className="mt-4 flex justify-end">
+                      <ChangePlanButton
+                        idi={Number(inmobiliariaId || 0)}
+                        planId={Number(plan.idp)}
+                        current={currentPlanId === plan.idp}
+                        redirectPath="/dashboard/anuncios"
+                        onSuccess={(newId) => {
+                          setCurrentPlanId(newId)
+                          setShowPlanSelector(false)
+                          try {
+                            const lastKey = `rf_lastPlanId_${String(inmobiliariaId)}`
+                            const resetKey = `rf_planResetAt_${String(inmobiliariaId)}`
+                            if (typeof window !== "undefined") {
+                              window.localStorage.setItem(lastKey, String(newId))
+                              window.localStorage.setItem(resetKey, new Date().toISOString())
+                            }
+                          } catch {}
+                          fetchPlanLimit()
+                          setPlanResetAt(new Date())
+                        }}
+                      />
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -3818,8 +3970,8 @@ export default function AnunciosPage() {
                   </div>
                 ) : (
                   <div>
-                    ¿Estás seguro de que deseas archivar el anuncio "{archivingAnuncio?.referencia}"? Podrás encontrarlo
-                    en la sección de "Archivados".
+                    ¿Estás seguro de que deseas archivar el anuncio &quot;{archivingAnuncio?.referencia}&quot;? Podrás encontrarlo
+                    en la sección de &quot;Archivados&quot;.
                   </div>
                 )}
               </DialogDescription>
@@ -3850,7 +4002,7 @@ export default function AnunciosPage() {
                   <div className="bg-red-50 border border-red-200 rounded-md p-3">
                     <div className="text-red-800 font-semibold mb-1">⚠️ ADVERTENCIA: Esta acción es irreversible</div>
                     <div className="text-red-700 text-sm">
-                      El anuncio "{deletingAnuncio?.referencia}" será eliminado permanentemente de la base de datos.
+                      El anuncio &quot;{deletingAnuncio?.referencia}&quot; será eliminado permanentemente de la base de datos.
                     </div>
                   </div>
                   <div className="text-sm text-muted-foreground">

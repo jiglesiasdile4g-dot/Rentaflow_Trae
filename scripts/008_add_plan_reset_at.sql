@@ -1,0 +1,1 @@
+ALTER TABLE public."Inmobiliarias" ADD COLUMN IF NOT EXISTS "PlanResetAt" timestamptz;

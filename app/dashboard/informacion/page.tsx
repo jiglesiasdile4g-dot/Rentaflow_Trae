@@ -77,37 +77,28 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
       revalidatePath("/dashboard/informacion")
       redirect(`/dashboard/informacion?planUpdate=error&msg=${encodeURIComponent("Parámetros inválidos")}`)
     }
-    let updatedRows = 0
-    let lastError: any = null
+    let ok = false
+    let msg = ""
     try {
-      const { data, error } = await supa
-        .from("Inmobiliarias")
-        .update({ Plan: planId })
-        .eq("idi", idi)
-        .select("idi, Plan")
-      if (error) {
-        lastError = error
-      }
-      updatedRows = Array.isArray(data) ? data.length : 0
-      if (!lastError && updatedRows === 0) {
-        const { data: checkRow, error: readErr } = await supa
-          .from("Inmobiliarias")
-          .select("idi, Plan")
-          .eq("idi", idi)
-          .maybeSingle()
-        if (readErr) {
-          lastError = readErr
-        } else if (checkRow && typeof checkRow.Plan !== "undefined") {
-          updatedRows = 1
-        }
+      const apiRes = await fetch(`/api/inmobiliarias/plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId, idi }),
+        cache: "no-store",
+      })
+      const payload = await apiRes.json().catch(() => ({}))
+      ok = !!payload?.ok
+      if (!ok) {
+        msg = payload?.error || "No se pudo actualizar el plan"
+      } else {
+        msg = "Plan actualizado correctamente"
       }
     } catch (e: any) {
-      lastError = e
+      ok = false
+      msg = e?.message || "No se pudo actualizar el plan"
     }
-    console.log("[v0] changePlanAction result", { updatedRows, error: lastError })
+    console.log("[v0] changePlanAction via API result", { ok, msg })
     revalidatePath("/dashboard/informacion")
-    const ok = updatedRows > 0 && !lastError
-    const msg = ok ? "Plan actualizado correctamente" : (lastError?.message || "No se pudo actualizar el plan")
     redirect(`/dashboard/informacion?planUpdate=${ok ? "success" : "error"}&planId=${planId}&msg=${encodeURIComponent(msg)}`)
   }
 

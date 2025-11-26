@@ -6,25 +6,28 @@
 // import { DialogContent } from "@/components/ui/dialog"
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
 
 import { useState, useEffect } from "react"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw } from 'lucide-react'
+import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2 } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
 import React from "react" // Imported React
 import { LeadApproveWrapper } from "@/components/lead-approve-wrapper"
 import { LeadDenyWrapper } from "@/components/lead-deny-wrapper"
+import { getPlanData, formatPlanValue } from "@/lib/plan-data"
 
 const WhatsAppIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -52,6 +55,7 @@ type Lead = {
     | "Pedir Aval"
     | "Visita Propuesta" // Added for new status
   Pedir_Aval?: boolean
+  Apellidos?: string
   Nombre?: string
   Correo?: string
   Telefono?: string
@@ -78,6 +82,7 @@ type Lead = {
   "Correo 3"?: string
   "Telefono 3"?: string
   "Codigo_Postal 3"?: string
+  "Pais 3"?: string
   tipo3?: string
   Persona_4?: string
   "Tipo_Documento 4"?: string
@@ -89,13 +94,14 @@ type Lead = {
   "Codigo_Postal 4"?: string
   tipo4?: string
   Obsevaciones?: string
-  Recordatorio?: boolean
+  Recordatorio?: string | boolean
   usuario?: number
   visita_propuesta?: boolean
   aceptado?: boolean
   Fecha_Datos_Completos?: string
-  "fecha de visita"?: string // Added for visit date
-  "visista completada"?: boolean
+  fecha_de_visita?: string
+  visita_completada?: string | boolean
+  idag?: number | string
   Observaciones?: string
 }
 
@@ -138,6 +144,7 @@ export default function LeadsPage() {
   const [isCommDialogOpen, setIsCommDialogOpen] = useState(false)
   const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [adsLoading, setAdsLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
@@ -191,11 +198,12 @@ export default function LeadsPage() {
 
   const supabase = createClient()
   const pathname = usePathname()
+  const router = useRouter()
 
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([])
   const [isBulkSelectionMode, setIsBulkSelectionMode] = useState(false)
   const [bulkConfirmationOpen, setBulkConfirmationOpen] = useState(false)
-  const [pendingBulkStatus, setPendingBulkStatus] = useState<string | null>(null)
+  const [pendingBulkStatus, setPendingBulkStatus] = useState<Lead["Estado"] | null>(null)
 
   const [visitDateDialogOpen, setVisitDateDialogOpen] = useState(false)
   const [selectedLeadForVisit, setSelectedLeadForVisit] = useState<Lead | null>(null)
@@ -203,6 +211,16 @@ export default function LeadsPage() {
   const [newVisitDateTime, setNewVisitDateTime] = useState("")
   const [selectedAgenteId, setSelectedAgenteId] = useState("")
   const [agentes, setAgentes] = useState<any[]>([])
+
+  const [planLimit, setPlanLimit] = useState<number>(1000000)
+  const [planResetAt, setPlanResetAt] = useState<Date | null>(null)
+  const [totalEjecuciones, setTotalEjecuciones] = useState<number>(0)
+  const [planInactive, setPlanInactive] = useState<boolean>(false)
+  const [adsPaused, setAdsPaused] = useState<boolean>(false)
+  const [currentPlanId, setCurrentPlanId] = useState<number>(0)
+  const [currentPlanName, setCurrentPlanName] = useState<string>("")
+  const [scheduledPlanId, setScheduledPlanId] = useState<number>(0)
+  const [scheduledEffectiveAt, setScheduledEffectiveAt] = useState<Date | null>(null)
 
 
   const fetchAgentes = async (inmobiliariaId: number) => {
@@ -236,15 +254,27 @@ export default function LeadsPage() {
 
   useEffect(() => {
     if (!inmobiliariaLoading && inmobiliariaId !== null) {
-      fetchLeads()
-      fetchAdvertisements()
-      fetchAgentes(inmobiliariaId)
+      const run = async () => {
+        await fetchPlanStatus()
+        await fetchLeads()
+        await fetchAdvertisements()
+        await fetchAgentes(inmobiliariaId)
+      }
+      run()
     }
   }, [inmobiliariaId, inmobiliariaLoading])
 
   useEffect(() => {
     filterLeads()
   }, [searchTerm, statusFilter, selectedAdvertisement, leads, advertisements])
+
+  useEffect(() => {
+    try {
+      setAdsLoading(true)
+      const t = setTimeout(() => setAdsLoading(false), 300)
+      return () => clearTimeout(t)
+    } catch {}
+  }, [searchTerm, statusFilter, selectedAdvertisement, advertisements])
 
   useEffect(() => {
     calculateMetrics()
@@ -268,21 +298,21 @@ export default function LeadsPage() {
 
     // Total Leads (last 30 days)
     const leadsLast30Days = leadsToAnalyze.filter((lead) => {
-      const leadDate = new Date(lead.created_at)
+      const leadDate = new Date(lead.created_at || Date.now())
       return leadDate >= last30Days
     })
     setTotalLeads(leadsLast30Days.length)
 
     // Nuevos Hoy (last 24 hours)
     const leadsLast24Hours = leadsToAnalyze.filter((lead) => {
-      const leadDate = new Date(lead.created_at)
+      const leadDate = new Date(lead.created_at || Date.now())
       return leadDate >= last24Hours
     })
     setNewLeadsToday(leadsLast24Hours.length)
 
     // Completados (leads with complete data created in last 24 hours)
     const completedLast24Hours = leadsToAnalyze.filter((lead) => {
-      const leadDate = new Date(lead.created_at)
+      const leadDate = new Date(lead.created_at || Date.now())
       const isComplete = !!(
         lead.Nombre &&
         lead.Correo &&
@@ -302,8 +332,111 @@ export default function LeadsPage() {
     setConversionRate(rate)
   }
 
+  const fetchPlanStatus = async () => {
+    try {
+      if (!inmobiliariaId) return
+      const { data: inmobiliaria, error: inmobiliariaError } = await supabase
+        .from("Inmobiliarias")
+        .select("Plan, PlanResetAt, PlanNext, PlanNextEffectiveAt")
+        .eq("idi", inmobiliariaId)
+        .maybeSingle()
+      if (inmobiliariaError) throw inmobiliariaError
+      const planId = Number(inmobiliaria?.Plan) || 0
+      setCurrentPlanId(planId)
+      const scheduledId = Number(inmobiliaria?.PlanNext || 0)
+      const scheduledAt = inmobiliaria?.PlanNextEffectiveAt ? new Date(inmobiliaria.PlanNextEffectiveAt) : null
+      setScheduledPlanId(scheduledId)
+      setScheduledEffectiveAt(scheduledAt)
+      let limit = 1000000
+      try {
+        const { data: planesData } = await supabase.from("Planes").select("*")
+        if (planesData && planesData.length > 0) {
+          const normalize = (p: any) => ({
+            ...p,
+            ejecuciones: p?.ejecuciones ?? p?.leads ?? p?.Leads ?? 0,
+          })
+          const normalized = (planesData || []).map(normalize)
+          const match = normalized.find((p: any) => p?.idp === planId || (p as any)?.id === planId)
+          if (match) {
+            limit = Number(match.ejecuciones) || 1000000
+            setCurrentPlanName(String(match.Nombre || ""))
+          } else {
+            const fallback = getPlanData(planId)
+            limit = fallback?.ejecuciones ?? 1000000
+            setCurrentPlanName(String(fallback?.Nombre || ""))
+          }
+        } else {
+          const fallback = getPlanData(planId)
+          limit = fallback?.ejecuciones ?? 1000000
+          setCurrentPlanName(String(fallback?.Nombre || ""))
+        }
+      } catch {
+        const fallback = getPlanData(planId)
+        limit = fallback?.ejecuciones ?? 1000000
+        setCurrentPlanName(String(fallback?.Nombre || ""))
+      }
+      setPlanLimit(limit)
+      const pr = inmobiliaria?.PlanResetAt ? new Date(inmobiliaria.PlanResetAt) : (() => {
+        const now = new Date()
+        return new Date(now.getFullYear(), now.getMonth(), 1)
+      })()
+      setPlanResetAt(pr)
+      const prIso = pr.toISOString()
+      let consumo = 0
+      const dateFields = ["created_at", "fecha_creacion", "fecha_registro"]
+      for (const field of dateFields) {
+        const { count, error } = await supabase
+          .from("Clientes")
+          .select("*", { count: "exact", head: true })
+          .eq("usuario", inmobiliariaId)
+          .gte(field, prIso)
+        if (!error) {
+          consumo = count || 0
+          break
+        }
+      }
+      
+      setTotalEjecuciones(consumo)
+      const inactive = limit < 1000000 && consumo >= limit
+      setPlanInactive(inactive)
+      if (inactive && !adsPaused) {
+        await enforceAdvertisementsPaused()
+      }
+    } catch (err) {
+      setPlanInactive(false)
+    }
+  }
+
+  const enforceAdvertisementsPaused = async () => {
+    try {
+      if (!inmobiliariaId) return
+      const { data: activeAds, error: listErr } = await supabase
+        .from("Anuncios")
+        .select("ida")
+        .eq("usuario", inmobiliariaId)
+        .eq("Activacion", "Activo")
+      if (!listErr && Array.isArray(activeAds) && activeAds.length > 0) {
+        let anySuccess = false
+        for (const ad of activeAds) {
+          const { error: updErr } = await supabase.from("Anuncios").update({ Activacion: "Pausado" }).eq("ida", ad.ida)
+          if (!updErr) anySuccess = true
+        }
+        if (anySuccess) setAdsPaused(true)
+      } else {
+        const { error } = await supabase
+          .from("Anuncios")
+          .update({ Activacion: "Pausado" })
+          .eq("usuario", inmobiliariaId)
+          .eq("Activacion", "Activo")
+        if (!error) setAdsPaused(true)
+      }
+      await fetchAdvertisements()
+    } catch {}
+  }
+
   const fetchAdvertisements = async () => {
     try {
+      setAdsLoading(true)
       let query = supabase.from("Anuncios").select("*").order("created_at", { ascending: false })
 
       if (inmobiliariaId) {
@@ -317,6 +450,9 @@ export default function LeadsPage() {
       setAdvertisements(adsData || [])
     } catch (err) {
       console.error("[v0] Error fetching advertisements:", err)
+    }
+    finally {
+      setAdsLoading(false)
     }
   }
 
@@ -356,10 +492,23 @@ export default function LeadsPage() {
 
       if (leadsError) throw leadsError
 
-      setLeads(leadsData || [])
+      let rows = leadsData || []
+      if (planInactive) {
+        const processed = new Set([
+          "Datos Completos",
+          "Validado",
+          "Completado",
+          "Aceptado",
+          "Descartado",
+          "Rechazado",
+          "Visita Propuesta",
+        ])
+        rows = rows.filter((lead: any) => processed.has(String(lead?.Estado || "")))
+      }
+      setLeads(rows)
 
       if (leadsData) {
-        const uniqueStatuses = Array.from(new Set(leadsData.map((lead) => lead.Estado).filter(Boolean)))
+        const uniqueStatuses = Array.from(new Set((rows || []).map((lead) => lead.Estado).filter(Boolean)))
         setAvailableStatuses(uniqueStatuses)
       }
     } catch (err) {
@@ -431,6 +580,14 @@ export default function LeadsPage() {
   }
 
   const openCommunicationDetail = (comm: Communication) => {
+    if (planInactive) {
+      toast({
+        title: "Plan inactivo",
+        description: "Has alcanzado el límite del plan. No puedes abrir mensajes.",
+        variant: "destructive",
+      })
+      return
+    }
     setSelectedCommunication(comm)
     setIsCommDialogOpen(true)
   }
@@ -491,6 +648,19 @@ export default function LeadsPage() {
 
     if (statusFilter !== "all") {
       filtered = filtered.filter((lead) => lead.Estado === statusFilter)
+    }
+
+    if (planInactive) {
+      const processed = new Set([
+        "Datos Completos",
+        "Validado",
+        "Completado",
+        "Aceptado",
+        "Descartado",
+        "Rechazado",
+        "Visita Propuesta",
+      ])
+      filtered = filtered.filter((lead) => processed.has(String(lead.Estado || "")))
     }
 
     if (selectedAdvertisement && selectedAdvertisement !== "all") {
@@ -625,14 +795,14 @@ export default function LeadsPage() {
     setIsEditingPersonalInfo(false)
   }
 
-  const updateLeadStatus = async (leadId: string, newStatus: string) => {
+  const updateLeadStatus = async (leadId: number, newStatus: string) => {
     try {
       const { error } = await supabase.from("Clientes").update({ Estado: newStatus }).eq("id", leadId)
 
       if (error) throw error
 
       // Update local state
-      setLeads(leads.map((lead) => (lead.id === leadId ? { ...lead, Estado: newStatus } : lead)))
+      setLeads(leads.map((lead) => (String(lead.id) === String(leadId) ? { ...lead, Estado: newStatus as Lead["Estado"] } : lead)))
 
       console.log("[v0] Lead status updated successfully")
     } catch (err) {
@@ -1010,7 +1180,7 @@ export default function LeadsPage() {
       }
     }
 
-    const updateBulkLeadStatus = async (newStatus: string) => {
+    const updateBulkLeadStatus = async (newStatus: Lead["Estado"]) => {
       setPendingBulkStatus(newStatus)
       setBulkConfirmationOpen(true)
     }
@@ -1030,7 +1200,7 @@ export default function LeadsPage() {
       }
 
       setLeads((prevLeads) =>
-        prevLeads.map((lead) => (selectedLeadIds.includes(lead.id) ? { ...lead, Estado: pendingBulkStatus } : lead)),
+        prevLeads.map((lead) => (selectedLeadIds.includes(lead.id) ? { ...lead, Estado: pendingBulkStatus as Lead["Estado"] } : lead)),
       )
 
       toast({
@@ -1211,11 +1381,123 @@ export default function LeadsPage() {
                   <h2 className="text-3xl font-bold text-foreground">Leads</h2>
                   <p className="text-muted-foreground mt-2">Gestión de clientes potenciales</p>
                 </div>
-                <Button onClick={() => setIsNewLeadDialogOpen(true)}>
+                <Button onClick={() => setIsNewLeadDialogOpen(true)} disabled={planInactive}>
                   <Users className="h-4 w-4 mr-2" />
                   Nuevo Lead
                 </Button>
               </div>
+              {
+                (() => {
+                  const percentageUsed = planLimit < 1000000 ? (totalEjecuciones / planLimit) * 100 : 0
+                  const today = new Date()
+                  const defaultMonthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+                  const resetBase = planResetAt ? planResetAt : defaultMonthStart
+                  const msPerDay = 1000 * 60 * 60 * 24
+                  const daysElapsed = Math.max(1, Math.ceil((today.getTime() - resetBase.getTime()) / msPerDay))
+                  const remainingExecutions = planLimit - totalEjecuciones
+                  const dailyRate = daysElapsed > 0 ? totalEjecuciones / daysElapsed : 0
+                  const daysUntilLimit = dailyRate > 0 ? Math.floor(remainingExecutions / dailyRate) : 999
+                  const nextRenewalDate = (() => {
+                    const y = resetBase.getFullYear()
+                    const mNext = resetBase.getMonth() + 1
+                    const d = resetBase.getDate()
+                    const last = new Date(y, mNext + 1, 0).getDate()
+                    return new Date(y, mNext, Math.min(d, last))
+                  })()
+                  const showCritical = planLimit < 1000000 && percentageUsed >= 100
+                  return (
+                    <>
+                      {planInactive && (
+                        <Alert variant="destructive" className="sticky top-2 z-10">
+                          <AlertDescription>
+                            Plan inactivo: Has alcanzado el límite. Mensajes y acciones están deshabilitados hasta la renovación.
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                    <Card
+                      className={`mt-4 border rounded-lg p-2 transition-all duration-300 ${
+                        showCritical
+                          ? `border-red-500/50 shadow-lg shadow-red-500/20 bg-gradient-to-br from-white via-red-50/30 to-red-100/40 ring-2 ring-red-500/20`
+                          : "bg-card border"
+                      }`}
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-sm">Consumo del Plan</h3>
+                            {showCritical && (
+                              <Badge variant="outline" className="text-red-600 border-current font-semibold text-xs px-1.5 py-0">
+                                🚨 Límite Alcanzado
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                          <div className="hidden sm:flex items-center gap-2 text-[10px] text-muted-foreground mr-2">
+                            <span>Renovación: {nextRenewalDate.toLocaleDateString("es-ES")}</span>
+                            <span>• Plan: {currentPlanName || (() => { const pd = getPlanData(currentPlanId); return pd ? pd.Nombre : String(currentPlanId || "") })()}</span>
+                            {scheduledPlanId > 0 && scheduledEffectiveAt && (
+                              <span>• Downgrade programado: {scheduledEffectiveAt.toLocaleDateString("es-ES")}</span>
+                            )}
+                          </div>
+                            <Button
+                              size="sm"
+                              className={`h-7 text-xs ${
+                                showCritical
+                                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold shadow-lg"
+                                  : "border border-muted-foreground/30 bg-transparent hover:bg-muted/50 text-foreground"
+                              }`}
+                              onClick={() => router.push("/dashboard/informacion")}
+                            >
+                              <ShoppingCart className="h-3 w-3 mr-1" />
+                              Cambiar Plan
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">Leads</div>
+                        <div className="grid grid-cols-3 gap-2 text-sm">
+                          <div className="text-center p-1.5 bg-muted/50 rounded-lg">
+                            <div className="text-lg font-bold">{totalEjecuciones.toLocaleString()}</div>
+                            <div className="text-[10px] text-muted-foreground">Usadas</div>
+                          </div>
+                          <div className="text-center p-1.5 bg-muted/50 rounded-lg">
+                            <div className={`text-lg font-bold ${showCritical ? "text-red-600" : "text-foreground"}`}>
+                              {planLimit < 1000000 ? Math.max(0, remainingExecutions).toLocaleString() : "∞"}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground">Restantes</div>
+                          </div>
+                          <div className="text-center p-1.5 bg-muted/50 rounded-lg">
+                            <div className="text-lg font-bold">{planLimit < 1000000 ? (daysUntilLimit >= 0 ? daysUntilLimit : 0) : "∞"}</div>
+                            <div className="text-[10px] text-muted-foreground">Días estimados</div>
+                          </div>
+                        </div>
+                        {planLimit < 1000000 && (
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                              <span>
+                                {totalEjecuciones.toLocaleString()} / {formatPlanValue(planLimit)} leads
+                              </span>
+                              <span className="font-semibold">{percentageUsed.toFixed(1)}% usado</span>
+                            </div>
+                            <Progress value={percentageUsed} className={`h-2 ${showCritical ? "bg-red-600" : "bg-blue-500"}`} />
+                            {showCritical && (
+                              <div className="flex items-start gap-2 p-2 rounded-lg border border-red-600 bg-red-50">
+                                <span className="text-sm">🚨</span>
+                                <div className="flex-1">
+                                  <p className="text-xs font-medium text-red-600">
+                                    Has consumido el 100% de tu plan. Leads {totalEjecuciones}/{formatPlanValue(planLimit)}.
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground mt-0.5">💡 Considera ampliar tu plan para evitar interrupciones.</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                    </>
+                  )
+                })()
+              }
               {/* Metrics Cards */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-8">
                 {" "}
@@ -1273,6 +1555,12 @@ export default function LeadsPage() {
                   </Badge>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1">
+                  {adsLoading && (
+                    <div className="col-span-full flex items-center justify-center py-6">
+                      <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                      <span className="text-sm text-muted-foreground">Cargando anuncios…</span>
+                    </div>
+                  )}
                   <Card
                     className={`cursor-pointer transition-all hover:shadow-md border-2 px-1 ${
                       selectedAdvertisement === null || selectedAdvertisement === "all"
@@ -1380,12 +1668,12 @@ export default function LeadsPage() {
                     </button>
                   )}
                 </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-full sm:w-48">
-                    <Filter className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Filtrar por estado" />
-                  </SelectTrigger>
-                  <SelectContent>
+                    <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value)}>
+                      <SelectTrigger className="w-full sm:w-48">
+                        <Filter className="h-4 w-4 mr-2" />
+                        <SelectValue placeholder="Filtrar por estado" />
+                      </SelectTrigger>
+                      <SelectContent>
                     <SelectItem value="all">Todos los estados</SelectItem>
                     {availableStatuses.map((status) => (
                       <SelectItem key={status} value={status}>
@@ -1718,20 +2006,20 @@ export default function LeadsPage() {
                                       <div className="flex items-center gap-1 ml-2">
                                         <Tooltip>
                                           <TooltipTrigger asChild>
-                                            <Button
-                                              size="sm"
-                                              variant="outline"
-                                              className="h-6 w-6 p-0 bg-transparent"
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                if (lead.Correo) {
-                                                  window.open(`mailto:${lead.Correo}`, "_blank")
-                                                }
-                                              }}
-                                              disabled={!lead.Correo}
-                                            >
-                                              <Mail className="h-3 w-3" />
-                                            </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-6 w-6 p-0 bg-transparent"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            if (lead.Correo) {
+                                              window.open(`mailto:${lead.Correo}`, "_blank")
+                                            }
+                                          }}
+                                          disabled={planInactive || !lead.Correo}
+                                        >
+                                          <Mail className="h-3 w-3" />
+                                        </Button>
                                           </TooltipTrigger>
                                           <TooltipContent>
                                             <p>Enviar correo</p>
@@ -1740,23 +2028,23 @@ export default function LeadsPage() {
 
                                         <Tooltip>
                                           <TooltipTrigger asChild>
-                                            <Button
-                                              size="sm"
-                                              variant="outline"
-                                              className="h-6 w-6 p-0 bg-transparent"
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                if (lead.Telefono) {
-                                                  window.open(
-                                                    `https://wa.me/${lead.Telefono.replace(/\D/g, "")}`,
-                                                    "_blank",
-                                                  )
-                                                }
-                                              }}
-                                              disabled={!lead.Telefono}
-                                            >
-                                              <WhatsAppIcon className="h-3 w-3" />
-                                            </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-6 w-6 p-0 bg-transparent"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            if (lead.Telefono) {
+                                              window.open(
+                                                `https://wa.me/${lead.Telefono.replace(/\D/g, "")}`,
+                                                "_blank",
+                                              )
+                                            }
+                                          }}
+                                          disabled={planInactive || !lead.Telefono}
+                                        >
+                                          <WhatsAppIcon className="h-3 w-3" />
+                                        </Button>
                                           </TooltipTrigger>
                                           <TooltipContent>
                                             <p>Contactar por WhatsApp</p>
@@ -1774,6 +2062,7 @@ export default function LeadsPage() {
                                                   onClick={(e) => {
                                                     e.stopPropagation()
                                                   }}
+                                                  disabled={planInactive}
                                                 >
                                                   <MoreVertical className="h-3 w-3" />
                                                 </Button>
@@ -1787,7 +2076,7 @@ export default function LeadsPage() {
                                             <DropdownMenuItem
                                               onClick={(e) => {
                                                 e.stopPropagation()
-                                                updateLeadStatus(lead.id, "Pendiente")
+                                                updateLeadStatus(Number(lead.id), "Pendiente")
                                               }}
                                             >
                                               Pendiente
@@ -1795,7 +2084,7 @@ export default function LeadsPage() {
                                             <DropdownMenuItem
                                               onClick={(e) => {
                                                 e.stopPropagation()
-                                                updateLeadStatus(lead.id, "Validado")
+                                                updateLeadStatus(Number(lead.id), "Validado")
                                               }}
                                             >
                                               Validado
@@ -1803,7 +2092,7 @@ export default function LeadsPage() {
                                             <DropdownMenuItem
                                               onClick={(e) => {
                                                 e.stopPropagation()
-                                                updateLeadStatus(lead.id, "Completado")
+                                                updateLeadStatus(Number(lead.id), "Completado")
                                               }}
                                             >
                                               Completado
@@ -1811,7 +2100,7 @@ export default function LeadsPage() {
                                             <DropdownMenuItem
                                               onClick={(e) => {
                                                 e.stopPropagation()
-                                                updateLeadStatus(lead.id, "Rechazado")
+                                                updateLeadStatus(Number(lead.id), "Rechazado")
                                               }}
                                             >
                                               Rechazado
@@ -1819,7 +2108,7 @@ export default function LeadsPage() {
                                             <DropdownMenuItem
                                               onClick={(e) => {
                                                 e.stopPropagation()
-                                                updateLeadStatus(lead.id, "Aceptado")
+                                                updateLeadStatus(Number(lead.id), "Aceptado")
                                               }}
                                             >
                                               Aceptado
@@ -1827,7 +2116,7 @@ export default function LeadsPage() {
                                             <DropdownMenuItem
                                               onClick={(e) => {
                                                 e.stopPropagation()
-                                                updateLeadStatus(lead.id, "Descartado")
+                                                updateLeadStatus(Number(lead.id), "Descartado")
                                               }}
                                             >
                                               Descartado
@@ -2087,7 +2376,7 @@ export default function LeadsPage() {
                                                 window.open(`mailto:${lead.Correo}`, "_blank")
                                               }
                                             }}
-                                            disabled={!lead.Correo}
+                                            disabled={planInactive || !lead.Correo}
                                           >
                                             <Mail className="h-3 w-3" />
                                           </Button>
@@ -2109,7 +2398,7 @@ export default function LeadsPage() {
                                                 window.open(`https://wa.me/${lead.Telefono.replace(/\D/g, "")}`, "_blank")
                                               }
                                             }}
-                                            disabled={!lead.Telefono}
+                                            disabled={planInactive || !lead.Telefono}
                                           >
                                             <WhatsAppIcon className="h-3 w-3" />
                                           </Button>
@@ -2130,6 +2419,7 @@ export default function LeadsPage() {
                                                 onClick={(e) => {
                                                   e.stopPropagation()
                                                 }}
+                                                disabled={planInactive}
                                               >
                                                 <MoreVertical className="h-3 w-3" />
                                               </Button>
@@ -2143,7 +2433,7 @@ export default function LeadsPage() {
                                           <DropdownMenuItem
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              updateLeadStatus(lead.id, "Pendiente")
+                                              updateLeadStatus(Number(lead.id), "Pendiente")
                                             }}
                                           >
                                             Pendiente
@@ -2151,7 +2441,7 @@ export default function LeadsPage() {
                                           <DropdownMenuItem
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              updateLeadStatus(lead.id, "Validado")
+                                              updateLeadStatus(Number(lead.id), "Validado")
                                             }}
                                           >
                                             Validado
@@ -2159,7 +2449,7 @@ export default function LeadsPage() {
                                           <DropdownMenuItem
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              updateLeadStatus(lead.id, "Completado")
+                                              updateLeadStatus(Number(lead.id), "Completado")
                                             }}
                                           >
                                             Completado
@@ -2167,7 +2457,7 @@ export default function LeadsPage() {
                                           <DropdownMenuItem
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              updateLeadStatus(lead.id, "Rechazado")
+                                              updateLeadStatus(Number(lead.id), "Rechazado")
                                             }}
                                           >
                                             Rechazado
@@ -2175,7 +2465,7 @@ export default function LeadsPage() {
                                           <DropdownMenuItem
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              updateLeadStatus(lead.id, "Aceptado")
+                                              updateLeadStatus(Number(lead.id), "Aceptado")
                                             }}
                                           >
                                             Aceptado
@@ -2183,7 +2473,7 @@ export default function LeadsPage() {
                                           <DropdownMenuItem
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              updateLeadStatus(lead.id, "Descartado")
+                                              updateLeadStatus(Number(lead.id), "Descartado")
                                             }}
                                           >
                                             Descartado
@@ -2306,15 +2596,15 @@ export default function LeadsPage() {
                           borderRadius: "6px",
                           fontSize: "0.875rem",
                           fontWeight: "400",
-                          cursor: selectedLead.Telefono ? "pointer" : "not-allowed",
-                          opacity: selectedLead.Telefono ? 1 : 0.5,
+                          cursor: planInactive ? "not-allowed" : selectedLead.Telefono ? "pointer" : "not-allowed",
+                          opacity: planInactive ? 0.5 : selectedLead.Telefono ? 1 : 0.5,
                         }}
                         onClick={() => {
                           if (selectedLead.Telefono) {
                             window.open(`https://wa.me/${selectedLead.Telefono.replace(/\D/g, "")}`, "_blank")
                           }
                         }}
-                        disabled={!selectedLead.Telefono}
+                        disabled={planInactive || !selectedLead.Telefono}
                       >
                         <Phone size={16} />
                         WhatsApp
@@ -2331,21 +2621,21 @@ export default function LeadsPage() {
                           borderRadius: "6px",
                           fontSize: "0.875rem",
                           fontWeight: "400",
-                          cursor: selectedLead.Correo ? "pointer" : "not-allowed",
-                          opacity: selectedLead.Correo ? 1 : 0.5,
+                          cursor: planInactive ? "not-allowed" : selectedLead.Correo ? "pointer" : "not-allowed",
+                          opacity: planInactive ? 0.5 : selectedLead.Correo ? 1 : 0.5,
                         }}
                         onClick={() => {
                           if (selectedLead.Correo) {
                             window.open(`mailto:${selectedLead.Correo}`, "_blank")
                           }
                         }}
-                        disabled={!selectedLead.Correo}
+                        disabled={planInactive || !selectedLead.Correo}
                       >
                         <Mail size={16} />
                         Correo
                       </button>
                     </div>
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", pointerEvents: planInactive ? "none" : "auto", opacity: planInactive ? 0.5 : 1 }}>
                       <LeadApproveWrapper
                         lead={selectedLead}
                         updateLeadStatus={updateLeadStatus}
@@ -3904,19 +4194,24 @@ export default function LeadsPage() {
                               padding: "1rem",
                               backgroundColor: "#f9fafb",
                               borderRadius: "8px",
-                              cursor: "pointer",
+                              cursor: planInactive ? "not-allowed" : "pointer",
                               transition: "all 0.2s",
+                              pointerEvents: planInactive ? "none" : "auto",
+                              opacity: planInactive ? 0.5 : 1,
                             }}
                             onClick={(e) => {
                               e.stopPropagation()
                               e.preventDefault()
+                              if (planInactive) return
                               openAvalDialog()
                             }}
                             onMouseEnter={(e) => {
+                              if (planInactive) return
                               e.currentTarget.style.backgroundColor = "#e5e7eb"
                               e.currentTarget.style.transform = "scale(1.02)"
                             }}
                             onMouseLeave={(e) => {
+                              if (planInactive) return
                               e.currentTarget.style.backgroundColor = "#f9fafb"
                               e.currentTarget.style.transform = "scale(1)"
                             }}
@@ -3954,13 +4249,13 @@ export default function LeadsPage() {
                                 fontStyle: "italic",
                               }}
                             >
-                              {new Date(selectedLead.created_at).toLocaleDateString("es-ES", {
+                              {new Date(selectedLead.created_at || Date.now()).toLocaleDateString("es-ES", {
                                 day: "numeric",
                                 month: "long",
                                 year: "numeric",
                               })}{" "}
                               a las{" "}
-                              {new Date(selectedLead.created_at).toLocaleTimeString("es-ES", {
+                              {new Date(selectedLead.created_at || Date.now()).toLocaleTimeString("es-ES", {
                                 hour: "2-digit",
                                 minute: "2-digit",
                               })}{" "}
@@ -4111,20 +4406,24 @@ export default function LeadsPage() {
                               return (
                                 <div
                                   key={comm.id}
-                                  onClick={() => openCommunicationDetail(comm)}
+                                  onClick={() => { if (planInactive) return; openCommunicationDetail(comm) }}
                                   style={{
                                     padding: "0.75rem",
                                     backgroundColor: isSent ? "#eff6ff" : "#f0fdf4",
                                     borderRadius: "6px",
                                     border: `1px solid ${isSent ? "#bfdbfe" : "#bbf7d0"}`,
-                                    cursor: "pointer",
+                                    cursor: planInactive ? "not-allowed" : "pointer",
                                     transition: "all 0.2s",
+                                    pointerEvents: planInactive ? "none" : "auto",
+                                    opacity: planInactive ? 0.5 : 1,
                                   }}
                                   onMouseEnter={(e) => {
+                                    if (planInactive) return
                                     e.currentTarget.style.backgroundColor = isSent ? "#dbeafe" : "#dcfce7"
                                     e.currentTarget.style.borderColor = isSent ? "#93c5fd" : "#86efac"
                                   }}
                                   onMouseLeave={(e) => {
+                                    if (planInactive) return
                                     e.currentTarget.style.backgroundColor = isSent ? "#eff6ff" : "#f0fdf4"
                                     e.currentTarget.style.borderColor = isSent ? "#bfdbfe" : "#bbf7d0"
                                   }}
@@ -4389,7 +4688,7 @@ export default function LeadsPage() {
                       <label className="text-xs font-medium text-muted-foreground">Estado</label>
                       <Select
                         value={newLeadFormData.Estado || "Pendiente"}
-                        onValueChange={(value) => setNewLeadFormData({ ...newLeadFormData, Estado: value })}
+                        onValueChange={(value) => setNewLeadFormData({ ...newLeadFormData, Estado: value as Lead["Estado"] })}
                       >
                         <SelectTrigger className="h-9 text-sm">
                           <SelectValue placeholder="Seleccionar estado" />
@@ -4453,7 +4752,7 @@ export default function LeadsPage() {
                     <div className="space-y-1">
                       <label className="text-xs font-medium text-muted-foreground">Recordatorio</label>
                       <Input
-                        value={newLeadFormData.Recordatorio || ""}
+                        value={typeof newLeadFormData.Recordatorio === "string" ? newLeadFormData.Recordatorio : ""}
                         onChange={(e) => setNewLeadFormData({ ...newLeadFormData, Recordatorio: e.target.value })}
                         placeholder="Recordatorio para seguimiento..."
                         className="h-9 text-sm"
@@ -4691,7 +4990,7 @@ export default function LeadsPage() {
                     className="flex-1"
                     onClick={async () => {
                       if (selectedLead.Correo) {
-                        await updateLeadStatus(selectedLead.id, "Pedir Aval")
+                        await updateLeadStatus(Number(selectedLead.id), "Pedir Aval")
 
                         // Update selectedLead state to reflect the change immediately
                         setSelectedLead({ ...selectedLead, Estado: "Pedir Aval" })

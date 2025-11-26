@@ -6,7 +6,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 
-export default function ChangePlanButton({ idi, planId, current }: { idi: number; planId: number; current: boolean }) {
+export default function ChangePlanButton({ idi, planId, current, redirectPath = "/dashboard/informacion", onSuccess, onError }: { idi: number; planId: number; current: boolean; redirectPath?: string; onSuccess?: (newPlanId: number) => void; onError?: (msg: string) => void }) {
   const router = useRouter()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
@@ -20,15 +20,23 @@ export default function ChangePlanButton({ idi, planId, current }: { idi: number
         body: JSON.stringify({ idi, planId }),
       })
       const j = await res.json().catch(() => ({}))
-      if (res.ok && j?.ok) {
-        toast({ title: "Éxito", description: "Plan actualizado correctamente" })
-        router.replace(`/dashboard/informacion?planUpdate=success&planId=${planId}`)
+      if (res.ok && j?.ok && j?.scheduled) {
+        const d = j?.scheduledAt ? new Date(j.scheduledAt) : null
+        const when = d && !isNaN(d.getTime()) ? d.toLocaleDateString("es-ES") : "próximo periodo"
+        toast({ title: "Downgrade programado", description: `Se aplicará en el siguiente periodo: ${when}` })
+        router.replace(`${redirectPath}?planUpdate=scheduled&planId=${planId}`)
         router.refresh()
+      } else if (res.ok && j?.ok) {
+        toast({ title: "Éxito", description: "Plan actualizado correctamente" })
+        router.replace(`${redirectPath}?planUpdate=success&planId=${planId}`)
+        router.refresh()
+        try { onSuccess && onSuccess(planId) } catch {}
       } else {
         const msg = j?.error || `Error ${res.status}`
         toast({ title: "Error", description: msg, variant: "destructive" })
-        router.replace(`/dashboard/informacion?planUpdate=error&msg=${encodeURIComponent(msg)}`)
+        router.replace(`${redirectPath}?planUpdate=error&msg=${encodeURIComponent(msg)}`)
         router.refresh()
+        try { onError && onError(msg) } catch {}
       }
     } finally {
       setLoading(false)
