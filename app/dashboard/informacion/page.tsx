@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Database, User, Package, Sparkles } from "lucide-react"
-import { getPlanData, formatPlanValue } from "@/lib/plan-data"
+import { getPlanData, formatPlanValue, PLAN_DATA } from "@/lib/plan-data"
 import fs from "node:fs"
 import path from "node:path"
 import ChangePlanButton from "@/components/change-plan-button"
@@ -43,6 +43,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
         const { data: planesData, error: planesError } = await supabase.from("Planes").select("*")
 
         if (planesError || !planesData || planesData.length === 0) {
+          availablePlans = Object.values(PLAN_DATA)
           planInfo = getPlanData(inmobiliaria.Plan)
         } else {
           const normalize = (p: any) => ({
