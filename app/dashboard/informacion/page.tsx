@@ -119,6 +119,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
 
   const pkgPath = path.join(process.cwd(), "package.json")
   let appVersion: string = ""
+  const appChannel: string = process.env.NEXT_PUBLIC_APP_CHANNEL || ""
   try {
     const pkgRaw = fs.readFileSync(pkgPath, "utf-8")
     const pkg = JSON.parse(pkgRaw)
@@ -357,7 +358,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
-                {appVersion && <Badge variant="secondary">v{appVersion}</Badge>}
+                {appVersion && <Badge variant="secondary">v{appVersion}{appChannel ? ` (${appChannel})` : ""}</Badge>}
               </div>
               {whatsNewGroups.length > 0 ? (
                 <div className="space-y-4">
