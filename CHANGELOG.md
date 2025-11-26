@@ -1,3 +1,18 @@
+## [0.2.8](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.7...v0.2.8) (2025-11-26)
+
+
+### Bug Fixes
+
+* **informacion:** fallback remoto al CHANGELOG y normalización de saltos de línea para mostrar novedades en producción ([ef78d08](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/ef78d08d0a1c6f0f1fd78b10a7e70f3f33bc70af))
+
+
+### Features
+
+* **info:** cambio de plan via API y alertas; fix: Tailwind v4 PostCSS config ([60438fc](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/60438fc29c8f6a8f6b4e5438436305d50be308ed))
+* **novedades:** variantes de badge por categoría y sanitización de URLs en listado ([d9f6e98](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/d9f6e981ec5a3b6c7dcc348782514a17e4c95c4b))
+
+
+
 ## [0.2.7](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.6...v0.2.7) (2025-11-25)
 
 
