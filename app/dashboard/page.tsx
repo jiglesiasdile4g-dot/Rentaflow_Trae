@@ -259,7 +259,7 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">{leadsMetrics.completed}</div>
-              <p className="text-xs text-muted-foreground">Con estado "Datos Completos" hoy</p>
+              <p className="text-xs text-muted-foreground">Con estado &quot;Datos Completos&quot; hoy</p>
             </CardContent>
           </Card>
         </div>

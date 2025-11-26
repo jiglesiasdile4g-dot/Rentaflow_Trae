@@ -46,7 +46,7 @@ export function LeadDenyWrapper({ lead, updateLeadStatus, onLeadUpdated }: LeadD
 
           <div style={{ padding: "1rem 0" }}>
             <p style={{ marginBottom: "1rem", color: "#6b7280" }}>
-              Al confirmar, el candidato será marcado como "Descartado" y no podrá continuar con el proceso de alquiler.
+              Al confirmar, el candidato será marcado como &quot;Descartado&quot; y no podrá continuar con el proceso de alquiler.
               Esta acción es reversible desde la lista de leads.
             </p>
             <p style={{ fontWeight: "500" }}>¿Desea continuar?</p>
