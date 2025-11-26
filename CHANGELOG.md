@@ -1,3 +1,12 @@
+## [0.2.10](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.9...v0.2.10) (2025-11-26)
+
+
+### Features
+
+* loaders de anuncios en Leads/Anuncios, banner plan inactivo, bloqueo mensajes y aval al superar límite, programación de downgrade al próximo periodo ([a00f46e](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/a00f46e7dc0d1f9b0e904412317b5d56b72518b5))
+
+
+
 ## [0.2.9](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.8...v0.2.9) (2025-11-26)
 
 
