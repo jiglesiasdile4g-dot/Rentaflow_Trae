@@ -1,3 +1,21 @@
+## [0.2.11](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.10...v0.2.11) (2025-12-03)
+
+
+### Bug Fixes
+
+* **context:** evitar ReferenceError en InmobiliariaProvider ([fc1ff5a](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/fc1ff5a73cb4669b9a436aae4b210c432d169b66))
+* **leads:** cargar leads y anuncios en modo global ([6c02ba8](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/6c02ba84b573c5fe19d4b71d4c09615fb54276a0))
+* **version:** mostrar version desde package.json en Sidebar; lint: escapar comillas en textos ([3385d56](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/3385d56d95318fd17a37d941adf4e08f4af31ff9))
+* **version:** sidebar lee version solo desde package.json; build: incluir CHANGELOG.md en imagen para mostrar Novedades ([a7ecdb1](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/a7ecdb15eab7f268213fcdd7da150ccd58cdae7d))
+
+
+### Features
+
+* **admin:** modo global 'Todas las inmobiliarias' y filtros condicionales en leads/anuncios ([8aadaf7](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/8aadaf76b7453a3609458cf7ab80dd8a4425b9af))
+* **info:** fallback de planes desde PLAN_DATA cuando la tabla Planes no está disponible ([74bc752](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/74bc7529a645bb1340026349a515f436c4807c66))
+
+
+
 ## [0.2.10](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.9...v0.2.10) (2025-11-26)
 
 
