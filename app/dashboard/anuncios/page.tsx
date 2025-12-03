@@ -3126,7 +3126,7 @@ export default function AnunciosPage() {
         )}
 
         <Dialog open={showCreationModal} onOpenChange={setShowCreationModal}>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Crear Anuncio - Paso {creationStep.step} de 3</DialogTitle>
               <DialogDescription>
@@ -3659,8 +3659,7 @@ export default function AnunciosPage() {
         </Dialog>
 
         <Dialog open={showInfoFaqsModal} onOpenChange={setShowInfoFaqsModal}>
-          <DialogContent
-            className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto z-[100]"
+          <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto z-[100]"
             onInteractOutside={(e) => {
               e.preventDefault()
             }}
@@ -3742,7 +3741,7 @@ export default function AnunciosPage() {
             setIsStatsModalOpen(open) // Update state when modal opens/closes
           }}
         >
-          <DialogContent className="sm:max-w-[700px] max-h-[80vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Estadísticas - {selectedAnuncioForStats?.referencia}</DialogTitle>
               <DialogDescription>
@@ -4028,7 +4027,7 @@ export default function AnunciosPage() {
           open={phaseLeadsDialog.open}
           onOpenChange={(open) => setPhaseLeadsDialog({ ...phaseLeadsDialog, open })}
         >
-          <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Leads con estado: {phaseLeadsDialog.status}</DialogTitle>
               <DialogDescription>
@@ -4333,7 +4332,7 @@ export default function AnunciosPage() {
         </Dialog>
         
         <Dialog open={!!attachmentPreviewUrl} onOpenChange={closeAttachmentPreview}>
-          <DialogContent className="sm:max-w-[900px] max-h-[85vh] overflow-hidden">
+          <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Vista previa del archivo</DialogTitle>
               <DialogDescription>{attachmentPreviewName || ""}</DialogDescription>
