@@ -1,3 +1,12 @@
+## [0.4.1](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.4.0...v0.4.1) (2025-12-03)
+
+
+### Features
+
+* **configuracion): sesiones activas y aviso Próximamente\nchore(auth): mostrar última actualización de contraseña\nrefactor(configuracion): eliminar botones Guardar/Cancelar\nfeat(notificaciones): endpoint semanal de resumen\nfeat(apariencia:** modo oscuro y vista compacta ([f52da42](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/f52da42bd3f2128eed2d9e162f11d7e52bb944df))
+
+
+
 # [0.4.0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.3.1...v0.4.0) (2025-12-03)
 
 
