@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter, Roboto_Mono } from "next/font/google"
 import "./globals.css"
+import { ThemeProvider } from "next-themes"
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
 const robotoMono = Roboto_Mono({ subsets: ["latin"], variable: "--font-mono" })
@@ -18,9 +19,11 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${robotoMono.variable} font-sans antialiased`}>
-        {children}
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   )

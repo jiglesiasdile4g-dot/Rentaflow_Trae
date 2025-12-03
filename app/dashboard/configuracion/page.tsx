@@ -3,10 +3,13 @@ import { redirect } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
+import { ChangePassword } from "./change-password-client"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { User, Bell, Palette, Shield, Building2 } from "lucide-react"
+import { AppearanceSettings } from "./appearance-client"
+import { ActiveSessions } from "./sessions-client"
+import { NotificationSettings } from "./notification-settings-client"
 
 export default async function ConfiguracionPage() {
   const supabase = await createClient()
@@ -74,10 +77,6 @@ export default async function ConfiguracionPage() {
               <Input id="email" type="email" value={user.email || ""} disabled className="bg-muted" />
               <p className="text-xs text-muted-foreground">El correo electrónico no se puede modificar</p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="user-id">ID de Usuario</Label>
-              <Input id="user-id" value={user.id} disabled className="bg-muted font-mono text-xs" />
-            </div>
           </CardContent>
         </Card>
 
@@ -121,30 +120,8 @@ export default async function ConfiguracionPage() {
             </div>
             <CardDescription>Configura cómo quieres recibir notificaciones</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="email-notifications">Notificaciones por Email</Label>
-                <p className="text-sm text-muted-foreground">Recibe alertas de nuevos leads por correo</p>
-              </div>
-              <Switch id="email-notifications" defaultChecked />
-            </div>
-            <Separator />
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="lead-notifications">Alertas de Leads</Label>
-                <p className="text-sm text-muted-foreground">Notificación cuando un lead completa sus datos</p>
-              </div>
-              <Switch id="lead-notifications" defaultChecked />
-            </div>
-            <Separator />
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="weekly-report">Reporte Semanal</Label>
-                <p className="text-sm text-muted-foreground">Resumen semanal de actividad y métricas</p>
-              </div>
-              <Switch id="weekly-report" />
-            </div>
+          <CardContent>
+            <NotificationSettings />
           </CardContent>
         </Card>
 
@@ -157,22 +134,8 @@ export default async function ConfiguracionPage() {
             </div>
             <CardDescription>Personaliza la interfaz del dashboard</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="dark-mode">Modo Oscuro</Label>
-                <p className="text-sm text-muted-foreground">Activa el tema oscuro de la interfaz</p>
-              </div>
-              <Switch id="dark-mode" />
-            </div>
-            <Separator />
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="compact-view">Vista Compacta</Label>
-                <p className="text-sm text-muted-foreground">Reduce el espaciado en las tablas</p>
-              </div>
-              <Switch id="compact-view" />
-            </div>
+          <CardContent>
+            <AppearanceSettings />
           </CardContent>
         </Card>
 
@@ -188,27 +151,18 @@ export default async function ConfiguracionPage() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>Contraseña</Label>
-              <Button variant="outline" className="w-full sm:w-auto bg-transparent">
-                Cambiar Contraseña
-              </Button>
-              <p className="text-xs text-muted-foreground">Última actualización: Nunca</p>
+              <ChangePassword />
+              <p className="text-xs text-muted-foreground">Última actualización: {user.updated_at ? new Intl.DateTimeFormat("es-ES", { dateStyle: "long", timeStyle: "short" }).format(new Date(user.updated_at)) : "Nunca"}</p>
             </div>
             <Separator />
             <div className="space-y-2">
               <Label>Sesiones Activas</Label>
               <p className="text-sm text-muted-foreground">Gestiona los dispositivos con acceso a tu cuenta</p>
-              <Button variant="outline" className="w-full sm:w-auto bg-transparent">
-                Ver Sesiones
-              </Button>
+              <ActiveSessions />
             </div>
           </CardContent>
         </Card>
 
-        {/* Save Button */}
-        <div className="flex justify-end gap-4">
-          <Button variant="outline">Cancelar</Button>
-          <Button>Guardar Cambios</Button>
-        </div>
       </div>
     </div>
   )
