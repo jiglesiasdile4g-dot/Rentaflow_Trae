@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { User } from "lucide-react"
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const supabase = await createClient()
 
   const {
@@ -15,9 +15,26 @@ export default async function DashboardPage() {
     redirect("/login")
   }
 
-  const { data: profile } = await supabase.from("Perfiles").select("inmobiliaria").eq("usuario", user.email).single()
+  const { data: profile } = await supabase.from("Perfiles").select("inmobiliaria, is_admin").eq("usuario", user.email).single()
 
-  const inmobiliariaId = profile?.inmobiliaria
+  let inmobiliariaId: number | null | undefined = profile?.inmobiliaria
+  try {
+    const spRaw = searchParams ? await searchParams : undefined
+    const spIdiRaw = spRaw?.idi
+    if (profile?.is_admin === true) {
+      if (typeof spIdiRaw === "string") {
+        if (spIdiRaw === "all") {
+          inmobiliariaId = null
+        } else {
+          const n = Number(spIdiRaw)
+          inmobiliariaId = Number.isFinite(n) ? n : profile?.inmobiliaria
+        }
+      } else if (Array.isArray(spIdiRaw) && spIdiRaw.length > 0) {
+        const n = Number(spIdiRaw[0])
+        inmobiliariaId = Number.isFinite(n) ? n : profile?.inmobiliaria
+      }
+    }
+  } catch {}
 
   if (!inmobiliariaId) {
     console.log("[v0] No inmobiliaria ID found for user")
@@ -33,10 +50,13 @@ export default async function DashboardPage() {
   try {
     console.log("[v0] Fetching leads metrics...")
 
-    const { count: totalCount, error: totalError } = await supabase
+    let totalQuery = supabase
       .from("Clientes")
       .select("*", { count: "exact", head: true })
-      .eq("usuario", inmobiliariaId)
+    if (inmobiliariaId != null) {
+      totalQuery = totalQuery.eq("usuario", inmobiliariaId)
+    }
+    const { count: totalCount, error: totalError } = await totalQuery
 
     if (totalError) {
       console.log("[v0] Total leads error:", totalError)
@@ -60,12 +80,15 @@ export default async function DashboardPage() {
     let todayCount = 0
     let foundDateField = false
 
-    const { count: createdAtCount, error: createdAtError } = await supabase
+    let createdAtQuery = supabase
       .from("Clientes")
       .select("*", { count: "exact", head: true })
-      .eq("usuario", inmobiliariaId)
       .gte("created_at", todayStartISO)
       .lt("created_at", todayEndISO)
+    if (inmobiliariaId != null) {
+      createdAtQuery = createdAtQuery.eq("usuario", inmobiliariaId)
+    }
+    const { count: createdAtCount, error: createdAtError } = await createdAtQuery
 
     if (!createdAtError) {
       todayCount = createdAtCount || 0
@@ -74,12 +97,15 @@ export default async function DashboardPage() {
     } else {
       console.log("[v0] created_at field error:", createdAtError)
 
-      const { count: fechaCreacionCount, error: fechaCreacionError } = await supabase
+      let fechaCreacionQuery = supabase
         .from("Clientes")
         .select("*", { count: "exact", head: true })
-        .eq("usuario", inmobiliariaId)
         .gte("fecha_creacion", todayStartISO)
         .lt("fecha_creacion", todayEndISO)
+      if (inmobiliariaId != null) {
+        fechaCreacionQuery = fechaCreacionQuery.eq("usuario", inmobiliariaId)
+      }
+      const { count: fechaCreacionCount, error: fechaCreacionError } = await fechaCreacionQuery
 
       if (!fechaCreacionError) {
         todayCount = fechaCreacionCount || 0
@@ -88,12 +114,15 @@ export default async function DashboardPage() {
       } else {
         console.log("[v0] fecha_creacion field error:", fechaCreacionError)
 
-        const { count: fechaRegistroCount, error: fechaRegistroError } = await supabase
+        let fechaRegistroQuery = supabase
           .from("Clientes")
           .select("*", { count: "exact", head: true })
-          .eq("usuario", inmobiliariaId)
           .gte("fecha_registro", todayStartISO)
           .lt("fecha_registro", todayEndISO)
+        if (inmobiliariaId != null) {
+          fechaRegistroQuery = fechaRegistroQuery.eq("usuario", inmobiliariaId)
+        }
+        const { count: fechaRegistroCount, error: fechaRegistroError } = await fechaRegistroQuery
 
         if (!fechaRegistroError) {
           todayCount = fechaRegistroCount || 0
@@ -123,13 +152,16 @@ export default async function DashboardPage() {
     let foundCompletedField = false
 
     if (foundDateField) {
-      const { count: completedTodayCountResult, error: completedTodayError } = await supabase
+      let completedTodayQuery = supabase
         .from("Clientes")
         .select("*", { count: "exact", head: true })
-        .eq("usuario", inmobiliariaId)
         .eq("Estado", "Datos Completos")
         .gte("created_at", todayStartISO)
         .lt("created_at", todayEndISO)
+      if (inmobiliariaId != null) {
+        completedTodayQuery = completedTodayQuery.eq("usuario", inmobiliariaId)
+      }
+      const { count: completedTodayCountResult, error: completedTodayError } = await completedTodayQuery
 
       if (!completedTodayError) {
         completedTodayCount = completedTodayCountResult || 0
@@ -138,13 +170,16 @@ export default async function DashboardPage() {
       } else {
         console.log("[v0] Datos Completos with created_at error:", completedTodayError)
 
-        const { count: completedFechaCount, error: completedFechaError } = await supabase
+        let completedFechaQuery = supabase
           .from("Clientes")
           .select("*", { count: "exact", head: true })
-          .eq("usuario", inmobiliariaId)
           .eq("Estado", "Datos Completos")
           .gte("fecha_creacion", todayStartISO)
           .lt("fecha_creacion", todayEndISO)
+        if (inmobiliariaId != null) {
+          completedFechaQuery = completedFechaQuery.eq("usuario", inmobiliariaId)
+        }
+        const { count: completedFechaCount, error: completedFechaError } = await completedFechaQuery
 
         if (!completedFechaError) {
           completedTodayCount = completedFechaCount || 0
@@ -153,13 +188,16 @@ export default async function DashboardPage() {
         } else {
           console.log("[v0] Datos Completos with fecha_creacion error:", completedFechaError)
 
-          const { count: completedRegistroCount, error: completedRegistroError } = await supabase
+          let completedRegistroQuery = supabase
             .from("Clientes")
             .select("*", { count: "exact", head: true })
-            .eq("usuario", inmobiliariaId)
             .eq("Estado", "Datos Completos")
             .gte("fecha_registro", todayStartISO)
             .lt("fecha_registro", todayEndISO)
+          if (inmobiliariaId != null) {
+            completedRegistroQuery = completedRegistroQuery.eq("usuario", inmobiliariaId)
+          }
+          const { count: completedRegistroCount, error: completedRegistroError } = await completedRegistroQuery
 
           if (!completedRegistroError) {
             completedTodayCount = completedRegistroCount || 0
@@ -174,11 +212,14 @@ export default async function DashboardPage() {
 
     if (!foundCompletedField) {
       console.log("[v0] No valid combination found, trying without date filter...")
-      const { count: completedNoDateCount, error: completedNoDateError } = await supabase
+      let completedNoDateQuery = supabase
         .from("Clientes")
         .select("*", { count: "exact", head: true })
-        .eq("usuario", inmobiliariaId)
         .eq("Estado", "Datos Completos")
+      if (inmobiliariaId != null) {
+        completedNoDateQuery = completedNoDateQuery.eq("usuario", inmobiliariaId)
+      }
+      const { count: completedNoDateCount, error: completedNoDateError } = await completedNoDateQuery
 
       if (!completedNoDateError) {
         console.log("[v0] Found leads with 'Datos Completos' status (all time):", completedNoDateCount || 0)
@@ -186,11 +227,14 @@ export default async function DashboardPage() {
       } else {
         console.log("[v0] 'Datos Completos' status not found in 'Estado' field, trying alternative status fields...")
 
-        const { count: statusCount, error: statusError } = await supabase
+        let statusQuery = supabase
           .from("Clientes")
           .select("*", { count: "exact", head: true })
-          .eq("usuario", inmobiliariaId)
           .eq("estado", "Datos Completos")
+        if (inmobiliariaId != null) {
+          statusQuery = statusQuery.eq("usuario", inmobiliariaId)
+        }
+        const { count: statusCount, error: statusError } = await statusQuery
 
         if (!statusError) {
           console.log("[v0] Found leads with 'Datos Completos' in lowercase 'estado' field:", statusCount || 0)

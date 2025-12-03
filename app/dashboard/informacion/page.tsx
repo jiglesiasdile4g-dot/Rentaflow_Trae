@@ -10,6 +10,10 @@ import { Database, User, Package, Sparkles, Mail, CalendarClock, Calendar, Build
 import { getPlanData, formatPlanValue, PLAN_DATA } from "@/lib/plan-data"
 import fs from "node:fs"
 import path from "node:path"
+
+type WhatsNewBlock = { title: string; subitems: string[] }
+type WhatsNewGroup = { heading: string; blocks: WhatsNewBlock[] }
+type WhatsNewSection = { version: string; groups: WhatsNewGroup[] }
 import ChangePlanButton from "@/components/change-plan-button"
 
 export default async function InformacionPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
@@ -33,7 +37,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
     const spIdiNum = Array.isArray(spIdiRaw) ? Number(spIdiRaw[0]) : Number(spIdiRaw as any)
     const spIdi = Number.isFinite(spIdiNum) ? spIdiNum : undefined
 
-    const { data: perfil } = await supabase.from("Perfiles").select("inmobiliaria, is_admin").eq("usuario", user.email).single()
+    const { data: perfil } = await supabase.from("Perfiles").select("inmobiliaria, is_admin").eq("usuario", user.email).limit(1).maybeSingle()
 
     const targetIdi = perfil?.is_admin === true && spIdi ? spIdi : perfil?.inmobiliaria
 
@@ -41,8 +45,9 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
       const { data: inmobiliaria } = await supabase
         .from("Inmobiliarias")
         .select("idi, Nombre, Plan, PlanResetAt, PlanNextEffectiveAt, whatsapp_activo")
-        .eq("idi", targetIdi)
-        .single()
+        .eq("idi", String(targetIdi))
+        .limit(1)
+        .maybeSingle()
 
       inmobiliariaInfo = inmobiliaria
 
@@ -193,8 +198,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
   })()
 
   const changelogPath = path.join(process.cwd(), "CHANGELOG.md")
-  let whatsNewGroups: { heading: string; blocks: { title: string; subitems: string[] }[] }[] = []
-  let whatsNewSections: { version: string; groups: { heading: string; blocks: { title: string; subitems: string[] }[] } }[] = []
+  const whatsNewSections: WhatsNewSection[] = []
   let clText: string = ""
   try {
     clText = fs.readFileSync(changelogPath, "utf-8")
@@ -254,14 +258,14 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
     sectionMatches.slice(0, 3).forEach((sm) => {
       const versionLabel = String(sm[1] || "").trim()
       const body = String(sm[2] || "").replace(/\\n/g, "\n")
-      let groups: { heading: string; blocks: { title: string; subitems: string[] }[] }[] = []
+      let groups: WhatsNewGroup[] = []
       const groupMatches = Array.from(body.matchAll(/###\s+([^\n]+)\n([\s\S]*?)(?=\n###\s|\n##\s|$)/g))
       if (groupMatches.length > 0) {
         groups = groupMatches.map((gm) => {
           const heading = gm[1].trim()
           const content = gm[2]
           const topItems = content.split(/^\*\s+/m).slice(1)
-          const blocks = topItems.map((block) => {
+          const blocks = topItems.map((block): WhatsNewBlock => {
             const lines = block.split(/\r?\n/)
             const rawTitle = sanitize((lines[0] || "").trim())
             const titleParts = rawTitle.split(/\s*,\s*/)
@@ -282,7 +286,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
         const headingMatch = body.match(/###\s+([^\n]+)/)
         const singleHeading = headingMatch ? headingMatch[1].trim() : ""
         const topItems = body.split(/^\*\s+/m).slice(1)
-        const blocks = topItems.map((block) => {
+        const blocks = topItems.map((block): WhatsNewBlock => {
           const lines = block.split(/\r?\n/)
           const title = sanitize((lines[0] || "").trim())
           const subitems = lines
@@ -573,13 +577,13 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
               </div>
               {whatsNewSections.length > 0 ? (
                 <div className="space-y-6">
-                  {whatsNewSections.map((section, si) => (
+              {whatsNewSections.map((section: WhatsNewSection, si: number) => (
                     <div key={si} className="space-y-3">
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary">v{section.version}</Badge>
                       </div>
                       <div className="space-y-4">
-                        {section.groups.map((group, gi) => {
+                        {section.groups.map((group: WhatsNewGroup, gi: number) => {
                           const labelMap: Record<string, string> = {
                             "Bug Fixes": "Correcciones",
                             Features: "Nuevas funcionalidades",
@@ -604,7 +608,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                                 <Badge variant={variant} className="text-xs">{label}</Badge>
                               </div>
                               <ul className="space-y-2 text-sm">
-                                {group.blocks.map((block, idx) => (
+                                {group.blocks.map((block: WhatsNewBlock, idx: number) => (
                                   <li key={idx}>
                                     {(() => {
                                       const primaryTitle = (block.title || "").trim()
@@ -615,7 +619,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                                       const items = block.subitems.length > 0 ? block.subitems : (autoItems.length > 1 ? autoItems : [])
                                       return items.length > 0 ? (
                                         <ul className="list-disc pl-5 space-y-0.5">
-                                          {items.map((s, j) => (
+                                          {items.map((s: string, j: number) => (
                                             <li key={j}>{s}</li>
                                           ))}
                                         </ul>

@@ -26,6 +26,7 @@ export default async function ConfiguracionPage() {
       .from("Perfiles")
       .select("inmobiliaria")
       .eq("usuario", user.email)
+      .limit(1)
       .maybeSingle()
 
     if (perfilError) {
@@ -35,8 +36,9 @@ export default async function ConfiguracionPage() {
       const { data: inmobiliaria, error: inmobiliariaError } = await supabase
         .from("Inmobiliarias")
         .select("*")
-        .eq("idi", perfil.inmobiliaria)
-        .single()
+        .eq("idi", String(perfil.inmobiliaria))
+        .limit(1)
+        .maybeSingle()
 
       if (!inmobiliariaError && inmobiliaria) {
         inmobiliariaData = inmobiliaria

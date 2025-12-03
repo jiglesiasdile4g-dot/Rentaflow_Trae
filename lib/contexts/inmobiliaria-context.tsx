@@ -119,8 +119,9 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
         const { data: inmobiliaria, error: inmobiliariaError } = await supabase
           .from("Inmobiliarias")
           .select("idi, Nombre")
-          .eq("idi", effectiveId)
-          .single()
+          .eq("idi", String(effectiveId))
+          .limit(1)
+          .maybeSingle()
         console.log("[v0] Inmobiliaria query result:", { inmobiliaria, inmobiliariaError })
         if (inmobiliariaError) {
           console.error("[v0] Error fetching inmobiliaria:", inmobiliariaError.message)
@@ -272,8 +273,9 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
       const { data: inmobiliaria } = await supabase
         .from("Inmobiliarias")
         .select("Nombre")
-        .eq("idi", id)
-        .single()
+        .eq("idi", id.toString())
+        .limit(1)
+        .maybeSingle()
       setInmobiliariaNombre(inmobiliaria?.Nombre || null)
     } else {
       localStorage.setItem("rf_admin_selected_idi", "all")

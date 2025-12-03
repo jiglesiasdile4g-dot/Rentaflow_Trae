@@ -2279,6 +2279,63 @@ export default function AnunciosPage() {
     setShowScheduleDialog(true)
   }
 
+  const [deactivationUpdated, setDeactivationUpdated] = useState(false)
+  useEffect(() => {
+    const run = async () => {
+      if (deactivationUpdated) return
+      if (!inmobiliariaId) return
+      const percentage = planLimit < 1000000 ? (totalEjecuciones / planLimit) * 100 : 0
+      const active = anunciosCards.filter((a) => a.estado === "activo").length
+      const adsPercent = anunciosLimit > 0 && anunciosLimit < 1000000 ? Math.min(100, (active / anunciosLimit) * 100) : 0
+      const combinedUsed = Math.max(percentage, adsPercent)
+      if (!(planLimit < 1000000 && combinedUsed > 100)) return
+      try {
+        const { error } = await supabase
+          .from("Inmobiliarias")
+          .update({ inmobiliaria_act: "Inactiva" })
+          .eq("idi", inmobiliariaId)
+        if (!error) {
+          setDeactivationUpdated(true)
+          toast({ title: "Plan rebasado", description: "Se ha marcado la inmobiliaria como Inactiva" })
+        } else {
+          const msg = String(error.message || "")
+          if (msg.toLowerCase().includes("column") && msg.toLowerCase().includes("does not exist")) {
+            toast({ title: "Columna faltante", description: "No existe 'inmobiliaria_act' en Inmobiliarias", variant: "destructive" })
+          } else {
+            toast({ title: "Error", description: "No se pudo actualizar el estado de la inmobiliaria", variant: "destructive" })
+          }
+        }
+      } catch {
+        toast({ title: "Error", description: "Fallo al actualizar la inmobiliaria", variant: "destructive" })
+      }
+    }
+    run()
+  }, [deactivationUpdated, inmobiliariaId, planLimit, totalEjecuciones, anunciosCards, anunciosLimit, supabase])
+
+  const [reactivationUpdated, setReactivationUpdated] = useState(false)
+  useEffect(() => {
+    const run = async () => {
+      if (reactivationUpdated) return
+      if (!inmobiliariaId) return
+      const percentage = planLimit < 1000000 ? (totalEjecuciones / planLimit) * 100 : 0
+      const active = anunciosCards.filter((a) => a.estado === "activo").length
+      const adsPercent = anunciosLimit > 0 && anunciosLimit < 1000000 ? Math.min(100, (active / anunciosLimit) * 100) : 0
+      const combinedUsed = Math.max(percentage, adsPercent)
+      if (!(planLimit < 1000000 && combinedUsed <= 100)) return
+      try {
+        const { error } = await supabase
+          .from("Inmobiliarias")
+          .update({ inmobiliaria_act: "Activa" })
+          .eq("idi", inmobiliariaId)
+        if (!error) {
+          setReactivationUpdated(true)
+          toast({ title: "Límites restablecidos", description: "Se ha marcado la inmobiliaria como Activa" })
+        }
+      } catch {}
+    }
+    run()
+  }, [reactivationUpdated, inmobiliariaId, planLimit, totalEjecuciones, anunciosCards, anunciosLimit, planResetAt, supabase])
+
   if (loading || inmobiliariaLoading) {
     return (
       <div className="p-4 md:p-8">

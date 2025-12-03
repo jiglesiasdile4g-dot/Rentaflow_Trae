@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
@@ -222,6 +222,266 @@ export default function LeadsPage() {
   const [scheduledPlanId, setScheduledPlanId] = useState<number>(0)
   const [scheduledEffectiveAt, setScheduledEffectiveAt] = useState<Date | null>(null)
 
+  const [isDocsDialogOpen, setIsDocsDialogOpen] = useState(false)
+  const [docsUploadLoading, setDocsUploadLoading] = useState(false)
+  const [docsError, setDocsError] = useState<string | null>(null)
+  const [docsList, setDocsList] = useState<Array<{ name: string; path: string; href: string; lastModified: string; size: number; contentType: string }>>([])
+  const [docsLoading, setDocsLoading] = useState(false)
+  const [docsDeletingPath, setDocsDeletingPath] = useState<string | null>(null)
+  const [dropActiveDni, setDropActiveDni] = useState(false)
+  const [dropActiveIncome, setDropActiveIncome] = useState(false)
+  const dniInputRef = useRef<HTMLInputElement | null>(null)
+  const incomeInputRef = useRef<HTMLInputElement | null>(null)
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
+  const [attachmentPreviewKind, setAttachmentPreviewKind] = useState<"pdf" | "image" | "unknown">("unknown")
+  const [attachmentPreviewName, setAttachmentPreviewName] = useState<string>("")
+
+  const uploadLeadDocuments = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    if (!selectedLead) {
+      toast({ title: "Sin lead seleccionado", description: "Selecciona un lead para subir documentos", variant: "destructive" })
+      return
+    }
+    const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
+    const referencia = String(selectedLead.id)
+
+    const arr = Array.from(files)
+    const onlyPdf = arr.filter((f) => (/application\/pdf/i.test(String(f.type)) || /\.pdf$/i.test(String(f.name))) )
+    if (onlyPdf.length !== arr.length) {
+      toast({ title: "Formato no permitido", description: "Solo se admiten documentos en PDF", variant: "destructive" })
+      return
+    }
+
+    setDocsUploadLoading(true)
+    setDocsError(null)
+    try {
+      const fd = new FormData()
+      fd.append("referencia", referencia)
+      fd.append("inmobiliaria", inmo)
+      for (const f of onlyPdf) {
+        fd.append("files", f)
+      }
+      const res = await fetch(`/api/nextcloud/upload`, { method: "POST", body: fd })
+      if (!res.ok) {
+        let errMsg = `No se pudieron subir archivos`
+        try {
+          const j = await res.json()
+          if (j && typeof j.error === "string") errMsg = j.error
+        } catch {}
+        setDocsError(errMsg)
+        toast({ title: "Error", description: errMsg, variant: "destructive" })
+      } else {
+        toast({ title: "Éxito", description: "Archivos subidos correctamente" })
+        setIsDocsDialogOpen(false)
+      }
+    } catch {
+      setDocsError("Error al subir archivos")
+      toast({ title: "Error", description: "Error al subir archivos", variant: "destructive" })
+    } finally {
+      setDocsUploadLoading(false)
+    }
+  }
+
+
+  const uploadAnyDocuments = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    if (!selectedLead) {
+      toast({ title: "Sin lead seleccionado", description: "Selecciona un lead para subir documentos", variant: "destructive" })
+      return
+    }
+    const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
+    const referencia = String(selectedLead.id)
+    const arr = Array.from(files)
+    const allowed = arr.filter((f) => (String(f.type).startsWith("image/") || /application\/pdf/i.test(String(f.type)) || /\.(pdf|png|jpg|jpeg|gif|webp|bmp|svg)$/i.test(String(f.name))))
+    if (allowed.length !== arr.length) {
+      toast({ title: "Formato no permitido", description: "Solo se admiten imágenes y PDF", variant: "destructive" })
+      return
+    }
+    setDocsUploadLoading(true)
+    setDocsError(null)
+    try {
+      const fd = new FormData()
+      fd.append("referencia", referencia)
+      fd.append("inmobiliaria", inmo)
+      for (const f of allowed) {
+        fd.append("files", f)
+      }
+      const res = await fetch(`/api/nextcloud/upload`, { method: "POST", body: fd })
+      if (!res.ok) {
+        let errMsg = `No se pudieron subir archivos`
+        try {
+          const j = await res.json()
+          if (j && typeof j.error === "string") errMsg = j.error
+        } catch {}
+        setDocsError(errMsg)
+        toast({ title: "Error", description: errMsg, variant: "destructive" })
+      } else {
+        toast({ title: "Éxito", description: "Archivos subidos correctamente" })
+        await loadLeadDocsList()
+      }
+    } catch {
+      setDocsError("Error al subir archivos")
+      toast({ title: "Error", description: "Error al subir archivos", variant: "destructive" })
+    } finally {
+      setDocsUploadLoading(false)
+    }
+  }
+
+  const openAttachmentPreview = (url: string, name?: string, file?: File) => {
+    const n = name || url.split("?")[0].split("/").pop() || ""
+    const lower = (n || url).toLowerCase()
+    const kind: "pdf" | "image" | "unknown" = lower.endsWith(".pdf")
+      ? "pdf"
+      : lower.match(/\.(png|jpg|jpeg|gif|webp|bmp|svg)$/)
+      ? "image"
+      : "unknown"
+    const effective = url.startsWith("blob:") && file ? URL.createObjectURL(file) : url
+    const proxied = kind === "pdf" && !effective.startsWith("blob:") ? `/api/proxy/pdf?url=${encodeURIComponent(effective)}` : effective
+    setAttachmentPreviewName(n)
+    setAttachmentPreviewKind(kind)
+    setAttachmentPreviewUrl(proxied)
+  }
+
+  const closeAttachmentPreview = (open?: boolean) => {
+    if (open === false || open === undefined) {
+      if (attachmentPreviewUrl && attachmentPreviewUrl.startsWith("blob:")) {
+        try { URL.revokeObjectURL(attachmentPreviewUrl) } catch {}
+      }
+      setAttachmentPreviewUrl(null)
+      setAttachmentPreviewKind("unknown")
+      setAttachmentPreviewName("")
+    }
+  }
+
+  const loadLeadDocsList = async () => {
+    if (!selectedLead) return
+    const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
+    const referencia = String(selectedLead.id)
+    if (!inmo) {
+      setDocsError("Inmobiliaria no cargada")
+      return
+    }
+    setDocsLoading(true)
+    setDocsError(null)
+    try {
+      const params = new URLSearchParams({ referencia, inmobiliaria: inmo })
+      const res = await fetch(`/api/nextcloud/list?${params.toString()}`)
+      if (!res.ok) {
+        let errMsg = `Error ${res.status}`
+        try {
+          const j = await res.json()
+          if (j && typeof j.error === "string") errMsg = j.error
+        } catch {}
+        setDocsError(errMsg)
+        setDocsList([])
+      } else {
+        const j = await res.json()
+        setDocsList(j.files || [])
+      }
+    } catch {
+      setDocsError("Error cargando documentos")
+    } finally {
+      setDocsLoading(false)
+    }
+  }
+
+  const deleteLeadDoc = async (path: string) => {
+    if (!path) return
+    setDocsDeletingPath(path)
+    try {
+      const params = new URLSearchParams({ path })
+      await fetch(`/api/nextcloud/file?${params.toString()}`, { method: "DELETE" })
+      await loadLeadDocsList()
+      await updateDocumentStatusFromNextcloud()
+      toast({ title: "Archivo eliminado", description: "Archivo eliminado correctamente" })
+    } catch {
+      toast({ title: "Error", description: "No se pudo eliminar", variant: "destructive" })
+    } finally {
+      setDocsDeletingPath(null)
+    }
+  }
+
+  const uploadLeadDocWithOverride = async (file: File, baseName: string) => {
+    if (!selectedLead) return
+    const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
+    const referencia = String(selectedLead.id)
+    const ok = String(file.type).startsWith("image/") || /application\/pdf/i.test(String(file.type)) || /\.(pdf|png|jpg|jpeg|gif|webp|bmp|svg)$/i.test(String(file.name))
+    if (!ok) {
+      toast({ title: "Formato no permitido", description: "Solo imágenes o PDF", variant: "destructive" })
+      return
+    }
+    setDocsUploadLoading(true)
+    setDocsError(null)
+    try {
+      const extMatch = (file.name || "").match(/\.([a-zA-Z0-9]+)$/)
+      const ext = extMatch ? extMatch[1].toLowerCase() : ""
+      const filename = ext ? `${baseName}.${ext}` : baseName
+      const fd = new FormData()
+      fd.append("referencia", referencia)
+      fd.append("inmobiliaria", inmo)
+      fd.append("file", file)
+      fd.append("filename", filename)
+      const res = await fetch(`/api/nextcloud/upload`, { method: "POST", body: fd })
+      if (!res.ok) {
+        let errMsg = `No se pudo subir el archivo`
+        try {
+          const j = await res.json()
+          if (j && typeof j.error === "string") errMsg = j.error
+        } catch {}
+        setDocsError(errMsg)
+        toast({ title: "Error", description: errMsg, variant: "destructive" })
+      } else {
+        toast({ title: "Éxito", description: "Archivo subido correctamente" })
+        await loadLeadDocsList()
+        await updateDocumentStatusFromNextcloud()
+      }
+    } catch {
+      setDocsError("Error al subir archivo")
+      toast({ title: "Error", description: "Error al subir archivo", variant: "destructive" })
+    } finally {
+      setDocsUploadLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (isDocsDialogOpen && selectedLead) {
+      loadLeadDocsList()
+    }
+  }, [isDocsDialogOpen, selectedLead])
+
+  const updateDocumentStatusFromNextcloud = async () => {
+    if (!selectedLead) return
+    const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
+    const referencia = String(selectedLead.id)
+    if (!inmo) return
+    try {
+      const params = new URLSearchParams({ referencia, inmobiliaria: inmo })
+      const res = await fetch(`/api/nextcloud/list?${params.toString()}`)
+      if (!res.ok) return
+      const j = await res.json()
+      const files = (j.files || []) as Array<{ name: string; path: string }>
+      const hasBase = (base: string) => {
+        return files.some((f) => {
+          const nm = (f.name || "").toLowerCase()
+          const b = nm.replace(/\.[a-z0-9]+$/i, "")
+          return b === base || b.startsWith(`${base}-`)
+        })
+      }
+      const dniOk = hasBase("dni")
+      const incomeOk = hasBase("ingresos")
+      setDocumentStatus((prev) => ({
+        ...prev,
+        dni: dniOk ? "verified" : "pending",
+        income: incomeOk ? "verified" : "pending",
+      }))
+    } catch {}
+  }
+
+  useEffect(() => {
+    if (selectedLead) {
+      updateDocumentStatusFromNextcloud()
+    }
+  }, [selectedLead])
 
   const fetchAgentes = async (inmobiliariaId: number) => {
     try {
@@ -1382,7 +1642,7 @@ export default function LeadsPage() {
                   <h2 className="text-3xl font-bold text-foreground">Leads</h2>
                   <p className="text-muted-foreground mt-2">Gestión de clientes potenciales</p>
                 </div>
-                <Button onClick={() => setIsNewLeadDialogOpen(true)} disabled={planInactive}>
+                <Button onClick={() => setIsNewLeadDialogOpen(true)} disabled>
                   <Users className="h-4 w-4 mr-2" />
                   Nuevo Lead
                 </Button>
@@ -4318,6 +4578,7 @@ export default function LeadsPage() {
                               borderRadius: "4px",
                               cursor: "pointer",
                             }}
+                            onClick={() => setIsDocsDialogOpen(true)}
                           >
                             Gestionar
                           </button>
@@ -4330,12 +4591,12 @@ export default function LeadsPage() {
                               style={{
                                 padding: "0.25rem 0.5rem",
                                 fontSize: "0.75rem",
-                                backgroundColor: "#fef3c7",
-                                color: "#92400e",
+                                backgroundColor: documentStatus.dni === "verified" ? "#dcfce7" : "#fef3c7",
+                                color: documentStatus.dni === "verified" ? "#065f46" : "#92400e",
                                 borderRadius: "4px",
                               }}
                             >
-                              Pendiente
+                              {documentStatus.dni === "verified" ? "Completado" : "Pendiente"}
                             </span>
                           </div>
 
@@ -4345,12 +4606,12 @@ export default function LeadsPage() {
                               style={{
                                 padding: "0.25rem 0.5rem",
                                 fontSize: "0.75rem",
-                                backgroundColor: "#fef3c7",
-                                color: "#92400e",
+                                backgroundColor: documentStatus.income === "verified" ? "#dcfce7" : "#fef3c7",
+                                color: documentStatus.income === "verified" ? "#065f46" : "#92400e",
                                 borderRadius: "4px",
                               }}
                             >
-                              Pendiente
+                              {documentStatus.income === "verified" ? "Completado" : "Pendiente"}
                             </span>
                           </div>
                         </div>
@@ -4375,7 +4636,7 @@ export default function LeadsPage() {
                           }}
                         >
                           <h2 style={{ fontSize: "1rem", fontWeight: "600", margin: 0 }}>Comunicaciones</h2>
-                          <button
+                          <button disabled
                             style={{
                               padding: "0.25rem 0.75rem",
                               fontSize: "0.75rem",
@@ -4383,7 +4644,9 @@ export default function LeadsPage() {
                               color: "#fff",
                               border: "none",
                               borderRadius: "4px",
-                              cursor: "pointer",
+                              cursor: "not-allowed",
+                              opacity: 0.5,
+                              pointerEvents: "none",
                               position: "relative",
                               zIndex: 1100,
                             }}
@@ -5143,7 +5406,162 @@ export default function LeadsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-        <Dialog open={isCommDialogOpen} onOpenChange={setIsCommDialogOpen}>
+      <Dialog open={isDocsDialogOpen} onOpenChange={setIsDocsDialogOpen}>
+        <DialogContent className="z-[350]">
+          <DialogHeader>
+            <DialogTitle>Gestionar documentos</DialogTitle>
+            <DialogDescription>
+              Sube imágenes o PDF para este lead. Se guardarán en la carpeta del lead (ID {selectedLead?.id ?? "sin id"}).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div style={{ display: "flex", gap: "1rem" }}>
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDropActiveDni(true) }}
+                onDragLeave={() => setDropActiveDni(false)}
+                onDrop={(e) => {
+                  e.preventDefault(); setDropActiveDni(false);
+                  const files = Array.from(e.dataTransfer.files || [])
+                  files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "dni" : `dni-${idx+1}`))
+                }}
+                onClick={() => { if (!docsUploadLoading) { dniInputRef.current?.click() } }}
+                style={{
+                  flex: "2 1 0%",
+                  border: `2px dashed ${dropActiveDni ? "#2563eb" : "#e5e7eb"}`,
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  backgroundColor: dropActiveDni ? "#eff6ff" : "#f9fafb",
+                  transition: "all 0.2s",
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  ref={dniInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  multiple
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || [])
+                    files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "dni" : `dni-${idx+1}`))
+                    e.currentTarget.value = ""
+                  }}
+                />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                  <span style={{ fontWeight: 600 }}>DNI/NIE</span>
+                  <span style={{ fontSize: "0.75rem", padding: "0.25rem 0.5rem", borderRadius: 4, backgroundColor: "#fef3c7", color: "#92400e" }}>Haz clic o arrastra aquí</span>
+                </div>
+                <div style={{ fontSize: "0.875rem", color: "#6b7280" }}>Admite imágenes y PDF</div>
+              </div>
+
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDropActiveIncome(true) }}
+                onDragLeave={() => setDropActiveIncome(false)}
+                onDrop={(e) => {
+                  e.preventDefault(); setDropActiveIncome(false);
+                  const files = Array.from(e.dataTransfer.files || [])
+                  files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "ingresos" : `ingresos-${idx+1}`))
+                }}
+                onClick={() => { if (!docsUploadLoading) { incomeInputRef.current?.click() } }}
+                style={{
+                  flex: "2 1 0%",
+                  border: `2px dashed ${dropActiveIncome ? "#16a34a" : "#e5e7eb"}`,
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  backgroundColor: dropActiveIncome ? "#f0fdf4" : "#f9fafb",
+                  transition: "all 0.2s",
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  ref={incomeInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  multiple
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || [])
+                    files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "ingresos" : `ingresos-${idx+1}`))
+                    e.currentTarget.value = ""
+                  }}
+                />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                  <span style={{ fontWeight: 600 }}>Justificante de Ingresos</span>
+                  <span style={{ fontSize: "0.75rem", padding: "0.25rem 0.5rem", borderRadius: 4, backgroundColor: "#dcfce7", color: "#065f46" }}>Haz clic o arrastra aquí</span>
+                </div>
+                <div style={{ fontSize: "0.875rem", color: "#6b7280" }}>Admite imágenes y PDF</div>
+              </div>
+            </div>
+
+            
+
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                <span style={{ fontWeight: 600 }}>Archivos del lead</span>
+                {docsLoading && <span className="inline-flex items-center text-xs text-muted-foreground"><Loader2 className="mr-1 h-3 w-3 animate-spin" />Cargando...</span>}
+              </div>
+              {docsList.length === 0 && !docsLoading ? (
+                <div style={{ fontSize: "0.875rem", color: "#6b7280" }}>Sin archivos</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", maxHeight: 240, overflowY: "auto" }}>
+                  {docsList.map((f) => {
+                    const isPdf = /pdf/i.test(String(f.contentType)) || /\.pdf$/i.test(String(f.name))
+                    const fileUrl = `/api/nextcloud/file?path=${encodeURIComponent(f.path)}`
+                    return (
+                      <div key={f.path} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #e5e7eb", borderRadius: 6, padding: "0.5rem" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <FileText className="h-4 w-4" />
+                          <div>
+                            <div style={{ fontSize: "0.875rem", fontWeight: 600 }}>{f.name}</div>
+                            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>{new Date(f.lastModified).toLocaleString("es-ES")}</div>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <Button variant="outline" className="h-8" onClick={() => openAttachmentPreview(fileUrl, f.name)}>
+                            Visualizar
+                          </Button>
+                          <a href={fileUrl} target="_blank" rel="noreferrer" download>
+                            <Button variant="outline" className="h-8">Descargar</Button>
+                          </a>
+                          <Button variant="destructive" className="h-8" onClick={() => deleteLeadDoc(f.path)} disabled={docsDeletingPath === f.path}>
+                            {docsDeletingPath === f.path ? <Loader2 className="h-4 w-4 animate-spin" /> : "Eliminar"}
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsDocsDialogOpen(false)} disabled={docsUploadLoading}>
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!attachmentPreviewUrl} onOpenChange={closeAttachmentPreview}>
+        <DialogContent className="z-[360]">
+          <DialogHeader>
+            <DialogTitle>Vista previa de archivo</DialogTitle>
+            <DialogDescription>{attachmentPreviewName}</DialogDescription>
+          </DialogHeader>
+          <div>
+            {attachmentPreviewUrl && (
+              attachmentPreviewKind === "image" ? (
+                <img src={attachmentPreviewUrl} alt={attachmentPreviewName} style={{ maxHeight: "70vh", maxWidth: "100%", borderRadius: 8 }} />
+              ) : (
+                <iframe src={attachmentPreviewUrl} style={{ width: "100%", height: "70vh", borderRadius: 8 }} />
+              )
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCommDialogOpen} onOpenChange={setIsCommDialogOpen}>
           <DialogContent
             className="sm:max-w-3xl max-h-[90vh] overflow-y-auto z-[300]"
             onInteractOutside={(e) => {
