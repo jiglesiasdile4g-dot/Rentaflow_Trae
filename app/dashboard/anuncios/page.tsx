@@ -25,7 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
-import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink } from 'lucide-react'
+import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink, Copy } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover" // Added Popover imports
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
 import ChangePlanButton from "@/components/change-plan-button"
@@ -365,7 +365,7 @@ export default function AnunciosPage() {
         } catch {}
         toast({ title: "Error", description: errMsg, variant: "destructive" })
       } else {
-        toast({ title: "Éxito", description: "Archivos subidos correctamente" })
+        toast({ title: "Éxito", description: "Archivos subidos correctamente. La IA ha sido entrenada" })
         if (mode === "creation") {
           await loadCreationFiles()
         }
@@ -439,13 +439,19 @@ export default function AnunciosPage() {
 
   const uploadDirectToNextcloud = async (files: FileList | null) => {
     if (!files || files.length === 0 || !nextcloudDialog.referencia) return
+    const arr = Array.from(files)
+    const onlyPdf = arr.filter((f) => (/application\/pdf/i.test(String(f.type)) || /\.pdf$/i.test(String(f.name))))
+    if (onlyPdf.length !== arr.length) {
+      toast({ title: "Formato no permitido", description: "Solo se admiten documentos en PDF", variant: "destructive" })
+      return
+    }
     setNextcloudUploading(true)
     try {
       const fd = new FormData()
       fd.append("referencia", nextcloudDialog.referencia)
       fd.append("inmobiliaria", nextcloudDialog.inmobiliaria)
-      for (let i = 0; i < files.length; i++) {
-        fd.append("files", files.item(i) as File)
+      for (const f of onlyPdf) {
+        fd.append("files", f)
       }
       const res = await fetch(`/api/nextcloud/upload`, { method: "POST", body: fd })
       if (!res.ok) {
@@ -457,7 +463,7 @@ export default function AnunciosPage() {
         toast({ title: "Error", description: errMsg, variant: "destructive" })
       } else {
         await refreshNextcloudDialog()
-        toast({ title: "Éxito", description: "Archivos subidos correctamente" })
+        toast({ title: "Éxito", description: "Archivos subidos correctamente. La IA ha sido entrenada" })
       }
     } catch {
       toast({ title: "Error", description: "Error al subir archivos", variant: "destructive" })
@@ -1705,6 +1711,37 @@ export default function AnunciosPage() {
     }
   }
 
+  const handleDuplicar = async (anuncio: AnuncioCard) => {
+    try {
+      const { data: anuncioData, error } = await supabase
+        .from("Anuncios")
+        .select("*")
+        .eq("ida", anuncio.id)
+        .single()
+      if (error) {
+        toast({ title: "Error", description: "No se pudieron cargar los datos del anuncio", variant: "destructive" })
+        return
+      }
+      const base = anuncioData || {}
+      setCreationStep({
+        step: 1,
+        data: {
+          codPortal: "",
+          referencia: "",
+          direccion: base.Direccion || anuncio.direccion || "",
+          portal: base.Portal || anuncio.portal || "",
+          descripcion: base.Descripcion || anuncio.descripcion || "",
+          precio: String(base.Precio ?? anuncio.precio ?? ""),
+          activacion: "Pausado",
+        },
+      })
+      setShowCreationModal(true)
+      toast({ title: "Duplicación", description: `Usando '${anuncio.referencia}' como base del nuevo anuncio` })
+    } catch {
+      toast({ title: "Error", description: "Error al preparar la duplicación", variant: "destructive" })
+    }
+  }
+
   // New handler for Info & FAQs modal
   const handleInfoFaqs = async (anuncio: AnuncioCard) => {
     console.log(`[v0] Opening Info & FAQs for anuncio ${anuncio.id}`)
@@ -2724,26 +2761,57 @@ export default function AnunciosPage() {
                 </div>
               </button>
 
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="flex items-center gap-2 px-4 py-1.5 rounded-lg border-2 border-dashed border-primary/30 bg-gradient-to-r from-primary/5 to-primary/15 hover:from-primary/10 hover:to-primary/15 hover:border-primary/50 transition-all cursor-pointer group">
+                    <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors shrink-0">
+                      <Copy className="h-3 w-3 text-primary" />
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="font-medium text-sm">Duplicar Anuncio</span>
+                      <span className="text-[10px] text-muted-foreground">· elegir base</span>
+                    </div>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-[300px] overflow-auto">
+                  {anunciosCards.length === 0 ? (
+                    <DropdownMenuItem disabled>No hay anuncios</DropdownMenuItem>
+                  ) : (
+                    anunciosCards.slice(0, 30).map((an) => (
+                      <DropdownMenuItem key={an.id} onClick={() => handleDuplicar(an)}>
+                        <FileText className="h-3.5 w-3.5 mr-2" />
+                        {an.referencia}
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               <button
-                className="flex items-center gap-2 px-4 py-1.5 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition-all cursor-pointer group"
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg border-2 border-dashed transition-all cursor-pointer group ${filterEstado === "archivado" ? "border-orange-400 bg-orange-50 hover:bg-orange-100 hover:border-orange-500" : "border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400"}`}
                 onClick={() => {
-                  // Toggle between showing only archived ads and showing all ads
                   setFilterEstado(filterEstado === "archivado" ? "all" : "archivado")
                 }}
               >
-                <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center group-hover:bg-gray-300 transition-colors shrink-0">
-                  <Target className="h-3 w-3 text-gray-600" />
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center transition-colors shrink-0 ${filterEstado === "archivado" ? "bg-orange-200 group-hover:bg-orange-300" : "bg-gray-200 group-hover:bg-gray-300"}`}>
+                  <Target className={`h-3 w-3 ${filterEstado === "archivado" ? "text-orange-700" : "text-gray-600"}`} />
                 </div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="font-medium text-sm">Archivados</span>
+                  <span className="font-medium text-sm">{filterEstado === "archivado" ? "Ver Activos" : "Archivados"}</span>
                   <span className="text-[10px] text-muted-foreground">
-                    · {filterEstado === "archivado" ? "Ver todos" : "Ver anuncios"}
+                    {filterEstado === "archivado" ? "· viendo archivados" : "· ver anuncios archivados"}
                   </span>
                 </div>
               </button>
             </div>
 
             <div className="space-y-3">
+              {filterEstado === "archivado" && (
+                <div className="flex items-center gap-2 p-2 rounded-md bg-orange-50 border border-orange-200">
+                  <Archive className="h-3 w-3 text-orange-700" />
+                  <span className="text-xs text-orange-700">Estás viendo anuncios archivados</span>
+                </div>
+              )}
               {cardsLoading && (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-5 w-5 animate-spin mr-2" />
@@ -2814,6 +2882,10 @@ export default function AnunciosPage() {
                                   <DropdownMenuItem onClick={() => handleEditar(anuncio)}>
                                     <Edit className="h-3.5 w-3.5 mr-2" />
                                     Editar anuncio
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleDuplicar(anuncio)}>
+                                    <Copy className="h-3.5 w-3.5 mr-2" />
+                                    Duplicar como nuevo
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => handleVerCompletos(anuncio.referencia)}>
                                     <CheckCircle className="h-3.5 w-3.5 mr-2" />
@@ -4375,9 +4447,10 @@ export default function AnunciosPage() {
                   onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setNextcloudDragActive(false) }}
                   onDrop={(e) => { e.preventDefault(); e.stopPropagation(); uploadDirectToNextcloud(e.dataTransfer.files); setNextcloudDragActive(false) }}
                 >
-                  <Input type="file" multiple disabled={nextcloudUploading} onChange={(e) => uploadDirectToNextcloud(e.target.files)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                  <Input type="file" multiple accept="application/pdf,.pdf" disabled={nextcloudUploading} onChange={(e) => uploadDirectToNextcloud(e.target.files)} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                   <div className="pointer-events-none text-muted-foreground">Arrastra y suelta archivos o haz clic</div>
                 </div>
+                <div className="text-[12px] text-muted-foreground">Solo se admiten documentos en formato PDF</div>
                 {nextcloudUploading && (
                   <div className="text-[12px] text-muted-foreground flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" /> Subiendo archivos...</div>
                 )}

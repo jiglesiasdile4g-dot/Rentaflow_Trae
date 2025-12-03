@@ -459,12 +459,31 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                           WhatsApp: {whatsappActive ? "Activo" : "Desactivado"}
                         </p>
                         {whatsappActive ? (
-                          <form action={disableWhatsappAction}>
-                            <input type="hidden" name="idi" value={String(inmobiliariaInfo.idi)} />
-                            <Button type="submit" variant="destructive" size="sm" aria-label="Detener envíos de WhatsApp" title="Detener envíos de WhatsApp">
-                              Detener envíos de WhatsApp
-                            </Button>
-                          </form>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="destructive" size="sm" aria-label="Detener envíos de WhatsApp" title="Detener envíos de WhatsApp">
+                                Detener envíos de WhatsApp
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Confirmar desactivación de WhatsApp</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Esta acción detendrá los envíos de WhatsApp para tu inmobiliaria.
+                                  Si el lead no tiene un email de contacto no podrás comunicarte con él mediante la aplicación.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <form action={disableWhatsappAction}>
+                                  <input type="hidden" name="idi" value={String(inmobiliariaInfo.idi)} />
+                                  <AlertDialogAction asChild>
+                                    <Button type="submit" variant="destructive" size="sm">Confirmar y detener</Button>
+                                  </AlertDialogAction>
+                                </form>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         ) : (
                           <form action={enableWhatsappAction}>
                             <input type="hidden" name="idi" value={String(inmobiliariaInfo.idi)} />

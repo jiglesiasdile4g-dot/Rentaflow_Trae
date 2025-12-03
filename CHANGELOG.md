@@ -7,6 +7,19 @@
 
 
 
+## [0.3.1](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.3.0...v0.3.1) (2025-12-03)
+
+
+### Features
+
+* **nextcloud:** enviar binarios al webhook de N8N tras subir; actualizar URL a `/webhook/subirdoc`
+* **uploads:** restringir a PDF (`accept`) y validación cliente; aviso en modal
+* **anuncios:** duplicar como nuevo desde menú de tarjeta y botón en header con selector de base
+* **archivados:** destacar la vista y cambiar botón a “Ver Activos” cuando el filtro está activo
+* **mensajes:** toast de éxito incluye “La IA ha sido entrenada”
+* **whatsapp:** diálogo de confirmación al desactivar con advertencia sobre leads sin email
+
+
 ## [0.2.11](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.10...v0.2.11) (2025-12-03)
 
 
@@ -120,6 +133,5 @@
 ### Bug Fixes
 
 * remove vercel analytics for easypanel deployment ([936a507](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/936a50744be56b5ed43950a703ef8fb429138e87))
-
 
 

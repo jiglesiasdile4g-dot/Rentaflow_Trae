@@ -207,6 +207,23 @@ export async function POST(req: Request) {
       await cleanupDuplicates(folderUrl, auth, bases)
     }
 
+    const webhookUrl = process.env.N8N_WEBHOOK_URL || "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/subirdoc"
+    if (webhookUrl) {
+      const fd = new FormData()
+      fd.append("referencia", referencia)
+      fd.append("inmobiliaria", inmobiliaria)
+      const toSend: File[] = (files && files.length > 0) ? files : (f ? [f] : [])
+      for (const file of toSend) {
+        fd.append("files", file)
+      }
+      try {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 8000)
+        await fetch(webhookUrl, { method: "POST", body: fd, signal: controller.signal })
+        clearTimeout(timeout)
+      } catch {}
+    }
+
     return NextResponse.json({ uploaded: results })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "error" }, { status: 500 })
