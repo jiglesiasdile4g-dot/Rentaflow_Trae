@@ -7,24 +7,30 @@ import { createClient } from "@/lib/supabase/client"
 interface InmobiliariaContextType {
   inmobiliariaId: number | null
   inmobiliariaNombre: string | null
+  isAdmin: boolean
   loading: boolean
   error: string | null
   refreshProfile: () => Promise<void>
   resetSessionTimer: () => void
+  setAdminSelectedInmobiliaria: (id: number | null) => Promise<void>
 }
 
 const InmobiliariaContext = createContext<InmobiliariaContextType>({
   inmobiliariaId: null,
   inmobiliariaNombre: null,
+  isAdmin: false,
   loading: true,
   error: null,
   refreshProfile: async () => {},
   resetSessionTimer: () => {},
+  setAdminSelectedInmobiliaria: async () => {},
 })
 
 export function InmobiliariaProvider({ children }: { children: React.ReactNode }) {
   const [inmobiliariaId, setInmobiliariaId] = useState<number | null>(null)
   const [inmobiliariaNombre, setInmobiliariaNombre] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState<boolean>(false)
+  const [ownInmobiliariaId, setOwnInmobiliariaId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -74,7 +80,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
 
       const { data: perfil, error: perfilError } = await supabase
         .from("Perfiles")
-        .select("inmobiliaria")
+        .select("inmobiliaria, is_admin")
         .eq("usuario", user.email)
         .maybeSingle()
 
@@ -99,26 +105,37 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
 
       console.log("[v0] Found inmobiliaria ID:", perfil.inmobiliaria)
 
-      const { data: inmobiliaria, error: inmobiliariaError } = await supabase
-        .from("Inmobiliarias")
-        .select("idi, Nombre")
-        .eq("idi", perfil.inmobiliaria)
-        .single()
+      const adminFlag = perfil?.is_admin === true
+      setIsAdmin(adminFlag)
+      const ownId = Number(perfil.inmobiliaria)
+      setOwnInmobiliariaId(ownId)
+      const savedRaw = adminFlag ? localStorage.getItem("rf_admin_selected_idi") : null
+      const effectiveAll = savedRaw === "all"
+      const savedNum = Number(savedRaw || "")
+      const effectiveId = adminFlag && !effectiveAll && Number.isFinite(savedNum) ? savedNum : (effectiveAll ? null : ownId)
 
-      console.log("[v0] Inmobiliaria query result:", { inmobiliaria, inmobiliariaError })
-
-      if (inmobiliariaError) {
-        console.error("[v0] Error fetching inmobiliaria:", inmobiliariaError.message)
-        setError(`Error al cargar inmobiliaria: ${inmobiliariaError.message}`)
+      let inmobiliariaNombreFetched: string | null = null
+      if (effectiveId !== null) {
+        const { data: inmobiliaria, error: inmobiliariaError } = await supabase
+          .from("Inmobiliarias")
+          .select("idi, Nombre")
+          .eq("idi", effectiveId)
+          .single()
+        console.log("[v0] Inmobiliaria query result:", { inmobiliaria, inmobiliariaError })
+        if (inmobiliariaError) {
+          console.error("[v0] Error fetching inmobiliaria:", inmobiliariaError.message)
+          setError(`Error al cargar inmobiliaria: ${inmobiliariaError.message}`)
+        }
+        if (!inmobiliariaError) {
+          inmobiliariaNombreFetched = inmobiliaria?.Nombre || null
+        }
       }
-
-      const numericId = Number(perfil.inmobiliaria)
-      setInmobiliariaId(numericId)
-      setInmobiliariaNombre(inmobiliaria?.Nombre || null)
+      setInmobiliariaId(effectiveId === null ? null : Number(effectiveId))
+      setInmobiliariaNombre(effectiveId === null ? "Todas" : (inmobiliariaNombreFetched || null))
 
       console.log("[v0] Profile loaded successfully:", {
-        inmobiliariaId: numericId,
-        inmobiliariaNombre: inmobiliaria?.Nombre,
+        inmobiliariaId: effectiveId === null ? null : Number(effectiveId),
+        inmobiliariaNombre: effectiveId === null ? "Todas" : inmobiliariaNombreFetched,
       })
 
       setLoading(false)
@@ -247,15 +264,35 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
     )
   }
 
+  const setAdminSelectedInmobiliaria = async (id: number | null) => {
+    if (!isAdmin) return
+    if (id && Number.isFinite(id)) {
+      localStorage.setItem("rf_admin_selected_idi", String(id))
+      setInmobiliariaId(id)
+      const { data: inmobiliaria } = await supabase
+        .from("Inmobiliarias")
+        .select("Nombre")
+        .eq("idi", id)
+        .single()
+      setInmobiliariaNombre(inmobiliaria?.Nombre || null)
+    } else {
+      localStorage.setItem("rf_admin_selected_idi", "all")
+      setInmobiliariaId(null)
+      setInmobiliariaNombre("Todas")
+    }
+  }
+
   return (
     <InmobiliariaContext.Provider
       value={{
         inmobiliariaId,
         inmobiliariaNombre,
+        isAdmin,
         loading,
         error,
         refreshProfile: fetchProfile,
         resetSessionTimer,
+        setAdminSelectedInmobiliaria,
       }}
     >
       {children}
