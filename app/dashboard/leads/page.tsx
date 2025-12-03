@@ -194,7 +194,7 @@ export default function LeadsPage() {
   const { toast } = useToast()
   const [copiedField, setCopiedField] = React.useState<string | null>(null)
 
-  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading } = useInmobiliaria() // Added inmobiliariaNombre
+  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading, isAdmin } = useInmobiliaria() // Added isAdmin
 
   const supabase = createClient()
   const pathname = usePathname()
@@ -253,12 +253,16 @@ export default function LeadsPage() {
   }, [pathname])
 
   useEffect(() => {
-    if (!inmobiliariaLoading && inmobiliariaId !== null) {
+    if (!inmobiliariaLoading) {
       const run = async () => {
-        await fetchPlanStatus()
+        if (inmobiliariaId !== null) {
+          await fetchPlanStatus()
+          await fetchAgentes(inmobiliariaId)
+        } else {
+          setPlanInactive(false)
+        }
         await fetchLeads()
         await fetchAdvertisements()
-        await fetchAgentes(inmobiliariaId)
       }
       run()
     }
@@ -388,8 +392,8 @@ export default function LeadsPage() {
         const { count, error } = await supabase
           .from("Clientes")
           .select("*", { count: "exact", head: true })
-          .eq("usuario", inmobiliariaId)
           .gte(field, prIso)
+          .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
         if (!error) {
           consumo = count || 0
           break
@@ -409,7 +413,7 @@ export default function LeadsPage() {
 
   const enforceAdvertisementsPaused = async () => {
     try {
-      if (!inmobiliariaId) return
+      if (!inmobiliariaId && !isAdmin) return
       const { data: activeAds, error: listErr } = await supabase
         .from("Anuncios")
         .select("ida")
@@ -438,10 +442,7 @@ export default function LeadsPage() {
     try {
       setAdsLoading(true)
       let query = supabase.from("Anuncios").select("*").order("created_at", { ascending: false })
-
-      if (inmobiliariaId) {
-        query = query.eq("usuario", inmobiliariaId)
-      }
+      if (inmobiliariaId) query = query.eq("usuario", inmobiliariaId)
 
       const { data: adsData, error: adsError } = await query
 
@@ -463,8 +464,8 @@ export default function LeadsPage() {
       const { data: activeAds, error: adsError } = await supabase
         .from("Anuncios")
         .select("Referencia")
-        .eq("usuario", inmobiliariaId)
         .in("Activacion", ["Activo", "Pausado"])
+        .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
 
       if (adsError) throw adsError
 
@@ -483,9 +484,9 @@ export default function LeadsPage() {
       const dataQuery = supabase
         .from("Clientes")
         .select("*")
-        .eq("usuario", inmobiliariaId)
         .in("Inmueble", activeReferences)
         .order("created_at", { ascending: false })
+        .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
 
       // Get leads data
       const { data: leadsData, error: leadsError } = await dataQuery
@@ -4383,6 +4384,8 @@ export default function LeadsPage() {
                               border: "none",
                               borderRadius: "4px",
                               cursor: "pointer",
+                              position: "relative",
+                              zIndex: 1100,
                             }}
                           >
                             Agregar
@@ -5141,7 +5144,12 @@ export default function LeadsPage() {
       </AlertDialog>
 
         <Dialog open={isCommDialogOpen} onOpenChange={setIsCommDialogOpen}>
-          <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto z-[300]">
+          <DialogContent
+            className="sm:max-w-3xl max-h-[90vh] overflow-y-auto z-[300]"
+            onInteractOutside={(e) => {
+              e.preventDefault()
+            }}
+          >
             <DialogHeader>
               <DialogTitle className="text-lg font-semibold">
                 {selectedCommunication && selectedCommunication.source === "whatsapp" ? (
