@@ -1,3 +1,12 @@
+## [0.5.1](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.5.0...v0.5.1) (2025-12-03)
+
+
+### Bug Fixes
+
+* **ui:** mejorar legibilidad en modo oscuro en Leads y Anuncios ([738fd47](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/738fd47ce6eae61cfbdd06dc8d515e98b014db7b))
+
+
+
 # [0.5.0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.4.1...v0.5.0) (2025-12-03)
 
 
