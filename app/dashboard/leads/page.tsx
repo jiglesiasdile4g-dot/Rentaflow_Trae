@@ -2765,101 +2765,29 @@ export default function LeadsPage() {
 
         {selectedLead && (
           <>
-            {/* Backdrop overlay */}
-            <div
-              style={{
-                position: "fixed",
-                inset: 0,
-                backgroundColor: "rgba(0, 0, 0, 0.5)",
-                zIndex: 50,
-              }}
-              onClick={() => setSelectedLead(null)}
-            />
+            <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setSelectedLead(null)} />
 
-            {/* Modal content */}
             <div
-              style={{
-                position: "fixed",
-                top: "50%",
-                left: "50%",
-                transform: "translate(-50%, -50%)",
-                zIndex: 51,
-                backgroundColor: "white",
-                borderRadius: "8px",
-                maxWidth: "1200px",
-                width: "95vw",
-                maxHeight: "90vh",
-                boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
-                display: "flex",
-                flexDirection: "column",
-                height: "100%",
-              }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[51] bg-background rounded-lg max-w-[1200px] w-[95vw] max-h-[90vh] shadow-xl flex flex-col h-full"
               onClick={(e) => e.stopPropagation()}
             >
-              <div style={{ display: "flex", flexDirection: "column", height: "100%", maxWidth: "100%" }}>
-                {/* Header */}
-                <div
-                  style={{
-                    borderBottom: "1px solid #e5e7eb",
-                    padding: "1.25rem 1.5rem",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "baseline", gap: "1rem", flexWrap: "wrap" }}>
-                    <h1 style={{ fontSize: "1.5rem", fontWeight: "bold", margin: 0 }}>
-                      {selectedLead.Nombre || "Sin nombre"}
-                    </h1>
-                    <span style={{ fontSize: "0.95rem", color: "#6b7280", fontWeight: "400" }}>
-                      | {selectedLead.Inmueble || "Sin inmueble"}
-                    </span>
-                    <span style={{ fontSize: "0.75rem", color: "#9ca3af", marginLeft: "0.5rem" }}>
-                      ID: {selectedLead.id}
-                    </span>
+              <div className="flex flex-col h-full max-w-full">
+                <div className="border-b border-border p-5 px-6 flex justify-between items-center flex-shrink-0">
+                  <div className="flex items-baseline gap-4 flex-wrap">
+                    <h1 className="text-2xl font-bold m-0">{selectedLead.Nombre || "Sin nombre"}</h1>
+                    <span className="text-sm text-muted-foreground font-normal">| {selectedLead.Inmueble || "Sin inmueble"}</span>
+                    <span className="text-xs text-muted-foreground ml-2">ID: {selectedLead.id}</span>
                   </div>
-                  <button
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "#9ca3af",
-                      cursor: "pointer",
-                      padding: "0.25rem",
-                    }}
-                    onClick={() => setSelectedLead(null)}
-                  >
+                  <button className="p-1 text-muted-foreground hover:text-foreground" onClick={() => setSelectedLead(null)}>
                     <X size={20} />
                   </button>
                 </div>
 
-                {/* Actions Bar */}
-                <div style={{ padding: "1rem 1.5rem", borderBottom: "1px solid #e5e7eb", flexShrink: 0 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      gap: "0.5rem",
-                    }}
-                  >
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <div className="p-4 px-6 border-b border-border flex-shrink-0">
+                  <div className="flex justify-between items-center flex-wrap gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <button
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "0.5rem",
-                          padding: "0.5rem 1rem",
-                          backgroundColor: "transparent",
-                          color: "#6b7280",
-                          border: "1px solid #d1d5db",
-                          borderRadius: "6px",
-                          fontSize: "0.875rem",
-                          fontWeight: "400",
-                          cursor: planInactive ? "not-allowed" : selectedLead.Telefono ? "pointer" : "not-allowed",
-                          opacity: planInactive ? 0.5 : selectedLead.Telefono ? 1 : 0.5,
-                        }}
+                        className={`inline-flex items-center gap-2 px-4 py-2 bg-transparent text-muted-foreground border border-input rounded-md text-sm ${planInactive ? "opacity-50 cursor-not-allowed" : selectedLead.Telefono ? "cursor-pointer" : "cursor-not-allowed"}`}
                         onClick={() => {
                           if (selectedLead.Telefono) {
                             window.open(`https://wa.me/${selectedLead.Telefono.replace(/\D/g, "")}`, "_blank")
@@ -2871,20 +2799,7 @@ export default function LeadsPage() {
                         WhatsApp
                       </button>
                       <button
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "0.5rem",
-                          padding: "0.5rem 1rem",
-                          backgroundColor: "transparent",
-                          color: "#6b7280",
-                          border: "1px solid #d1d5db",
-                          borderRadius: "6px",
-                          fontSize: "0.875rem",
-                          fontWeight: "400",
-                          cursor: planInactive ? "not-allowed" : selectedLead.Correo ? "pointer" : "not-allowed",
-                          opacity: planInactive ? 0.5 : selectedLead.Correo ? 1 : 0.5,
-                        }}
+                        className={`inline-flex items-center gap-2 px-4 py-2 bg-transparent text-muted-foreground border border-input rounded-md text-sm ${planInactive ? "opacity-50 cursor-not-allowed" : selectedLead.Correo ? "cursor-pointer" : "cursor-not-allowed"}`}
                         onClick={() => {
                           if (selectedLead.Correo) {
                             window.open(`mailto:${selectedLead.Correo}`, "_blank")
@@ -2896,7 +2811,7 @@ export default function LeadsPage() {
                         Correo
                       </button>
                     </div>
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", pointerEvents: planInactive ? "none" : "auto", opacity: planInactive ? 0.5 : 1 }}>
+                    <div className={`${planInactive ? "pointer-events-none opacity-50" : ""} flex gap-2 flex-wrap`}>
                       <LeadApproveWrapper
                         lead={selectedLead}
                         updateLeadStatus={updateLeadStatus}
@@ -2911,11 +2826,9 @@ export default function LeadsPage() {
                   </div>
                 </div>
 
-                {/* Content - Scrollable */}
-                <div style={{ flex: 1, overflow: "auto", padding: "1.5rem" }}>
-                  <div style={{ display: "flex", gap: "1.5rem", minHeight: "100%" }}>
-                    {/* Left Column */}
-                    <div style={{ flex: "2", display: "flex", flexDirection: "column", gap: "1.25rem", minWidth: 0 }}>
+                <div className="flex-1 overflow-auto p-6">
+                  <div className="flex gap-6 min-h-full">
+                    <div className="flex-[2] flex flex-col gap-5 min-w-0">
                       {/* Vintage File Folder Tabs */}
                       {(selectedLead?.Persona_2 || selectedLead?.Persona_3 || selectedLead?.Persona_4) && (
                         <div className="flex gap-1 mb-0 justify-between items-center">
@@ -4330,10 +4243,10 @@ export default function LeadsPage() {
                       )}
 
                       {/* Evaluación */}
-                      <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "1.25rem" }}>
-                        <h2 style={{ fontSize: "1.125rem", fontWeight: "600", marginBottom: "1.25rem" }}>Evaluación</h2>
+                      <div className="border border-border rounded-lg p-5">
+                        <h2 className="text-lg font-semibold mb-5">Evaluación</h2>
 
-                        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+                        <div className="flex gap-4 flex-wrap">
                           <div
                             style={{
                               flex: "1",
@@ -4430,86 +4343,34 @@ export default function LeadsPage() {
                             </div>
                           </div>
 
-                          <div
-                            style={{
-                              flex: "1",
-                              minWidth: "120px",
-                              textAlign: "center",
-                              padding: "1rem",
-                              backgroundColor: "#f9fafb",
-                              borderRadius: "8px",
-                            }}
-                          >
-                            <div style={{ fontSize: "1.25rem", fontWeight: "bold" }}>
+                          <div className="flex-1 min-w-[120px] text-center p-4 rounded-lg bg-muted/50 dark:bg-input/30">
+                            <div className="text-xl font-bold">
                               {calculateIAScore(selectedLead)}%
                             </div>
-                            <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: "0.5rem" }}>SCORE IA</div>
+                            <div className="text-xs text-muted-foreground mt-2">SCORE IA</div>
                           </div>
 
                           {/* Pedir Aval Card */}
                           <div
-                            style={{
-                              flex: "1",
-                              minWidth: "120px",
-                              textAlign: "center",
-                              padding: "1rem",
-                              backgroundColor: "#f9fafb",
-                              borderRadius: "8px",
-                              cursor: planInactive ? "not-allowed" : "pointer",
-                              transition: "all 0.2s",
-                              pointerEvents: planInactive ? "none" : "auto",
-                              opacity: planInactive ? 0.5 : 1,
-                            }}
+                            className={`flex-1 min-w-[120px] text-center p-4 rounded-lg bg-muted/50 dark:bg-input/30 transition-all ${planInactive ? "pointer-events-none opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-muted/70 dark:hover:bg-input/50 hover:scale-[1.02]"}`}
                             onClick={(e) => {
                               e.stopPropagation()
                               e.preventDefault()
                               if (planInactive) return
                               openAvalDialog()
                             }}
-                            onMouseEnter={(e) => {
-                              if (planInactive) return
-                              e.currentTarget.style.backgroundColor = "#e5e7eb"
-                              e.currentTarget.style.transform = "scale(1.02)"
-                            }}
-                            onMouseLeave={(e) => {
-                              if (planInactive) return
-                              e.currentTarget.style.backgroundColor = "#f9fafb"
-                              e.currentTarget.style.transform = "scale(1)"
-                            }}
                           >
-                            <div style={{ fontSize: "1.25rem", fontWeight: "bold", color: "#3b82f6" }}>
+                            <div className="text-lg font-bold text-blue-600 dark:text-blue-300">
                               {selectedLead.Pedir_Aval ? "Sí" : "No"}
                             </div>
-                            <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: "0.5rem" }}>PEDIR AVAL</div>
-                            <div style={{ fontSize: "0.65rem", color: "#3b82f6", marginTop: "0.25rem" }}>
-                              Click para revisar
-                            </div>
+                            <div className="text-xs text-muted-foreground mt-2">PEDIR AVAL</div>
+                            <div className="text-[0.65rem] text-blue-600 dark:text-blue-300 mt-1">Click para revisar</div>
                           </div>
 
-                          <div
-                            style={{
-                              flex: "1",
-                              minWidth: "120px",
-                              textAlign: "center",
-                              padding: "1rem",
-                              backgroundColor: "#f9fafb",
-                              borderRadius: "8px",
-                            }}
-                          >
-                            <div style={{ fontSize: "1rem", fontWeight: "bold" }}>
-                              {getDaysAgo(selectedLead.created_at)}
-                            </div>
-                            <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: "0.5rem" }}>
-                              FECHA ENTRADA
-                            </div>
-                            <div
-                              style={{
-                                fontSize: "0.65rem",
-                                color: "#6b7280",
-                                marginTop: "0.5rem",
-                                fontStyle: "italic",
-                              }}
-                            >
+                          <div className="flex-1 min-w-[120px] text-center p-4 rounded-lg bg-muted/50 dark:bg-input/30">
+                            <div className="text-base font-bold">{getDaysAgo(selectedLead.created_at)}</div>
+                            <div className="text-xs text-muted-foreground mt-2">FECHA ENTRADA</div>
+                            <div className="text-[0.65rem] text-muted-foreground mt-2 italic">
                               {new Date(selectedLead.created_at || Date.now()).toLocaleDateString("es-ES", {
                                 day: "numeric",
                                 month: "long",
@@ -4525,23 +4386,12 @@ export default function LeadsPage() {
                               const lastComm = getLastCommunication()
                               if (lastComm) {
                                 return (
-                                  <div
-                                    style={{
-                                      fontSize: "0.65rem",
-                                      color: lastComm.isSent ? "#3b82f6" : "#22c55e",
-                                      marginTop: "0.5rem",
-                                      fontWeight: "500",
-                                    }}
-                                  >
+                                  <div className={`text-[0.65rem] mt-2 font-medium ${lastComm.isSent ? "text-blue-600 dark:text-blue-300" : "text-green-600 dark:text-green-300"}`}>
                                     {lastComm.daysAgo} - {lastComm.isSent ? "📤" : "📥"} {lastComm.type}
                                   </div>
                                 )
                               }
-                              return (
-                                <div style={{ fontSize: "0.65rem", color: "#9ca3af", marginTop: "0.5rem" }}>
-                                  Sin comunicaciones
-                                </div>
-                              )
+                              return <div className="text-[0.65rem] text-muted-foreground mt-2">Sin comunicaciones</div>
                             })()}
                           </div>
                         </div>
@@ -4559,58 +4409,25 @@ export default function LeadsPage() {
                       }}
                     >
                       {/* Documentos */}
-                      <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "1.25rem" }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            marginBottom: "1rem",
-                          }}
-                        >
-                          <h2 style={{ fontSize: "1rem", fontWeight: "600", margin: 0 }}>Documentos</h2>
-                          <button
-                            style={{
-                              padding: "0.25rem 0.75rem",
-                              fontSize: "0.75rem",
-                              backgroundColor: "#f3f4f6",
-                              border: "none",
-                              borderRadius: "4px",
-                              cursor: "pointer",
-                            }}
-                            onClick={() => setIsDocsDialogOpen(true)}
-                          >
+                      <div className="border border-border rounded-lg p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <h2 className="text-sm font-semibold m-0">Documentos</h2>
+                          <button className="px-3 py-1 text-xs bg-muted rounded hover:bg-muted/80" onClick={() => setIsDocsDialogOpen(true)}>
                             Gestionar
                           </button>
                         </div>
 
-                        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <span style={{ fontSize: "0.875rem" }}>DNI/NIE</span>
-                            <span
-                              style={{
-                                padding: "0.25rem 0.5rem",
-                                fontSize: "0.75rem",
-                                backgroundColor: documentStatus.dni === "verified" ? "#dcfce7" : "#fef3c7",
-                                color: documentStatus.dni === "verified" ? "#065f46" : "#92400e",
-                                borderRadius: "4px",
-                              }}
-                            >
+                        <div className="flex flex-col gap-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm">DNI/NIE</span>
+                            <span className={`px-2 py-0.5 text-xs rounded ${documentStatus.dni === "verified" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200" : "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200"}`}>
                               {documentStatus.dni === "verified" ? "Completado" : "Pendiente"}
                             </span>
                           </div>
 
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <span style={{ fontSize: "0.875rem" }}>Just. Ingresos</span>
-                            <span
-                              style={{
-                                padding: "0.25rem 0.5rem",
-                                fontSize: "0.75rem",
-                                backgroundColor: documentStatus.income === "verified" ? "#dcfce7" : "#fef3c7",
-                                color: documentStatus.income === "verified" ? "#065f46" : "#92400e",
-                                borderRadius: "4px",
-                              }}
-                            >
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm">Just. Ingresos</span>
+                            <span className={`px-2 py-0.5 text-xs rounded ${documentStatus.income === "verified" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200" : "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200"}`}>
                               {documentStatus.income === "verified" ? "Completado" : "Pendiente"}
                             </span>
                           </div>
@@ -4618,54 +4435,16 @@ export default function LeadsPage() {
                       </div>
 
                       {/* Comunicaciones */}
-                      <div
-                        style={{
-                          border: "1px solid #e5e7eb",
-                          borderRadius: "8px",
-                          padding: "1.25rem",
-                          flex: 1,
-                          minHeight: "300px",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            marginBottom: "1rem",
-                          }}
-                        >
-                          <h2 style={{ fontSize: "1rem", fontWeight: "600", margin: 0 }}>Comunicaciones</h2>
-                          <button disabled
-                            style={{
-                              padding: "0.25rem 0.75rem",
-                              fontSize: "0.75rem",
-                              backgroundColor: "#000",
-                              color: "#fff",
-                              border: "none",
-                              borderRadius: "4px",
-                              cursor: "not-allowed",
-                              opacity: 0.5,
-                              pointerEvents: "none",
-                              position: "relative",
-                              zIndex: 1100,
-                            }}
-                          >
+                      <div className="border border-border rounded-lg p-5 flex-1 min-h-[300px]">
+                        <div className="flex items-center justify-between mb-4">
+                          <h2 className="text-sm font-semibold m-0">Comunicaciones</h2>
+                          <button disabled className="px-3 py-1 text-xs bg-muted text-muted-foreground rounded cursor-not-allowed opacity-50 pointer-events-none relative z-[1100]">
                             Agregar
                           </button>
                         </div>
 
                         {communications.length > 0 ? (
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: "0.75rem",
-                              maxHeight: "400px",
-                              overflowY: "auto",
-                            }}
-                          >
-                            {/* START: Updated communications list */}
+                          <div className="flex flex-col gap-3 max-h-[400px] overflow-y-auto">
                             {communications.map((comm) => {
                               const isSent = isCommunicationSent(comm)
                               const isWhatsApp = comm.source === "whatsapp"
@@ -4673,81 +4452,36 @@ export default function LeadsPage() {
                                 <div
                                   key={comm.id}
                                   onClick={() => { if (planInactive) return; openCommunicationDetail(comm) }}
-                                  style={{
-                                    padding: "0.75rem",
-                                    backgroundColor: isSent ? "#eff6ff" : "#f0fdf4",
-                                    borderRadius: "6px",
-                                    border: `1px solid ${isSent ? "#bfdbfe" : "#bbf7d0"}`,
-                                    cursor: planInactive ? "not-allowed" : "pointer",
-                                    transition: "all 0.2s",
-                                    pointerEvents: planInactive ? "none" : "auto",
-                                    opacity: planInactive ? 0.5 : 1,
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (planInactive) return
-                                    e.currentTarget.style.backgroundColor = isSent ? "#dbeafe" : "#dcfce7"
-                                    e.currentTarget.style.borderColor = isSent ? "#93c5fd" : "#86efac"
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (planInactive) return
-                                    e.currentTarget.style.backgroundColor = isSent ? "#eff6ff" : "#f0fdf4"
-                                    e.currentTarget.style.borderColor = isSent ? "#bfdbfe" : "#bbf7d0"
-                                  }}
+                                  className={`p-3 rounded-md border transition-all ${planInactive ? "pointer-events-none opacity-50 cursor-not-allowed" : "cursor-pointer"} ${isSent ? "bg-primary/10 border-primary/20 hover:bg-primary/15 hover:border-primary/30" : "bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/15 hover:border-emerald-500/30 dark:bg-emerald-900/30 dark:border-emerald-900/30 dark:hover:bg-emerald-900/40 dark:hover:border-emerald-900/40"}`}
                                 >
-                                  <div
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "0.5rem",
-                                      marginBottom: "0.5rem",
-                                    }}
-                                  >
-                                    <span style={{ fontSize: "0.875rem" }}>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-sm">
                                       {isWhatsApp ? "💬" : isSent ? "📤" : "📥"}
                                     </span>
-                                    <span
-                                      style={{
-                                        fontSize: "0.65rem",
-                                        fontWeight: "600",
-                                        color: isSent ? "#2563eb" : "#16a34a",
-                                        textTransform: "uppercase",
-                                        letterSpacing: "0.05em",
-                                      }}
-                                    >
+                                    <span className={`text-[0.65rem] font-semibold uppercase tracking-wide ${isSent ? "text-primary" : "text-emerald-600 dark:text-emerald-300"}`}>
                                       {isWhatsApp ? "WhatsApp" : isSent ? "Enviado" : "Recibido"}
                                     </span>
                                   </div>
-                                  <div style={{ fontSize: "0.75rem", fontWeight: "600", marginBottom: "0.25rem" }}>
+                                  <div className="text-sm font-semibold mb-1">
                                     {isWhatsApp ? "Mensaje de WhatsApp" : comm.From || "Sin remitente"}
                                   </div>
-                                  <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: "0.5rem" }}>
+                                  <div className="text-xs text-muted-foreground mb-2">
                                     {isWhatsApp
-                                      ? // Strip HTML tags for preview
-                                        (comm.Mensaje?.replace(/<[^>]*>/g, "") || "Sin mensaje").substring(0, 50) +
+                                      ? (comm.Mensaje?.replace(/<[^>]*>/g, "") || "Sin mensaje").substring(0, 50) +
                                         (comm.Mensaje && comm.Mensaje.replace(/<[^>]*>/g, "").length > 50 ? "..." : "")
                                       : comm.Subject || "Sin asunto"}
                                   </div>
-                                  <div style={{ fontSize: "0.7rem", color: "#9ca3af" }}>
+                                  <div className="text-[0.7rem] text-muted-foreground">
                                     {new Date(comm.created_at).toLocaleDateString("es-ES")}
                                   </div>
                                 </div>
                               )
                             })}
-                            {/* END: Updated communications list */}
                           </div>
                         ) : (
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              height: "calc(100% - 3rem)",
-                              textAlign: "center",
-                            }}
-                          >
-                            <div style={{ fontSize: "3rem" }}>💬</div>
-                            <p style={{ fontSize: "0.875rem", color: "#6b7280", margin: 0 }}>Sin comunicaciones</p>
+                          <div className="flex flex-col items-center justify-center h-[calc(100%_-_3rem)] text-center">
+                            <div className="text-5xl">💬</div>
+                            <p className="text-sm text-muted-foreground m-0">Sin comunicaciones</p>
                           </div>
                         )}
                       </div>
@@ -5425,15 +5159,7 @@ export default function LeadsPage() {
                   files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "dni" : `dni-${idx+1}`))
                 }}
                 onClick={() => { if (!docsUploadLoading) { dniInputRef.current?.click() } }}
-                style={{
-                  flex: "2 1 0%",
-                  border: `2px dashed ${dropActiveDni ? "#2563eb" : "#e5e7eb"}`,
-                  borderRadius: "8px",
-                  padding: "1rem",
-                  backgroundColor: dropActiveDni ? "#eff6ff" : "#f9fafb",
-                  transition: "all 0.2s",
-                  cursor: "pointer",
-                }}
+                className={`flex-[2] border-2 border-dashed rounded-lg p-4 transition cursor-pointer ${dropActiveDni ? "border-primary bg-primary/10 dark:bg-primary/20" : "border-input bg-muted/50 dark:bg-input/30"}`}
               >
                 <input
                   ref={dniInputRef}
@@ -5447,11 +5173,11 @@ export default function LeadsPage() {
                     e.currentTarget.value = ""
                   }}
                 />
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                  <span style={{ fontWeight: 600 }}>DNI/NIE</span>
-                  <span style={{ fontSize: "0.75rem", padding: "0.25rem 0.5rem", borderRadius: 4, backgroundColor: "#fef3c7", color: "#92400e" }}>Haz clic o arrastra aquí</span>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold">DNI/NIE</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200">Haz clic o arrastra aquí</span>
                 </div>
-                <div style={{ fontSize: "0.875rem", color: "#6b7280" }}>Admite imágenes y PDF</div>
+                <div className="text-sm text-muted-foreground">Admite imágenes y PDF</div>
               </div>
 
               <div
@@ -5463,15 +5189,7 @@ export default function LeadsPage() {
                   files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "ingresos" : `ingresos-${idx+1}`))
                 }}
                 onClick={() => { if (!docsUploadLoading) { incomeInputRef.current?.click() } }}
-                style={{
-                  flex: "2 1 0%",
-                  border: `2px dashed ${dropActiveIncome ? "#16a34a" : "#e5e7eb"}`,
-                  borderRadius: "8px",
-                  padding: "1rem",
-                  backgroundColor: dropActiveIncome ? "#f0fdf4" : "#f9fafb",
-                  transition: "all 0.2s",
-                  cursor: "pointer",
-                }}
+                className={`flex-[2] border-2 border-dashed rounded-lg p-4 transition cursor-pointer ${dropActiveIncome ? "border-emerald-500 bg-emerald-500/10 dark:bg-emerald-900/40 dark:border-emerald-900/40" : "border-input bg-muted/50 dark:bg-input/30"}`}
               >
                 <input
                   ref={incomeInputRef}
@@ -5485,11 +5203,11 @@ export default function LeadsPage() {
                     e.currentTarget.value = ""
                   }}
                 />
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                  <span style={{ fontWeight: 600 }}>Justificante de Ingresos</span>
-                  <span style={{ fontSize: "0.75rem", padding: "0.25rem 0.5rem", borderRadius: 4, backgroundColor: "#dcfce7", color: "#065f46" }}>Haz clic o arrastra aquí</span>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold">Justificante de Ingresos</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">Haz clic o arrastra aquí</span>
                 </div>
-                <div style={{ fontSize: "0.875rem", color: "#6b7280" }}>Admite imágenes y PDF</div>
+                <div className="text-sm text-muted-foreground">Admite imágenes y PDF</div>
               </div>
             </div>
 
