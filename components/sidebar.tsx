@@ -1,11 +1,13 @@
 "use client"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Home, Megaphone, Users, Info, User, Building2, Settings } from "lucide-react"
 import LogoutButton from "@/components/logout-button"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { APP_VERSION, APP_NAME } from "@/lib/version"
+import { useEffect, useState } from "react"
+import { createClient } from "@/lib/supabase/client"
 
 interface SidebarProps {
   user: {
@@ -44,7 +46,23 @@ const menuItems = [
 
 export default function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname()
-  const { inmobiliariaNombre, loading } = useInmobiliaria()
+  const { inmobiliariaId, inmobiliariaNombre, loading, isAdmin, setAdminSelectedInmobiliaria } = useInmobiliaria()
+  const supabase = createClient()
+  const [inmos, setInmos] = useState<{ idi: number; Nombre: string }[]>([])
+  const router = useRouter()
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (!isAdmin) return
+      const { data } = await supabase.from("Inmobiliarias").select("idi, Nombre").order("Nombre", { ascending: true })
+      if (active) setInmos((data || []).map((d: any) => ({ idi: Number(d.idi), Nombre: d.Nombre })))
+    }
+    run()
+    return () => {
+      active = false
+    }
+  }, [isAdmin, supabase])
 
   return (
     <div className="w-64 bg-card border-r border-border flex flex-col">
@@ -54,6 +72,36 @@ export default function Sidebar({ user }: SidebarProps) {
         <p className="text-sm text-muted-foreground">
           {APP_NAME} {APP_VERSION}
         </p>
+        {isAdmin && (
+          <div className="mt-3">
+            <label className="text-xs text-muted-foreground">Seleccionar inmobiliaria</label>
+            <select
+              className="mt-1 w-full border rounded-md px-2 py-1 text-sm bg-background"
+              value={inmobiliariaId ?? undefined}
+              onChange={(e) => {
+                const raw = e.target.value
+                if (raw === "__ALL__") {
+                  setAdminSelectedInmobiliaria(null)
+                  router.push(`${pathname}?idi=all`)
+                  return
+                }
+                const val = Number(raw)
+                setAdminSelectedInmobiliaria(Number.isFinite(val) ? val : null)
+                if (Number.isFinite(val)) {
+                  router.push(`${pathname}?idi=${val}`)
+                }
+              }}
+            >
+              <option value={inmobiliariaId ?? undefined}>Actual: {inmobiliariaNombre || "(sin nombre)"}</option>
+              <option value="__ALL__">Todas las inmobiliarias</option>
+              {inmos.map((i) => (
+                <option key={i.idi} value={i.idi}>
+                  {i.Nombre} (IDI {i.idi})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Navigation */}

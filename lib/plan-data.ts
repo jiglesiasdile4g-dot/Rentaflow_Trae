@@ -54,7 +54,7 @@ export function getPlanData(planId: number): PlanData | null {
 
 export function formatPlanValue(value: number): string {
   if (value >= 1000000) {
-    return "Ilimitado"
+    return "∞"
   }
   return value.toLocaleString()
 }

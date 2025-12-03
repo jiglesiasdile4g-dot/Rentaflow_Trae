@@ -44,12 +44,16 @@ interface AnuncioCard {
   fotoUrl: string // From Anuncios.Foto_Url
   adjuntos?: string[]
   // Calculated metrics
-  nuevosHoy: number // Count from Clientes where created_at is last 24h
+  nuevosHoy: number // Count where created_at is today
   emailsEnviados: number // Count from Correos table
+  whatsappsTotal: number
+  emailsPeriodo: number
+  whatsappsPeriodo: number
   datosCompletos: number // Count from Clientes where Estado = "Datos completos"
   leadsTotales: number // Total count from Clientes
   aLaEspera: number // Count from Clientes where Estado != "Datos completos"
-  tiempoAhorrado: number // Calculated based on emails sent
+  tiempoAhorrado: number // Calculated based on emails/whatsapp in periodo
+  tiempoAhorradoTotal: number
   ultimaActividad: string
   fechaUltimaActividad: Date | null
   estado: "activo" | "pausado" | "error" | "archivado" // Added "archivado"
@@ -58,6 +62,8 @@ interface AnuncioCard {
   porcentajeCompletos: number
   // Sparkline data (7 days)
   sparklineData: number[]
+  activityStartDate?: Date
+  activityData?: number[]
   // Consumption metrics
   ejecuciones: number
   consumoMes: number
@@ -99,6 +105,17 @@ interface EditFormData {
   portal: string
   activacion: string
 }
+
+const DEFAULT_FAQ_QUESTIONS = [
+  "¿La vivienda es amueblada?",
+  "¿Incluye electrodomésticos?",
+  "¿Puedo llevar mascotas?",
+  "¿La propiedad tiene terraza, balcón o patio?",
+  "¿Tiene aire acondicionado o calefacción?",
+  "¿Cuántos baños tiene?",
+  "¿Cuántos ocupantes admite la vivienda?",
+  "¿Hay vecinos ruidosos?",
+]
 
 export default function AnunciosPage() {
   const [user, setUser] = useState<any>(null)
@@ -181,6 +198,7 @@ export default function AnunciosPage() {
   })
 
   const [isReferenciaEditable, setIsReferenciaEditable] = useState(false)
+  const [isCodPortalEditable, setIsCodPortalEditable] = useState(false)
 
   const [trendTimeframe, setTrendTimeframe] = useState<"24h" | "7d" | "1m">("7d")
   const [trendData, setTrendData] = useState<any[]>([]) // Add state to store trend data
@@ -227,6 +245,22 @@ export default function AnunciosPage() {
 
   // Variables needed for linting fixes
   const [creatingAnuncio, setCreatingAnuncio] = useState(false)
+  const [metricsPeriod, setMetricsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual">("hoy")
+  const [statsPeriod, setStatsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual" | "esteAno">("esteMes")
+  const periodBadgeText = (() => {
+    const now = new Date()
+    const dayStart = new Date(now)
+    dayStart.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const prevMonthEndDisplay = new Date(now.getFullYear(), now.getMonth(), 0) // last day of previous month
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const start = metricsPeriod === "hoy" ? dayStart : metricsPeriod === "ultimoMes" ? prevMonthStart : metricsPeriod === "esteMes" ? thisMonthStart : (planResetAt ? new Date(planResetAt) : thisMonthStart)
+    const end = metricsPeriod === "hoy" ? dayEnd : metricsPeriod === "ultimoMes" ? prevMonthEndDisplay : now
+    const fmt = (d: Date) => d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" })
+    const label = metricsPeriod === "hoy" ? "Hoy" : metricsPeriod === "ultimoMes" ? "Último mes" : metricsPeriod === "esteMes" ? "Este mes" : "Periodo actual"
+    return metricsPeriod === "hoy" ? `${label}: ${fmt(start)}` : `${label}: ${fmt(start)} – ${fmt(end)}`
+  })()
   const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
   const [attachmentPreviewKind, setAttachmentPreviewKind] = useState<"pdf" | "image" | "unknown">("unknown")
   const [attachmentPreviewName, setAttachmentPreviewName] = useState<string>("")
@@ -523,6 +557,10 @@ export default function AnunciosPage() {
       })
     }
   }, [selectedAnuncioForStats, trendTimeframe, showStatsModal])
+
+  useEffect(() => {
+    fetchAnuncios()
+  }, [metricsPeriod])
 
   const fetchQualityMetrics = async (anuncioReferencia: string, timeframe: "24h" | "7d" | "1m") => {
     const supabase = createBrowserClient(
@@ -1027,7 +1065,7 @@ export default function AnunciosPage() {
         console.log("[v0] User is admin:", isAdmin)
       }
 
-      if (!inmobiliariaId) {
+      if (!inmobiliariaId && !isAdmin) {
         console.log("[v0] No inmobiliariaId available, cannot fetch anuncios")
         setAnunciosCards([])
         setTotalAnuncios(0)
@@ -1041,8 +1079,8 @@ export default function AnunciosPage() {
       const query = supabase
         .from("Anuncios")
         .select("ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos")
-        .eq("usuario", inmobiliariaId) // Always filter by the logged-in agency's IDI
         .order("created_at", { ascending: false })
+        .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
 
       // All users can now see their own archived anuncios
       // The client-side filtering (filterEstado) handles showing/hiding them
@@ -1055,8 +1093,8 @@ export default function AnunciosPage() {
           .select(
             "ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos",
           )
-          .eq("usuario", inmobiliariaId)
           .order("created_at", { ascending: false })
+          .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
         const { data: anunciosFallback, error: fallbackErr } = await fallbackQuery
         if (fallbackErr) {
           console.log("[v0] Error fetching anuncios (fallback):", fallbackErr)
@@ -1092,19 +1130,21 @@ export default function AnunciosPage() {
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
       let cutoffDate = planResetAt ? planResetAt : monthStart
-      try {
-        const { data: inmRow } = await supabase
-          .from("Inmobiliarias")
-          .select("PlanResetAt")
-          .eq("idi", inmobiliariaId)
-          .maybeSingle()
-        if (inmRow?.PlanResetAt) {
-          const dbReset = new Date(inmRow.PlanResetAt)
-          if (!isNaN(dbReset.getTime())) {
-            cutoffDate = dbReset
+      if (inmobiliariaId) {
+        try {
+          const { data: inmRow } = await supabase
+            .from("Inmobiliarias")
+            .select("PlanResetAt")
+            .eq("idi", inmobiliariaId)
+            .maybeSingle()
+          if (inmRow?.PlanResetAt) {
+            const dbReset = new Date(inmRow.PlanResetAt)
+            if (!isNaN(dbReset.getTime())) {
+              cutoffDate = dbReset
+            }
           }
-        }
-      } catch {}
+        } catch {}
+      }
 
       for (const anuncio of anuncios) {
         const referencia = anuncio.Referencia || `REF-${anuncio.ida}`
@@ -1113,8 +1153,8 @@ export default function AnunciosPage() {
         const { data: allLeads, error: leadsError } = await supabase
           .from("Clientes")
           .select(
-            "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita",
-          ) // Added fields for lead details and fecha_de_visita
+            "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos",
+          ) // Added fields for lead details, fecha_de_visita and Fecha_Datos_Completos
           .ilike("Inmueble", referencia)
 
         if (leadsError) {
@@ -1129,16 +1169,27 @@ export default function AnunciosPage() {
         const leadsMes = leadsDesdeCorte.length
         console.log(`[v0] Total leads for ${referencia}: ${leadsTotales}`)
 
+        const dayStart = new Date(now)
+        dayStart.setHours(0, 0, 0, 0)
+        const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
+
+        const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1) // exclusive end
+        const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+        const periodStart = metricsPeriod === "hoy" ? dayStart : metricsPeriod === "ultimoMes" ? prevMonthStart : metricsPeriod === "esteMes" ? thisMonthStart : cutoffDate
+        const periodEnd = metricsPeriod === "hoy" ? dayEnd : metricsPeriod === "ultimoMes" ? prevMonthEnd : now
+
         const nuevosHoy =
-          allLeads?.filter((lead) => {
-            const createdAt = new Date(lead.created_at)
-            return createdAt >= twentyFourHoursAgo
+          allLeads?.filter((lead: any) => {
+            const createdAt = lead.created_at ? new Date(lead.created_at) : null
+            return createdAt && createdAt >= periodStart && createdAt < periodEnd
           }).length || 0
 
         const datosCompletosCount =
           allLeads?.filter((lead) => {
-            const estado = lead.Estado?.toLowerCase() || ""
-            return estado === "datos completos"
+            const estado = (lead as any).Estado?.toLowerCase() || ""
+            const fdc = (lead as any).Fecha_Datos_Completos ? new Date((lead as any).Fecha_Datos_Completos) : null
+            return estado === "datos completos" && fdc && fdc >= periodStart && fdc < periodEnd
           }).length || 0
 
         console.log("[v0] Datos Completos for anuncio", anuncio.ida, ":", datosCompletosCount)
@@ -1147,17 +1198,51 @@ export default function AnunciosPage() {
 
         // We'll match by email addresses from the leads
         const leadEmails = allLeads?.map((lead) => lead.Correo).filter(Boolean) || []
+        const leadIDCs = (allLeads || [])
+          .map((lead: any) => lead.IDC)
+          .filter((idc: any) => Number.isFinite(idc))
         let emailsEnviadosMes = 0
+        let emailsTotal = 0
+        let whatsappsPeriodo = 0
+        let whatsappsTotal = 0
 
         if (leadEmails.length > 0) {
-          const { data: correos, error: correosError } = await supabase
+          // Conteo por periodo seleccionado
+          const { data: correosPeriodo, error: correosPeriodoError } = await supabase
             .from("Correos")
             .select("id, created_at")
             .in("to", leadEmails)
-            .gte("created_at", cutoffDate.toISOString())
+            .gte("created_at", periodStart.toISOString())
+            .lt("created_at", periodEnd.toISOString())
 
-          if (!correosError && correos) {
-            emailsEnviadosMes = correos.length
+          if (!correosPeriodoError && correosPeriodo) {
+            emailsEnviadosMes = correosPeriodo.length
+          }
+        }
+
+        if (leadIDCs.length > 0) {
+          const { data: whats, error: whatsError } = await supabase
+            .from("Whatsapp")
+            .select("id")
+            .in("IDC", leadIDCs)
+            .eq("Tipo", "Enviado")
+
+          if (!whatsError && whats) {
+            whatsappsTotal = whats.length
+          }
+        }
+
+        if (leadIDCs.length > 0) {
+          const { data: whatsPeriodo, error: whatsPeriodoError } = await supabase
+            .from("Whatsapp")
+            .select("id, created_at")
+            .in("IDC", leadIDCs)
+            .gte("created_at", periodStart.toISOString())
+            .lt("created_at", periodEnd.toISOString())
+            .eq("Tipo", "Enviado")
+
+          if (!whatsPeriodoError && whatsPeriodo) {
+            whatsappsPeriodo = whatsPeriodo.length
           }
         }
 
@@ -1174,6 +1259,19 @@ export default function AnunciosPage() {
             }).length || 0
 
           sparklineData.push(leadsInDay)
+        }
+
+        const activityData: number[] = []
+        for (let i = 83; i >= 0; i--) {
+          const ds = new Date(now.getTime() - i * 24 * 60 * 60 * 1000)
+          ds.setHours(0, 0, 0, 0)
+          const de = new Date(ds.getTime() + 24 * 60 * 60 * 1000)
+          const cnt =
+            allLeads?.filter((lead) => {
+              const createdAt = new Date(lead.created_at)
+              return createdAt >= ds && createdAt < de
+            }).length || 0
+          activityData.push(cnt)
         }
 
         let ultimaActividadFecha: Date | null = null
@@ -1200,7 +1298,8 @@ export default function AnunciosPage() {
         }
 
         const porcentajeCompletos = leadsTotales > 0 ? (datosCompletosCount / leadsTotales) * 100 : 0
-        const tiempoAhorrado = (emailsEnviadosMes * 2.27) / 60
+        const tiempoAhorrado = ((emailsEnviadosMes + whatsappsPeriodo) * 2.27) / 60
+        const tiempoAhorradoTotal = ((emailsTotal + whatsappsTotal) * 2.27) / 60
 
         const estado: "activo" | "pausado" | "error" | "archivado" =
           anuncio.Activacion === "Activo"
@@ -1214,7 +1313,7 @@ export default function AnunciosPage() {
         let healthScore = 100
         if (porcentajeCompletos < 20) healthScore -= 25 // Low completion rate
         if (aLaEspera > leadsTotales * 0.7) healthScore -= 20 // Too many waiting
-        if (nuevosHoy === 0 && leadsTotales > 0) healthScore -= 15 // No new leads today
+        if (nuevosHoy === 0 && leadsTotales > 0) healthScore -= 15
         if (leadsTotales === 0) healthScore -= 40 // No leads at all
 
         const ejecuciones = leadsMes + emailsEnviadosMes
@@ -1242,16 +1341,21 @@ export default function AnunciosPage() {
           adjuntos: anuncio.Adjuntos || [],
           nuevosHoy,
           emailsEnviados: emailsEnviadosMes,
+          whatsappsTotal: whatsappsPeriodo,
+          emailsPeriodo: emailsEnviadosMes,
+          whatsappsPeriodo,
           datosCompletos: datosCompletosCount,
           leadsTotales,
           aLaEspera,
           tiempoAhorrado,
+          tiempoAhorradoTotal,
           ultimaActividad,
           fechaUltimaActividad: ultimaActividadFecha,
           estado,
           healthScore: Math.max(0, healthScore),
           porcentajeCompletos,
           sparklineData,
+          activityData,
           ejecuciones,
           consumoMes: ejecuciones,
           fechaCreacion: fechaCreacion, // Add fechaCreacion
@@ -1292,8 +1396,8 @@ export default function AnunciosPage() {
           const { count, error } = await supabase
             .from("Clientes")
             .select("*", { count: "exact", head: true })
-            .eq("usuario", inmobiliariaId)
             .gte(field, prIso)
+            .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
           if (!error) {
             consumo = count || 0
             break
@@ -1610,9 +1714,14 @@ export default function AnunciosPage() {
       const { data: anuncioData, error } = await supabase.from("Anuncios").select("*").eq("ida", anuncio.id).single()
 
       if (!error && anuncioData) {
+        const rawFaqs = anuncioData.faqs
+        const parsedFaqs = Array.isArray(rawFaqs) ? rawFaqs : (rawFaqs ? JSON.parse(rawFaqs) : [])
+        const initialFaqs = parsedFaqs.length > 0
+          ? parsedFaqs
+          : DEFAULT_FAQ_QUESTIONS.map((q) => ({ pregunta: q, respuesta: "" }))
         setInfoFaqsData({
           informacionDetallada: anuncioData.informacion_detallada || anuncioData.Descripcion || "",
-          faqs: anuncioData.faqs ? JSON.parse(anuncioData.faqs) : [{ pregunta: "", respuesta: "" }],
+          faqs: initialFaqs,
         })
       }
     } catch (err) {
@@ -1630,7 +1739,7 @@ export default function AnunciosPage() {
     try {
       const updateData = {
         informacion_detallada: infoFaqsData.informacionDetallada,
-        faqs: JSON.stringify(infoFaqsData.faqs.filter((faq) => faq.pregunta.trim() !== "")),
+        faqs: infoFaqsData.faqs.filter((faq) => faq.pregunta.trim() !== ""),
       }
 
       const { error } = await supabase.from("Anuncios").update(updateData).eq("ida", editingAnuncio.id)
@@ -1666,7 +1775,7 @@ export default function AnunciosPage() {
       // Fetch real metrics from database
       const { data: allLeads, error: leadsError } = await supabase
         .from("Clientes")
-        .select("Estado,aceptado,visita_propuesta,visita_completada,IDC,Nombre,Correo,Telefono") // Select boolean fields and identifying fields
+        .select("Estado,aceptado,visita_propuesta,visita_completada,IDC,Nombre,Correo,Telefono,created_at") // Include created_at for activity heatmap
         .ilike("Inmueble", anuncio.referencia)
 
       if (leadsError) {
@@ -1698,11 +1807,31 @@ export default function AnunciosPage() {
         descartados,
       )
 
+      const dayMs = 24 * 60 * 60 * 1000
+      const weeks = 53
+      const rows = 7
+      const totalDays = weeks * rows
+      const now = new Date()
+      const firstDate = new Date(now.getTime() - (totalDays - 1) * dayMs)
+      firstDate.setHours(0, 0, 0, 0)
+      const activityYear: number[] = Array.from({ length: totalDays }, (_, i) => {
+        const ds = new Date(firstDate.getTime() + i * dayMs)
+        const de = new Date(ds.getTime() + dayMs)
+        const cnt =
+          allLeads?.filter((lead) => {
+            const createdAt = lead?.created_at ? new Date(lead.created_at) : null
+            return createdAt && createdAt >= ds && createdAt < de
+          }).length || 0
+        return cnt
+      })
+
       // Populate stats with real data
       const statsWithRealData = {
         ...anuncio,
         datosCompletos: datosCompletosCount,
         descartados,
+        activityData: activityYear,
+        activityStartDate: firstDate,
         phaseMetrics: {
           aceptados,
           visitaPropuesta,
@@ -1942,7 +2071,7 @@ export default function AnunciosPage() {
       const t = setTimeout(() => setCardsLoading(false), 300)
       return () => clearTimeout(t)
     } catch {}
-  }, [searchQuery, filterPortal, filterEstado, anunciosCards])
+  }, [searchQuery, filterPortal, filterEstado, anunciosCards, metricsPeriod])
 
   const getHealthColor = (score: number) => {
     if (score >= 80) return "text-green-600"
@@ -1971,6 +2100,62 @@ export default function AnunciosPage() {
             .join(" ")}
         />
       </svg>
+    )
+  }
+
+  const ActivityHeatmap = ({
+    data,
+    startDate,
+    weeks = 53,
+    rows = 7,
+    periodStart,
+    periodEnd,
+  }: {
+    data: number[]
+    startDate: Date
+    weeks?: number
+    rows?: number
+    periodStart?: Date
+    periodEnd?: Date
+  }) => {
+    const total = weeks * rows
+    const slice = data.slice(-total)
+    const max = Math.max(...slice, 1)
+    const dayMs = 24 * 60 * 60 * 1000
+    const cls = (ratio: number, active: boolean) =>
+      !active
+        ? "bg-muted/20"
+        : ratio <= 0
+          ? "bg-muted/30"
+          : ratio < 0.25
+            ? "bg-emerald-200/80"
+            : ratio < 0.5
+              ? "bg-emerald-400/80"
+              : ratio < 0.75
+                ? "bg-emerald-600"
+                : "bg-emerald-800"
+    const start = new Date(startDate)
+    start.setHours(0, 0, 0, 0)
+    const cells = Array.from({ length: total }, (_, i) => {
+      const value = slice[i] || 0
+      const ratio = max > 0 ? value / max : 0
+      const date = new Date(start.getTime() + i * dayMs)
+      const active = periodStart && periodEnd ? date >= periodStart && date < periodEnd : true
+      const label = `${date.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" })}: ${value} leads`
+      return { ratio, active, label }
+    })
+    return (
+      <div className="overflow-x-auto">
+        <div className="grid grid-flow-col grid-rows-7 gap-[3px]">
+          {cells.map((c, idx) => (
+            <div
+              key={idx}
+              title={c.label}
+              className={`w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 ${cls(c.ratio, c.active)}`}
+            />
+          ))}
+        </div>
+      </div>
     )
   }
 
@@ -2703,21 +2888,39 @@ export default function AnunciosPage() {
 
                       <CardContent className="space-y-1.5 pt-2 pb-3">
                         <div>
-                          <h4 className="text-xs font-semibold mb-0.5 text-muted-foreground">
-                            Rendimiento (últimas 24h)
-                          </h4>
-                          <div className="grid grid-cols-2 lg:grid-cols-5 gap-1">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <h4 className="text-xs font-semibold text-muted-foreground">Rendimiento y actividad</h4>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="h-7 text-[10px]">{periodBadgeText}</Badge>
+                              <Select value={metricsPeriod} onValueChange={(v) => setMetricsPeriod(v as any)}>
+                                <SelectTrigger className="h-7 w-[140px] text-xs">
+                                  <SelectValue placeholder="Periodo" />
+                                </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="hoy">Hoy</SelectItem>
+                                <SelectItem value="esteMes">Este mes</SelectItem>
+                                <SelectItem value="ultimoMes">Último mes</SelectItem>
+                                <SelectItem value="periodoActual">Periodo actual</SelectItem>
+                              </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 lg:grid-cols-6 gap-1">
                             <div className="text-center">
                               <div className="text-lg font-bold text-blue-600">{anuncio.nuevosHoy}</div>
-                              <div className="text-[10px] text-muted-foreground">Nuevos hoy</div>
+                              <div className="text-[10px] text-muted-foreground">Nuevos</div>
                             </div>
                             <div className="text-center">
                               <div className="text-lg font-bold text-green-600">{anuncio.emailsEnviados}</div>
                               <div className="text-[10px] text-muted-foreground">Emails enviados</div>
                             </div>
                             <div className="text-center">
+                              <div className="text-lg font-bold text-teal-600">{anuncio.whatsappsPeriodo}</div>
+                              <div className="text-[10px] text-muted-foreground">Whatsapps enviados</div>
+                            </div>
+                            <div className="text-center">
                               <div className="text-lg font-bold text-purple-600">{anuncio.datosCompletos}</div>
-                              <div className="text-[10px] text-muted-foreground">Nº Completos HOY</div>
+                              <div className="text-[10px] text-muted-foreground">Nº Completos</div>
                             </div>
                             <div className="text-center">
                               <div className="text-lg font-bold text-orange-600">{anuncio.aLaEspera}</div>
@@ -3214,7 +3417,12 @@ export default function AnunciosPage() {
 
         {/* ... existing edit dialog ... */}
         <Dialog open={!!editingAnuncio} onOpenChange={() => setEditingAnuncio(null)}>
-          <DialogContent className="sm:max-w-[800px] md:max-w-[900px] lg:max-w-[1000px] max-h-[90vh] overflow-y-auto z-[100]">
+          <DialogContent
+            className="sm:max-w-[800px] md:max-w-[900px] lg:max-w-[1000px] max-h-[90vh] overflow-y-auto z-[100]"
+            onInteractOutside={(e) => {
+              e.preventDefault()
+            }}
+          >
             <DialogHeader>
               <DialogTitle>Editar Anuncio - {editingAnuncio?.referencia}</DialogTitle>
               <DialogDescription>
@@ -3244,6 +3452,45 @@ export default function AnunciosPage() {
                       title={isReferenciaEditable ? "Bloquear campo" : "Desbloquear para editar"}
                     >
                       {isReferenciaEditable ? <LockOpen className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-800">
+                    <div className="flex gap-1.5">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold">Campo crítico:</p>
+                        <p className="mt-0.5">
+                          Este campo debe coincidir exactamente con la &quot;Referencia Interna&quot; de Idealista o Fotocasa para
+                          que los leads se listen correctamente y evitar conflictos.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label htmlFor="codPortal" className="text-right pt-2">
+                  Código del anuncio
+                </Label>
+                <div className="col-span-3 space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      id="codPortal"
+                      value={editFormData.codPortal}
+                      onChange={(e) => setEditFormData((prev) => ({ ...prev, codPortal: e.target.value }))}
+                      className="flex-1"
+                      placeholder="Código del anuncio en el portal"
+                      disabled={!isCodPortalEditable}
+                    />
+                    <Button
+                      type="button"
+                      variant={isCodPortalEditable ? "default" : "outline"}
+                      size="icon"
+                      onClick={() => setIsCodPortalEditable(!isCodPortalEditable)}
+                      title={isCodPortalEditable ? "Bloquear campo" : "Desbloquear para editar"}
+                    >
+                      {isCodPortalEditable ? <LockOpen className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
                     </Button>
                   </div>
                   <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-800">
@@ -3327,18 +3574,7 @@ export default function AnunciosPage() {
                   placeholder="Portal de publicación"
                 />
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="codPortal" className="text-right">
-                  Código del anuncio
-                </Label>
-                <Input
-                  id="codPortal"
-                  value={editFormData.codPortal}
-                  onChange={(e) => setEditFormData((prev) => ({ ...prev, codPortal: e.target.value }))}
-                  className="col-span-3"
-                  placeholder="Código del anuncio en el portal"
-                />
-              </div>
+              
                       <div className="grid grid-cols-4 items-center gap-4">
                         <Label className="text-right">Archivos del anuncio</Label>
                         <div
@@ -3413,13 +3649,22 @@ export default function AnunciosPage() {
               <Button variant="outline" onClick={() => setEditingAnuncio(null)}>
                 Cancelar
               </Button>
+              <Button variant="outline" onClick={() => editingAnuncio && handleInfoFaqs(editingAnuncio)}>
+                <Settings className="h-4 w-4 mr-1" />
+                Info & FAQs
+              </Button>
               <Button onClick={handleGuardarEdicion}>Guardar cambios</Button>
             </div>
           </DialogContent>
         </Dialog>
 
         <Dialog open={showInfoFaqsModal} onOpenChange={setShowInfoFaqsModal}>
-          <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto z-[100]">
+          <DialogContent
+            className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto z-[100]"
+            onInteractOutside={(e) => {
+              e.preventDefault()
+            }}
+          >
             <DialogHeader>
               <DialogTitle>Información Detallada & FAQs - {editingAnuncio?.referencia}</DialogTitle>
               <DialogDescription>
@@ -3443,7 +3688,7 @@ export default function AnunciosPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-medium">Preguntas Frecuentes (FAQs)</Label>
-                  <Button size="sm" variant="outline" onClick={addFaq}>
+                  <Button size="sm" variant="outline" className="relative z-[1100]" onClick={addFaq}>
                     <Plus className="h-4 w-4 mr-1" />
                     Añadir FAQ
                   </Button>
@@ -3573,116 +3818,102 @@ export default function AnunciosPage() {
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <h4 className="font-semibold">Tendencia de Leads</h4>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant={trendTimeframe === "24h" ? "default" : "outline"}
-                          onClick={() => setTrendTimeframe("24h")}
-                          className="h-7 text-xs"
-                        >
-                          24h
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={trendTimeframe === "7d" ? "default" : "outline"}
-                          onClick={() => setTrendTimeframe("7d")}
-                          className="h-7 text-xs"
-                        >
-                          7 días
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={trendTimeframe === "1m" ? "default" : "outline"}
-                          onClick={() => setTrendTimeframe("1m")}
-                          className="h-7 text-xs"
-                        >
-                          1 mes
-                        </Button>
+                      <h4 className="font-semibold">Actividad de Leads</h4>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="h-7 text-[10px]">
+                          {(() => {
+                            const now = new Date()
+                            const dayStart = new Date(now); dayStart.setHours(0,0,0,0)
+                            const dayEnd = new Date(dayStart.getTime() + 24*60*60*1000)
+                            const prevMonthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
+                            const prevMonthEndDisplay = new Date(now.getFullYear(), now.getMonth(), 0)
+                            const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+                            const yearStart = new Date(now.getFullYear(), 0, 1)
+                            const start =
+                              statsPeriod === "hoy"
+                                ? dayStart
+                                : statsPeriod === "ultimoMes"
+                                ? prevMonthStart
+                                : statsPeriod === "esteMes"
+                                ? thisMonthStart
+                                : statsPeriod === "esteAno"
+                                ? yearStart
+                                : (planResetAt ? new Date(planResetAt) : thisMonthStart)
+                            const end = statsPeriod === "hoy" ? dayEnd : statsPeriod === "ultimoMes" ? prevMonthEndDisplay : now
+                            const fmt = (d: Date) => d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" })
+                            const label =
+                              statsPeriod === "hoy"
+                                ? "Hoy"
+                                : statsPeriod === "ultimoMes"
+                                ? "Último mes"
+                                : statsPeriod === "esteMes"
+                                ? "Este mes"
+                                : statsPeriod === "esteAno"
+                                ? "Este año"
+                                : "Periodo actual"
+                            return statsPeriod === "hoy" ? `${label}: ${fmt(start)}` : `${label}: ${fmt(start)} – ${fmt(end)}`
+                          })()}
+                        </Badge>
+                        <Select value={statsPeriod} onValueChange={(v) => setStatsPeriod(v as any)}>
+                          <SelectTrigger className="h-7 w-[140px] text-xs">
+                            <SelectValue placeholder="Periodo" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="hoy">Hoy</SelectItem>
+                            <SelectItem value="esteMes">Este mes</SelectItem>
+                            <SelectItem value="ultimoMes">Último mes</SelectItem>
+                            <SelectItem value="esteAno">Este año</SelectItem>
+                            <SelectItem value="periodoActual">Periodo actual</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                     <div className="bg-muted p-4 rounded-lg">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm text-muted-foreground">
-                          {trendTimeframe === "24h" && "Últimas 24 horas"}
-                          {trendTimeframe === "7d" && "Últimos 7 días"}
-                          {trendTimeframe === "1m" && "Últimas 4 semanas"}
-                        </span>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Calendar className="h-3 w-3" />
-                          <span>Activado: {selectedAnuncioForStats.fechaCreacion || "N/A"}</span>
-                        </div>
-                      </div>
-
-                      {loadingTrendData ? (
+                      {!selectedAnuncioForStats?.activityData || selectedAnuncioForStats.activityData.length === 0 ? (
                         <div className="flex items-center justify-center h-32">
-                          <div className="text-sm text-muted-foreground">Cargando datos...</div>
+                          <div className="text-sm text-muted-foreground">Sin datos</div>
                         </div>
                       ) : (
-                        <div className="space-y-4">
-                          {/* Chart */}
-                          <div className="h-32">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <LineChart data={trendData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                                <XAxis
-                                  dataKey={trendTimeframe === "24h" ? "hour" : trendTimeframe === "7d" ? "day" : "week"}
-                                  tick={{ fontSize: 10 }}
-                                  stroke="hsl(var(--muted-foreground))"
-                                />
-                                <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                                <Tooltip
-                                  contentStyle={{
-                                    backgroundColor: "hsl(var(--background))",
-                                    border: "1px solid hsl(var(--border))",
-                                    borderRadius: "6px",
-                                  }}
-                                />
-                                <Line
-                                  type="monotone"
-                                  dataKey="count"
-                                  stroke="hsl(var(--primary))"
-                                  strokeWidth={2}
-                                  dot={{ r: 3 }}
-                                  activeDot={{ r: 5 }}
-                                />
-                              </LineChart>
-                            </ResponsiveContainer>
-                          </div>
-
-                          {/* Data Grid */}
-                          <div
-                            className={`grid gap-2 text-xs ${
-                              trendTimeframe === "24h"
-                                ? "grid-cols-12"
-                                : trendTimeframe === "7d"
-                                  ? "grid-cols-7"
-                                  : "grid-cols-4"
-                            }`}
-                          >
-                            {trendData.map((item, index) => {
-                              const isCurrent = trendTimeframe === "24h" && item.isCurrent
-                              return (
-                                <div
-                                  key={index}
-                                  className={`text-center p-2 rounded ${
-                                    isCurrent ? "bg-primary text-primary-foreground font-bold" : "bg-background"
-                                  }`}
-                                >
-                                  <div className="font-medium text-sm">{item.count}</div>
-                                  <div
-                                    className={`text-xs ${isCurrent ? "text-primary-foreground" : "text-muted-foreground"}`}
-                                  >
-                                    {trendTimeframe === "24h" && item.hour}
-                                    {trendTimeframe === "7d" && item.day}
-                                    {trendTimeframe === "1m" && item.week}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
+                        (() => {
+                          const now = new Date()
+                          const dayStart = new Date(now); dayStart.setHours(0,0,0,0)
+                          const dayEnd = new Date(dayStart.getTime() + 24*60*60*1000)
+                          const prevMonthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
+                          const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1)
+                          const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+                          const yearStart = new Date(now.getFullYear(), 0, 1)
+                          const periodStart =
+                            statsPeriod === "hoy"
+                              ? dayStart
+                              : statsPeriod === "ultimoMes"
+                              ? prevMonthStart
+                              : statsPeriod === "esteMes"
+                              ? thisMonthStart
+                              : statsPeriod === "esteAno"
+                              ? yearStart
+                              : (planResetAt ? new Date(planResetAt) : thisMonthStart)
+                          const periodEnd = statsPeriod === "hoy" ? dayEnd : statsPeriod === "ultimoMes" ? prevMonthEnd : now
+                          return (
+                            <ActivityHeatmap
+                              data={selectedAnuncioForStats.activityData}
+                              startDate={selectedAnuncioForStats.activityStartDate || thisMonthStart}
+                              weeks={53}
+                              rows={7}
+                              periodStart={periodStart}
+                              periodEnd={periodEnd}
+                            />
+                          )
+                        })()
                       )}
+                      <div className="flex items-center justify-end mt-2 gap-1 text-[10px] text-muted-foreground">
+                        <span>Menor</span>
+                        <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-muted/30" />
+                        <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-200/80" />
+                        <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-400/80" />
+                        <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-600" />
+                        <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-800" />
+                        <span>Mayor</span>
+                      </div>
                     </div>
                   </div>
 
