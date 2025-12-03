@@ -2069,16 +2069,16 @@ export default function LeadsPage() {
                                     : ""
                                   } ${
                                   isDescartado
-                                    ? "opacity-40 bg-gray-50 border-gray-300"
+                                    ? "opacity-40 bg-gray-50 border-gray-300 dark:bg-card dark:border-gray-600"
                                     : isAceptado
-                                      ? "border-emerald-200 bg-emerald-50/30 hover:bg-emerald-50/50"
+                                      ? "border-emerald-200 dark:border-emerald-700 bg-emerald-50/30 hover:bg-emerald-50/50 dark:bg-card dark:hover:bg-card"
                                       : isDataComplete
-                                        ? "border-green-200 bg-green-50/30 hover:bg-green-50/50"
-                                        : "border-amber-200 bg-amber-50/30 hover:bg-amber-50/50"
+                                        ? "border-green-200 dark:border-green-700 bg-green-50/30 hover:bg-green-50/50 dark:bg-card dark:hover:bg-card"
+                                        : "border-amber-200 dark:border-amber-700 bg-amber-50/30 hover:bg-amber-50/50 dark:bg-card dark:hover:bg-card"
                                   }`}
                                 onClick={() => openLeadDetail(lead)}
                               >
-                                <Badge variant="secondary" className="absolute top-1 left-1 z-10 font-mono text-[10px] text-muted-foreground">
+                                <Badge variant="secondary" className="absolute top-1 left-1 z-10 font-mono text-xs text-muted-foreground">
                                   ID: {String((lead as any).id ?? (lead as any).idc ?? (lead as any).IDC ?? "")}
                                 </Badge>
                                 <CardContent className="p-2">
@@ -2209,14 +2209,14 @@ export default function LeadsPage() {
                                                 )
                                               } else {
                                                 return (
-                                                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300">
-                                                    <span className="text-xs font-semibold text-amber-800">
+                                                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 dark:bg-amber-900/30 dark:border-amber-700">
+                                                    <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">
                                                       Incompleto
                                                     </span>
-                                                    <div className="h-3 w-px bg-amber-400" />
+                                                    <div className="h-3 w-px bg-amber-400 dark:bg-amber-700" />
                                                     <div className="flex items-center gap-0.5">
                                                       <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
-                                                      <span className="text-xs font-semibold text-amber-700">
+                                                      <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
                                                         {completionPercentage}%
                                                       </span>
                                                     </div>
@@ -2430,16 +2430,16 @@ export default function LeadsPage() {
                               key={lead.id}
                               className={`relative hover:shadow-md transition-all cursor-pointer ${
                                 isDescartado
-                                  ? "opacity-40 bg-gray-50 border-gray-300"
+                                  ? "opacity-40 bg-gray-50 border-gray-300 dark:bg-card dark:border-gray-600"
                                   : isAceptado
-                                    ? "border-emerald-200 bg-emerald-50/30 hover:bg-emerald-50/50"
+                                    ? "border-emerald-200 dark:border-emerald-700 bg-emerald-50/30 hover:bg-emerald-50/50 dark:bg-card dark:hover:bg-card"
                                     : isDataComplete
-                                      ? "border-green-200 bg-green-50/30 hover:bg-green-50/50"
-                                      : "border-amber-200 bg-amber-50/30 hover:bg-amber-50/50"
+                                      ? "border-green-200 dark:border-green-700 bg-green-50/30 hover:bg-green-50/50 dark:bg-card dark:hover:bg-card"
+                                      : "border-amber-200 dark:border-amber-700 bg-amber-50/30 hover:bg-amber-50/50 dark:bg-card dark:hover:bg-card"
                               }`}
                               onClick={() => openLeadDetail(lead)}
                             >
-                              <Badge variant="secondary" className="absolute top-1 left-1 z-10 font-mono text-[10px] text-muted-foreground">
+                              <Badge variant="secondary" className="absolute top-1 left-1 z-10 font-mono text-xs text-muted-foreground">
                                 ID: {String((lead as any).id ?? (lead as any).idc ?? (lead as any).IDC ?? "")}
                               </Badge>
                               <CardContent className="p-2">
@@ -2569,14 +2569,14 @@ export default function LeadsPage() {
                                               )
                                             } else {
                                               return (
-                                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300">
-                                                  <span className="text-xs font-semibold text-amber-800">
+                                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 dark:bg-amber-900/30 dark:border-amber-700">
+                                                  <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">
                                                     Incompleto
                                                   </span>
-                                                  <div className="h-3 w-px bg-amber-400" />
+                                                  <div className="h-3 w-px bg-amber-400 dark:bg-amber-700" />
                                                   <div className="flex items-center gap-0.5">
                                                     <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
-                                                    <span className="text-xs font-semibold text-amber-700">
+                                                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
                                                       {completionPercentage}%
                                                     </span>
                                                   </div>

@@ -221,11 +221,11 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
     .sort((a, b) => Number(a?.Precio ?? 0) - Number(b?.Precio ?? 0))
   const planStyle = (name: string) => {
     const n = String(name || "").toLowerCase()
-    if (n === "mini") return "border-slate-200 bg-slate-50/60"
-    if (n === "starter") return "border-green-200 bg-green-50/40"
-    if (n === "agency") return "border-blue-200 bg-blue-50/40"
-    if (n === "profesional") return "border-purple-200 bg-purple-50/40"
-    return "border-muted"
+    if (n === "mini") return "bg-card border-slate-200 dark:border-slate-700"
+    if (n === "starter") return "bg-card border-green-200 dark:border-green-700"
+    if (n === "agency") return "bg-card border-blue-200 dark:border-blue-700"
+    if (n === "profesional") return "bg-card border-purple-200 dark:border-purple-700"
+    return "bg-card border-muted"
   }
   const computeNextRenewal = (base: Date) => {
     const y = base.getFullYear()

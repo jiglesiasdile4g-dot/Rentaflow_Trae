@@ -2845,17 +2845,27 @@ export default function AnunciosPage() {
               </DropdownMenu>
 
               <button
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg border-2 border-dashed transition-all cursor-pointer group ${filterEstado === "archivado" ? "border-orange-400 bg-orange-50 hover:bg-orange-100 hover:border-orange-500" : "border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400"}`}
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg border-2 border-dashed transition-all cursor-pointer group ${
+                  filterEstado === "archivado"
+                    ? "border-orange-400 bg-orange-50 hover:bg-orange-100 hover:border-orange-500 dark:border-orange-700 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 dark:hover:border-orange-600"
+                    : "border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400 dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+                }`}
                 onClick={() => {
                   setFilterEstado(filterEstado === "archivado" ? "all" : "archivado")
                 }}
               >
-                <div className={`w-5 h-5 rounded-full flex items-center justify-center transition-colors shrink-0 ${filterEstado === "archivado" ? "bg-orange-200 group-hover:bg-orange-300" : "bg-gray-200 group-hover:bg-gray-300"}`}>
-                  <Target className={`h-3 w-3 ${filterEstado === "archivado" ? "text-orange-700" : "text-gray-600"}`} />
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center transition-colors shrink-0 ${
+                  filterEstado === "archivado"
+                    ? "bg-orange-200 group-hover:bg-orange-300 dark:bg-orange-800/30 dark:group-hover:bg-orange-800/40"
+                    : "bg-gray-200 group-hover:bg-gray-300 dark:bg-input/50 dark:group-hover:bg-input/60"
+                }`}>
+                  <Target className={`h-3 w-3 ${
+                    filterEstado === "archivado" ? "text-orange-700 dark:text-orange-300" : "text-gray-600 dark:text-foreground/85"
+                  }`} />
                 </div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="font-medium text-sm">{filterEstado === "archivado" ? "Ver Activos" : "Archivados"}</span>
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="font-medium text-sm text-foreground dark:text-foreground">{filterEstado === "archivado" ? "Ver Activos" : "Archivados"}</span>
+                  <span className="text-xs text-muted-foreground dark:text-foreground/85">
                     {filterEstado === "archivado" ? "· viendo archivados" : "· ver anuncios archivados"}
                   </span>
                 </div>
