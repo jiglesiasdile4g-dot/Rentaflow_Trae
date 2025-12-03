@@ -1,14 +1,4 @@
-# [0.3.0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.11...v0.3.0) (2025-12-03)
-
-
-### Features
-
-* **ui:** ampliar modales para mayor visibilidad de información ([fb94d71](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/fb94d71f563a106525231be825bdbfa6ba334b73))
-
-
-
 ## [0.3.1](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.3.0...v0.3.1) (2025-12-03)
-
 
 ### Features
 
@@ -18,6 +8,14 @@
 * **archivados:** destacar la vista y cambiar botón a “Ver Activos” cuando el filtro está activo
 * **mensajes:** toast de éxito incluye “La IA ha sido entrenada”
 * **whatsapp:** diálogo de confirmación al desactivar con advertencia sobre leads sin email
+
+# [0.3.0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.11...v0.3.0) (2025-12-03)
+
+
+### Features
+
+* **ui:** ampliar modales para mayor visibilidad de información ([fb94d71](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/fb94d71f563a106525231be825bdbfa6ba334b73))
+
 
 
 ## [0.2.11](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.2.10...v0.2.11) (2025-12-03)

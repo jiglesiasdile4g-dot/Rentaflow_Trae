@@ -194,6 +194,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
 
   const changelogPath = path.join(process.cwd(), "CHANGELOG.md")
   let whatsNewGroups: { heading: string; blocks: { title: string; subitems: string[] }[] }[] = []
+  let whatsNewSections: { version: string; groups: { heading: string; blocks: { title: string; subitems: string[] }[] } }[] = []
   let clText: string = ""
   try {
     clText = fs.readFileSync(changelogPath, "utf-8")
@@ -249,12 +250,14 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
       .trim()
   if (clText) {
     const clRawNormalized = clText.replace(/\r\n/g, "\n")
-    const sectionMatch = clRawNormalized.match(/##\s*\[?([^\]]+)\]?[^\n]*\n([\s\S]*?)(?=\n##\s|\n#\s|$)/)
-    if (sectionMatch) {
-      const body = sectionMatch[2].replace(/\\n/g, "\n")
+    const sectionMatches = Array.from(clRawNormalized.matchAll(/##\s*\[?([^\]]+)\]?[^\n]*\n([\s\S]*?)(?=\n##\s|\n#\s|$)/g))
+    sectionMatches.slice(0, 3).forEach((sm) => {
+      const versionLabel = String(sm[1] || "").trim()
+      const body = String(sm[2] || "").replace(/\\n/g, "\n")
+      let groups: { heading: string; blocks: { title: string; subitems: string[] }[] }[] = []
       const groupMatches = Array.from(body.matchAll(/###\s+([^\n]+)\n([\s\S]*?)(?=\n###\s|\n##\s|$)/g))
       if (groupMatches.length > 0) {
-        whatsNewGroups = groupMatches.map((gm) => {
+        groups = groupMatches.map((gm) => {
           const heading = gm[1].trim()
           const content = gm[2]
           const topItems = content.split(/^\*\s+/m).slice(1)
@@ -274,7 +277,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
           })
           return { heading, blocks }
         })
-        whatsNewGroups = whatsNewGroups.map((g) => ({ heading: g.heading, blocks: g.blocks.slice(0, 3).map((b) => ({ title: b.title, subitems: b.subitems.slice(0, 5) })) }))
+        groups = groups.map((g) => ({ heading: g.heading, blocks: g.blocks.slice(0, 3).map((b) => ({ title: b.title, subitems: b.subitems.slice(0, 5) })) }))
       } else {
         const headingMatch = body.match(/###\s+([^\n]+)/)
         const singleHeading = headingMatch ? headingMatch[1].trim() : ""
@@ -288,9 +291,16 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
             .map((l) => sanitize(l.replace(/^\s*-\s+/, "").trim()))
           return { title, subitems }
         })
-        whatsNewGroups = [{ heading: singleHeading, blocks: blocks.slice(0, 3).map((b) => ({ title: b.title, subitems: b.subitems.slice(0, 5) })) }]
+        groups = [{ heading: singleHeading, blocks: blocks.slice(0, 3).map((b) => ({ title: b.title, subitems: b.subitems.slice(0, 5) })) }]
       }
-    }
+      if (groups.length === 0 || !groups.some((g) => g.blocks && g.blocks.length > 0 && (g.heading || "").trim().length > 0)) {
+        const bullets = Array.from(body.matchAll(/^\*\s+(.+)$/gm)).map((m) => sanitize(m[1]))
+        if (bullets.length > 0) {
+          groups = [{ heading: "Features", blocks: bullets.slice(0, 5).map((b) => ({ title: b, subitems: [] })) }]
+        }
+      }
+      whatsNewSections.push({ version: versionLabel, groups })
+    })
   }
 
   const sp = (searchParams ? await searchParams : undefined) as Record<string, string | string[] | undefined> | undefined
@@ -561,58 +571,67 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
               <div className="flex items-center gap-2">
                 {appVersion && <Badge variant="secondary">v{appVersion}{appChannel ? ` (${appChannel})` : ""}</Badge>}
               </div>
-              {whatsNewGroups.length > 0 ? (
-                <div className="space-y-4">
-                  {whatsNewGroups.map((group, gi) => {
-                    const labelMap: Record<string, string> = {
-                      "Bug Fixes": "Correcciones",
-                      Features: "Nuevas funcionalidades",
-                      "Performance Improvements": "Mejoras de rendimiento",
-                      Chore: "Mantenimiento",
-                      Docs: "Documentación",
-                      Refactor: "Refactorizaciones",
-                    }
-                    const variantMap: Record<string, string> = {
-                      "Bug Fixes": "bug",
-                      Features: "feature",
-                      "Performance Improvements": "performance",
-                      Chore: "chore",
-                      Docs: "docs",
-                      Refactor: "refactor",
-                    }
-                    const label = labelMap[group.heading] || group.heading
-                    const variant = (variantMap[group.heading] || "secondary") as any
-                    return (
-                      <div key={gi} className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Badge variant={variant} className="text-xs">{label}</Badge>
-                        </div>
-                        <ul className="space-y-2 text-sm">
-                          {group.blocks.map((block, idx) => (
-                            <li key={idx}>
-                              {(() => {
-                                const primaryTitle = (block.title || "").trim()
-                                const autoItems = primaryTitle
-                                  .split(/\s*,\s*/)
-                                  .map((i) => i.replace(/\([0-9a-f]{7,}\)/gi, "").trim())
-                                  .filter(Boolean)
-                                const items = block.subitems.length > 0 ? block.subitems : (autoItems.length > 1 ? autoItems : [])
-                                return items.length > 0 ? (
-                                  <ul className="list-disc pl-5 space-y-0.5">
-                                    {items.map((s, j) => (
-                                      <li key={j}>{s}</li>
-                                    ))}
-                                  </ul>
-                                ) : (
-                                  <div className="font-medium">{primaryTitle}</div>
-                                )
-                              })()}
-                            </li>
-                          ))}
-                        </ul>
+              {whatsNewSections.length > 0 ? (
+                <div className="space-y-6">
+                  {whatsNewSections.map((section, si) => (
+                    <div key={si} className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary">v{section.version}</Badge>
                       </div>
-                    )
-                  })}
+                      <div className="space-y-4">
+                        {section.groups.map((group, gi) => {
+                          const labelMap: Record<string, string> = {
+                            "Bug Fixes": "Correcciones",
+                            Features: "Nuevas funcionalidades",
+                            "Performance Improvements": "Mejoras de rendimiento",
+                            Chore: "Mantenimiento",
+                            Docs: "Documentación",
+                            Refactor: "Refactorizaciones",
+                          }
+                          const variantMap: Record<string, string> = {
+                            "Bug Fixes": "bug",
+                            Features: "feature",
+                            "Performance Improvements": "performance",
+                            Chore: "chore",
+                            Docs: "docs",
+                            Refactor: "refactor",
+                          }
+                          const label = labelMap[group.heading] || group.heading
+                          const variant = (variantMap[group.heading] || "secondary") as any
+                          return (
+                            <div key={gi} className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <Badge variant={variant} className="text-xs">{label}</Badge>
+                              </div>
+                              <ul className="space-y-2 text-sm">
+                                {group.blocks.map((block, idx) => (
+                                  <li key={idx}>
+                                    {(() => {
+                                      const primaryTitle = (block.title || "").trim()
+                                      const autoItems = primaryTitle
+                                        .split(/\s*,\s*/)
+                                        .map((i) => i.replace(/\([0-9a-f]{7,}\)/gi, "").trim())
+                                        .filter(Boolean)
+                                      const items = block.subitems.length > 0 ? block.subitems : (autoItems.length > 1 ? autoItems : [])
+                                      return items.length > 0 ? (
+                                        <ul className="list-disc pl-5 space-y-0.5">
+                                          {items.map((s, j) => (
+                                            <li key={j}>{s}</li>
+                                          ))}
+                                        </ul>
+                                      ) : (
+                                        <div className="font-medium">{primaryTitle}</div>
+                                      )
+                                    })()}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">Sin novedades</p>
