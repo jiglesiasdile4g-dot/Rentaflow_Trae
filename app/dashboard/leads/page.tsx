@@ -2859,16 +2859,22 @@ export default function LeadsPage() {
                                 onClick={() => setSelectedPersona(2)}
                                 className={`
                                 relative px-6 py-2.5 text-sm font-medium
-                                border border-border rounded-t-lg
+                                border-2 rounded-t-lg
                                 transition-all duration-200
                                 ${
                                   selectedPersona === 2
-                                    ? "bg-background text-foreground border-b-transparent z-10 -mb-px shadow-sm"
-                                    : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                                    ? selectedLead.tipo2 === "Avalista"
+                                      ? "bg-green-50 text-green-900 border-green-500 border-b-transparent z-10 -mb-px shadow-md"
+                                      : "bg-background text-foreground border-b-transparent z-10 -mb-px shadow-sm"
+                                    : selectedLead.tipo2 === "Avalista"
+                                      ? "bg-green-100/50 text-green-700 border-green-300 hover:bg-green-100 hover:border-green-400"
+                                      : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
                                 }
                               `}
                               >
-                                <span className="tracking-wide">{selectedLead.Persona_2}</span>
+                                <span className="tracking-wide font-semibold">
+                                  {selectedLead.tipo2 === "Avalista" ? "🛡️ AVALISTA: " : ""}{selectedLead.Persona_2}
+                                </span>
                                 {selectedPersona === 2 && (
                                   <div className="absolute bottom-0 left-0 right-0 h-px bg-background" />
                                 )}
@@ -2881,16 +2887,22 @@ export default function LeadsPage() {
                                 onClick={() => setSelectedPersona(3)}
                                 className={`
                                 relative px-6 py-2.5 text-sm font-medium
-                                border border-border rounded-t-lg
+                                border-2 rounded-t-lg
                                 transition-all duration-200
                                 ${
                                   selectedPersona === 3
-                                    ? "bg-background text-foreground border-b-transparent z-10 -mb-px shadow-sm"
-                                    : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                                    ? selectedLead.tipo3 === "Avalista"
+                                      ? "bg-green-50 text-green-900 border-green-500 border-b-transparent z-10 -mb-px shadow-md"
+                                      : "bg-background text-foreground border-b-transparent z-10 -mb-px shadow-sm"
+                                    : selectedLead.tipo3 === "Avalista"
+                                      ? "bg-green-100/50 text-green-700 border-green-300 hover:bg-green-100 hover:border-green-400"
+                                      : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
                                 }
                               `}
                               >
-                                <span className="tracking-wide">{selectedLead.Persona_3}</span>
+                                <span className="tracking-wide font-semibold">
+                                  {selectedLead.tipo3 === "Avalista" ? "🛡️ AVALISTA: " : ""}{selectedLead.Persona_3}
+                                </span>
                                 {selectedPersona === 3 && (
                                   <div className="absolute bottom-0 left-0 right-0 h-px bg-background" />
                                 )}
@@ -2908,12 +2920,18 @@ export default function LeadsPage() {
                               transition-all duration-200
                               ${
                                 selectedPersona === 4
-                                  ? "bg-amber-50 text-amber-900 border-amber-500 border-b-transparent z-10 -mb-px shadow-md"
-                                  : "bg-amber-100/50 text-amber-700 border-amber-300 hover:bg-amber-100 hover:border-amber-400"
+                                  ? selectedLead.tipo4 === "Avalista" 
+                                    ? "bg-green-50 text-green-900 border-green-500 border-b-transparent z-10 -mb-px shadow-md"
+                                    : "bg-amber-50 text-amber-900 border-amber-500 border-b-transparent z-10 -mb-px shadow-md"
+                                  : selectedLead.tipo4 === "Avalista"
+                                    ? "bg-green-100/50 text-green-700 border-green-300 hover:bg-green-100 hover:border-green-400"
+                                    : "bg-amber-100/50 text-amber-700 border-amber-300 hover:bg-amber-100 hover:border-amber-400"
                               }
                             `}
                             >
-                              <span className="tracking-wide font-semibold">🛡️ AVAL: {selectedLead.Persona_4}</span>
+                              <span className="tracking-wide font-semibold">
+                                🛡️ {selectedLead.tipo4 === "Avalista" ? "AVALISTA" : "AVAL"}: {selectedLead.Persona_4}
+                              </span>
                               {selectedPersona === 4 && (
                                 <div className="absolute bottom-0 left-0 right-0 h-px bg-amber-50" />
                               )}
@@ -3341,6 +3359,9 @@ export default function LeadsPage() {
                               <h2 style={{ fontSize: "1.125rem", fontWeight: "600", margin: 0 }}>
                                 Información Persona 2
                               </h2>
+                              <div style={{ fontSize: "0.75rem", color: "#6b7280", fontWeight: "500" }}>
+                                Tipo: {selectedLead.tipo2 || "No especificado"}
+                              </div>
                             </div>
                             {!isEditingPersonalInfo ? (
                               <button
@@ -3650,6 +3671,9 @@ export default function LeadsPage() {
                               <p style={{ fontSize: "0.75rem", color: "#78350f", margin: 0 }}>
                                 Datos del avalista o garante
                               </p>
+                              <div style={{ fontSize: "0.75rem", color: "#78350f", fontWeight: "500" }}>
+                                Tipo: {selectedLead.tipo4 || "No especificado"}
+                              </div>
                             </div>
                             {!isEditingPersonalInfo ? (
                               <button
@@ -3957,6 +3981,9 @@ export default function LeadsPage() {
                               <h2 style={{ fontSize: "1.125rem", fontWeight: "600", margin: 0 }}>
                                 Información Persona 3
                               </h2>
+                              <div style={{ fontSize: "0.75rem", color: "#6b7280", fontWeight: "500" }}>
+                                Tipo: {selectedLead.tipo3 || "No especificado"}
+                              </div>
                             </div>
                             {!isEditingPersonalInfo ? (
                               <button
@@ -4420,14 +4447,14 @@ export default function LeadsPage() {
                         <div className="flex flex-col gap-3">
                           <div className="flex items-center justify-between">
                             <span className="text-sm">DNI/NIE</span>
-                            <span className={`px-2 py-0.5 text-xs rounded border font-semibold tracking-wide ${documentStatus.dni === "verified" ? "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800" : "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800"}`}>
+                            <span className={`px-2 py-0.5 text-xs rounded border font-semibold tracking-wide ${documentStatus.dni === "verified" ? "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800" : "bg-amber-100 text-black! border-amber-300 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800"}`}>
                               {documentStatus.dni === "verified" ? "Completado" : "Pendiente"}
                             </span>
                           </div>
 
                           <div className="flex items-center justify-between">
                             <span className="text-sm">Just. Ingresos</span>
-                            <span className={`px-2 py-0.5 text-xs rounded border font-semibold tracking-wide ${documentStatus.income === "verified" ? "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800" : "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800"}`}>
+                            <span className={`px-2 py-0.5 text-xs rounded border font-semibold tracking-wide ${documentStatus.income === "verified" ? "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800" : "bg-amber-100 text-black! border-amber-300 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800"}`}>
                               {documentStatus.income === "verified" ? "Completado" : "Pendiente"}
                             </span>
                           </div>
@@ -4452,13 +4479,18 @@ export default function LeadsPage() {
                                 <div
                                   key={comm.id}
                                   onClick={() => { if (planInactive) return; openCommunicationDetail(comm) }}
-                                  className={`p-3 rounded-md border transition-all ${planInactive ? "pointer-events-none opacity-50 cursor-not-allowed" : "cursor-pointer"} ${isWhatsApp ? "bg-emerald-100 border-emerald-300 hover:bg-emerald-200 hover:border-emerald-400 dark:bg-emerald-900/30 dark:border-emerald-900/30 dark:hover:bg-emerald-900/40" : isSent ? "bg-blue-100 border-blue-300 hover:bg-blue-200 hover:border-blue-400 dark:bg-primary/20 dark:border-primary/30 dark:hover:bg-primary/25" : "bg-amber-100 border-amber-300 hover:bg-amber-200 hover:border-amber-400 dark:bg-amber-900/30 dark:border-amber-900/30 dark:hover:bg-amber-900/40"}`}
+                                  className={`p-3 rounded-md border transition-all ${planInactive ? "pointer-events-none opacity-50 cursor-not-allowed" : "cursor-pointer"} ${isWhatsApp ? "bg-green-50/10 border-emerald-200 hover:bg-green-50/30 hover:border-emerald-300 dark:bg-emerald-900/10 dark:border-emerald-900/20 dark:hover:bg-emerald-900/20" : isSent ? "bg-blue-50/10 border-blue-200 hover:bg-blue-50/30 hover:border-blue-300 dark:bg-primary/10 dark:border-primary/20 dark:hover:bg-primary/15" : "bg-orange-50/10 border-amber-200 hover:bg-orange-50/30 hover:border-amber-300 dark:bg-amber-900/10 dark:border-amber-900/20 dark:hover:bg-amber-900/20"}`}
                                 >
                                   <div className="flex items-center gap-2 mb-2">
                                     <span className="text-sm">
-                                      {isWhatsApp ? "💬" : isSent ? "📤" : "📥"}
+                                      {isWhatsApp ? (
+                                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                          <path d="M13.333 2.66667C12.6663 2 11.9997 1.99999 11.333 1.99999H4.66634C3.33301 1.99999 2.66634 2.66666 2.66634 3.99999V11.3333C2.66634 12.6667 3.33301 13.3333 4.66634 13.3333H11.333C12.6663 13.3333 13.333 12.6667 13.333 11.3333V3.99999C13.333 3.33333 13.333 3.33333 13.333 2.66667Z" fill="#25D366"/>
+                                          <path d="M10.8867 9.67333C10.62 9.94 9.95333 10.2067 9.62 10.2067C9.28667 10.2067 8.68667 10.0733 7.75333 9.28667C6.88667 8.56667 6.35333 7.78 6.22 7.44667C6.15333 7.31333 6.02 7.11333 6.02 6.91333C6.02 6.78 6.08667 6.64667 6.15333 6.51333C6.35333 6.18 6.68667 5.91333 7.08667 5.78C7.28667 5.71333 7.42 5.78 7.48667 5.91333C7.62 6.18 7.82 6.58 7.88667 6.71333C7.95333 6.84667 8.02 6.91333 8.15333 6.91333C8.28667 6.91333 8.35333 6.91333 8.48667 6.78C8.75333 6.51333 9.08667 6.11333 9.35333 5.78C9.55333 5.51333 9.75333 5.58 9.88667 5.64667C10.02 5.71333 10.62 6.04667 10.62 6.04667C10.7533 6.11333 10.82 6.18 10.8867 6.31333C10.9533 6.38 10.9533 6.91333 10.62 7.58C10.3533 8.18 10.1533 8.31333 10.02 8.44667C9.88667 8.58 9.75333 8.64667 9.62 8.78C9.48667 8.91333 9.55333 9.01333 9.62 9.14667C9.68667 9.28 9.95333 9.67333 10.0867 9.80667C10.22 9.94 10.3533 10.0733 10.4867 10.14C10.62 10.2067 10.7533 10.2067 10.82 10.14C10.8867 10.0733 10.9533 9.94 11.02 9.80667C11.1533 9.54 11.3533 8.94 11.42 8.78C11.4867 8.62 11.62 8.58 11.7533 8.51333C11.8867 8.44667 12.3533 8.24667 12.5533 8.11333C12.82 7.91333 12.9533 7.84667 13.02 7.78C13.0867 7.71333 13.1533 7.58 13.02 7.38C12.8867 7.18 12.22 6.04667 12.02 5.71333C11.8867 5.51333 11.7533 5.51333 11.62 5.51333C11.4867 5.51333 11.3533 5.51333 11.22 5.51333C11.0867 5.51333 10.8867 5.58 10.7533 5.78C10.62 5.98 10.1533 6.58 10.02 6.78C9.88667 6.98 9.75333 7.04667 9.55333 6.91333C9.35333 6.78 8.75333 6.51333 8.08667 5.91333C7.55333 5.44667 7.15333 4.91333 7.02 4.71333C6.88667 4.51333 6.75333 4.58 6.62 4.58C6.48667 4.58 6.28667 4.58 6.08667 4.58C5.88667 4.58 5.62 4.64667 5.42 4.91333C5.22 5.18 4.55333 5.91333 4.55333 7.04667C4.55333 8.18 5.35333 9.24667 5.48667 9.44667C5.62 9.64667 6.88667 11.6733 9.02 12.54C9.55333 12.74 9.95333 12.74 10.2867 12.74C10.62 12.74 11.0867 12.6067 11.42 12.34C11.82 12.0067 12.02 11.54 12.0867 11.14C12.1533 10.8067 12.02 10.54 11.8867 10.34C11.7533 10.14 11.5533 9.94 11.42 9.80667C11.2867 9.67333 11.1533 9.80667 11.02 9.94C10.8867 10.0733 10.6867 10.34 10.5533 10.4733C10.42 10.6067 10.2867 10.6733 10.1533 10.54C10.02 10.4067 9.55333 9.94 9.42 9.80667C9.28667 9.67333 9.42 9.54 9.55333 9.40667C9.68667 9.27333 9.82 9.14 9.95333 9.00667C10.0867 8.87333 10.22 8.74 10.3533 8.87333C10.4867 9.00667 10.82 9.34 10.9533 9.47333C11.0867 9.60667 11.22 9.67333 11.3533 9.80667C11.4867 9.94 11.4867 10.0733 11.42 10.14C11.3533 10.2067 11.1533 10.4067 10.8867 10.54Z" fill="white"/>
+                                        </svg>
+                                      ) : isSent ? "📤" : "📥"}
                                     </span>
-                                    <span className={`text-[0.65rem] font-semibold uppercase tracking-wide ${isWhatsApp ? "text-emerald-700 dark:text-emerald-300" : isSent ? "text-blue-700 dark:text-primary" : "text-amber-700 dark:text-amber-300"}`}>
+                                    <span className={`text-[0.65rem] font-semibold uppercase tracking-wide ${isWhatsApp ? "text-emerald-950! dark:text-emerald-300" : isSent ? "text-blue-950! dark:text-primary" : "text-amber-950! dark:text-amber-300"}`}>
                                       {isWhatsApp ? "WhatsApp" : isSent ? "Enviado" : "Recibido"}
                                     </span>
                                   </div>
