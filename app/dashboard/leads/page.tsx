@@ -1099,9 +1099,9 @@ export default function LeadsPage() {
         }
       case "Datos Incompletos":
         return {
-          bg: "#fef3c7",
+          bg: "#ffffff",
           border: "#f59e0b",
-          text: "#d97706",
+          text: "#92400e",
           label: estado,
         }
       case "Validado":
@@ -2209,14 +2209,14 @@ export default function LeadsPage() {
                                                 )
                                               } else {
                                                 return (
-                                                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 dark:bg-amber-900/30 dark:border-amber-700">
-                                                    <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                                                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-orange-100! border border-amber-300 ring-1 ring-amber-200 dark:bg-amber-900/30 dark:border-amber-700">
+                                                    <span className="text-xs font-semibold text-amber-800! dark:text-amber-200 whitespace-nowrap">
                                                       Incompleto
                                                     </span>
                                                     <div className="h-3 w-px bg-amber-400 dark:bg-amber-700" />
                                                     <div className="flex items-center gap-0.5">
-                                                      <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
-                                                      <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                                                      <Star className="h-2.5 w-2.5 fill-amber-600 text-amber-600" />
+                                                      <span className="text-xs font-semibold text-amber-800! dark:text-amber-300">
                                                         {completionPercentage}%
                                                       </span>
                                                     </div>
@@ -2569,16 +2569,16 @@ export default function LeadsPage() {
                                               )
                                             } else {
                                               return (
-                                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 dark:bg-amber-900/30 dark:border-amber-700">
-                                                  <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-orange-100! border border-amber-300 ring-1 ring-amber-200 dark:bg-amber-900/30 dark:border-amber-700">
+                                                  <span className="text-xs font-semibold text-amber-800! dark:text-amber-200 whitespace-nowrap">
                                                     Incompleto
                                                   </span>
                                                   <div className="h-3 w-px bg-amber-400 dark:bg-amber-700" />
                                                   <div className="flex items-center gap-0.5">
-                                                    <Star className="h-2.5 w-2.5 fill-amber-500 text-amber-500" />
-                                                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-                                                      {completionPercentage}%
-                                                    </span>
+                                                    <Star className="h-2.5 w-2.5 fill-amber-600 text-amber-600" />
+                                                      <span className="text-xs font-semibold text-amber-800! dark:text-amber-300">
+                                                        {completionPercentage}%
+                                                      </span>
                                                   </div>
                                                 </div>
                                               )
@@ -4420,14 +4420,14 @@ export default function LeadsPage() {
                         <div className="flex flex-col gap-3">
                           <div className="flex items-center justify-between">
                             <span className="text-sm">DNI/NIE</span>
-                            <span className={`px-2 py-0.5 text-xs rounded ${documentStatus.dni === "verified" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200" : "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200"}`}>
+                            <span className={`px-2 py-0.5 text-xs rounded border font-semibold tracking-wide ${documentStatus.dni === "verified" ? "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800" : "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800"}`}>
                               {documentStatus.dni === "verified" ? "Completado" : "Pendiente"}
                             </span>
                           </div>
 
                           <div className="flex items-center justify-between">
                             <span className="text-sm">Just. Ingresos</span>
-                            <span className={`px-2 py-0.5 text-xs rounded ${documentStatus.income === "verified" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200" : "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200"}`}>
+                            <span className={`px-2 py-0.5 text-xs rounded border font-semibold tracking-wide ${documentStatus.income === "verified" ? "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800" : "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800"}`}>
                               {documentStatus.income === "verified" ? "Completado" : "Pendiente"}
                             </span>
                           </div>
@@ -4452,20 +4452,20 @@ export default function LeadsPage() {
                                 <div
                                   key={comm.id}
                                   onClick={() => { if (planInactive) return; openCommunicationDetail(comm) }}
-                                  className={`p-3 rounded-md border transition-all ${planInactive ? "pointer-events-none opacity-50 cursor-not-allowed" : "cursor-pointer"} ${isSent ? "bg-primary/10 border-primary/20 hover:bg-primary/15 hover:border-primary/30" : "bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/15 hover:border-emerald-500/30 dark:bg-emerald-900/30 dark:border-emerald-900/30 dark:hover:bg-emerald-900/40 dark:hover:border-emerald-900/40"}`}
+                                  className={`p-3 rounded-md border transition-all ${planInactive ? "pointer-events-none opacity-50 cursor-not-allowed" : "cursor-pointer"} ${isWhatsApp ? "bg-emerald-100 border-emerald-300 hover:bg-emerald-200 hover:border-emerald-400 dark:bg-emerald-900/30 dark:border-emerald-900/30 dark:hover:bg-emerald-900/40" : isSent ? "bg-blue-100 border-blue-300 hover:bg-blue-200 hover:border-blue-400 dark:bg-primary/20 dark:border-primary/30 dark:hover:bg-primary/25" : "bg-amber-100 border-amber-300 hover:bg-amber-200 hover:border-amber-400 dark:bg-amber-900/30 dark:border-amber-900/30 dark:hover:bg-amber-900/40"}`}
                                 >
                                   <div className="flex items-center gap-2 mb-2">
                                     <span className="text-sm">
                                       {isWhatsApp ? "💬" : isSent ? "📤" : "📥"}
                                     </span>
-                                    <span className={`text-[0.65rem] font-semibold uppercase tracking-wide ${isSent ? "text-primary" : "text-emerald-600 dark:text-emerald-300"}`}>
+                                    <span className={`text-[0.65rem] font-semibold uppercase tracking-wide ${isWhatsApp ? "text-emerald-700 dark:text-emerald-300" : isSent ? "text-blue-700 dark:text-primary" : "text-amber-700 dark:text-amber-300"}`}>
                                       {isWhatsApp ? "WhatsApp" : isSent ? "Enviado" : "Recibido"}
                                     </span>
                                   </div>
                                   <div className="text-sm font-semibold mb-1">
                                     {isWhatsApp ? "Mensaje de WhatsApp" : comm.From || "Sin remitente"}
                                   </div>
-                                  <div className="text-xs text-muted-foreground mb-2">
+                                  <div className="text-xs text-foreground mb-2">
                                     {isWhatsApp
                                       ? (comm.Mensaje?.replace(/<[^>]*>/g, "") || "Sin mensaje").substring(0, 50) +
                                         (comm.Mensaje && comm.Mensaje.replace(/<[^>]*>/g, "").length > 50 ? "..." : "")
@@ -5175,7 +5175,7 @@ export default function LeadsPage() {
                 />
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold">DNI/NIE</span>
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200">Haz clic o arrastra aquí</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded border font-semibold tracking-wide bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800">Haz clic o arrastra aquí</span>
                 </div>
                 <div className="text-sm text-muted-foreground">Admite imágenes y PDF</div>
               </div>
@@ -5205,7 +5205,7 @@ export default function LeadsPage() {
                 />
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-semibold">Justificante de Ingresos</span>
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">Haz clic o arrastra aquí</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded border font-semibold tracking-wide bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800">Haz clic o arrastra aquí</span>
                 </div>
                 <div className="text-sm text-muted-foreground">Admite imágenes y PDF</div>
               </div>
