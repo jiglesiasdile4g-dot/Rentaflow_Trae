@@ -42,6 +42,7 @@ type Lead = {
   created_at?: string
   Estado?:
     | "Datos Incompletos"
+    | "Datos Completos"
     | "Completo"
     | "Aprobado"
     | "Descartado"
@@ -2121,22 +2122,22 @@ export default function LeadsPage() {
                                                 lead.Estado !== "Datos Incompletos" &&
                                                 lead.Estado !== "Completo"
 
-                                              if (showEstadoBadge) {
-                                                return (
-                                                  <div
-                                                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
-                                                      lead.Estado === "Visita Propuesta" ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
-                                                    }`}
-                                                    style={{
-                                                      backgroundColor: statusColors.bg,
-                                                      borderColor: statusColors.border,
-                                                    }}
-                                                    onClick={() => {
-                                                      console.log("[v0] Estado div clicked, Estado:", lead.Estado)
-                                                      if (lead.Estado === "Visita Propuesta") {
-                                                        console.log("[v0] Opening visit date dialog for lead:", lead.Nombre, lead.Apellidos)
-                                                        console.log("[v0] Current fecha_de_visita:", lead.fecha_de_visita)
-                                                    setSelectedLeadForVisit(lead)
+                                            if (showEstadoBadge) {
+                                              return (
+                                                <div
+                                                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
+                                                    ["Visita Propuesta", "Completo", "Completado"].includes(String(lead.Estado || "")) ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
+                                                  }`}
+                                                  style={{
+                                                    backgroundColor: statusColors.bg,
+                                                    borderColor: statusColors.border,
+                                                  }}
+                                                  onClick={async () => {
+                                                    console.log("[v0] Estado div clicked, Estado:", lead.Estado)
+                                                    if (lead.Estado === "Visita Propuesta") {
+                                                      console.log("[v0] Opening visit date dialog for lead:", lead.Nombre, lead.Apellidos)
+                                                      console.log("[v0] Current fecha_de_visita:", lead.fecha_de_visita)
+                                                  setSelectedLeadForVisit(lead)
                                                       setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
                                                       if (lead.fecha_de_visita) {
                                                         const d = new Date(lead.fecha_de_visita)
@@ -2152,12 +2153,28 @@ export default function LeadsPage() {
                                                         setNewVisitDateTime("12:00")
                                                       }
                                                       setVisitDateDialogOpen(true)
-                                                        console.log("[v0] Dialog should now be open")
+                                                      console.log("[v0] Dialog should now be open")
+                                                    } else if (lead.Estado === "Completo" || lead.Estado === "Completado") {
+                                                      setSelectedLeadForVisit(lead)
+                                                      setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
+                                                      if (lead.fecha_de_visita) {
+                                                        const d = new Date(lead.fecha_de_visita)
+                                                        const yyyy = d.getFullYear()
+                                                        const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                                        const dd = String(d.getDate()).padStart(2, "0")
+                                                        const hh = String(d.getHours()).padStart(2, "0")
+                                                        const min = String(d.getMinutes())
+                                                        setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                                        setNewVisitDateTime(`${hh}:${String(min).padStart(2, "0")}`)
                                                       } else {
-                                                        console.log("[v0] Estado is not 'Visita Propuesta', dialog not opened")
+                                                        setNewVisitDateDate("")
+                                                        setNewVisitDateTime("12:00")
                                                       }
-                                                    }}
-                                                  >
+                                                      setVisitDateDialogOpen(true)
+                                                      await updateLeadStatus(Number(lead.id), "Visita Propuesta")
+                                                    }
+                                                  }}
+                                                >
                                                     <span
                                                       className="text-xs font-semibold"
                                                       style={{ color: statusColors.text }}
@@ -2194,7 +2211,28 @@ export default function LeadsPage() {
                                                 )
                                               } else if (isDataComplete) {
                                                 return (
-                                                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-100 border border-green-300">
+                                                  <div
+                                                    className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-100 border border-green-300 cursor-pointer hover:opacity-80 transition-opacity"
+                                                    onClick={async () => {
+                                                      setSelectedLeadForVisit(lead)
+                                                      setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
+                                                      if (lead.fecha_de_visita) {
+                                                        const d = new Date(lead.fecha_de_visita)
+                                                        const yyyy = d.getFullYear()
+                                                        const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                                        const dd = String(d.getDate()).padStart(2, "0")
+                                                        const hh = String(d.getHours()).padStart(2, "0")
+                                                        const min = String(d.getMinutes()).padStart(2, "0")
+                                                        setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                                        setNewVisitDateTime(`${hh}:${min}`)
+                                                      } else {
+                                                        setNewVisitDateDate("")
+                                                        setNewVisitDateTime("12:00")
+                                                      }
+                                                      setVisitDateDialogOpen(true)
+                                                      await updateLeadStatus(Number(lead.id), "Visita Propuesta")
+                                                    }}
+                                                  >
                                                     <span className="text-xs font-semibold text-green-800">
                                                       ✓ Completo
                                                     </span>
@@ -2483,16 +2521,16 @@ export default function LeadsPage() {
                                             if (showEstadoBadge) {
                                               return (
                                                 <div
-                                                  className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
-                                                    lead.Estado === "Visita Propuesta" ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
-                                                  }`}
+                                                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
+                                                      ["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(lead.Estado || "")) ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
+                                                    }`}
                                                   style={{
                                                     backgroundColor: statusColors.bg,
                                                     borderColor: statusColors.border,
                                                   }}
-                                                  onClick={() => {
-                                                    console.log("[v0] Estado div clicked, Estado:", lead.Estado)
-                                                    if (lead.Estado === "Visita Propuesta") {
+                                                    onClick={async () => {
+                                                      console.log("[v0] Estado div clicked, Estado:", lead.Estado)
+                                                      if (lead.Estado === "Visita Propuesta") {
                                                       console.log("[v0] Opening visit date dialog for lead:", lead.Nombre, lead.Apellidos)
                                                       console.log("[v0] Current fecha_de_visita:", lead.fecha_de_visita)
                                                     setSelectedLeadForVisit(lead)
@@ -2511,11 +2549,29 @@ export default function LeadsPage() {
                                                         setNewVisitDateTime("12:00")
                                                       }
                                                       setVisitDateDialogOpen(true)
-                                                      console.log("[v0] Dialog should now be open")
-                                                    } else {
-                                                      console.log("[v0] Estado is not 'Visita Propuesta', dialog not opened")
-                                                    }
-                                                  }}
+                                                        console.log("[v0] Dialog should now be open")
+                                                      } else if (lead.Estado === "Datos Completos" || lead.Estado === "Completo" || lead.Estado === "Completado") {
+                                                        setSelectedLeadForVisit(lead)
+                                                        setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
+                                                        if (lead.fecha_de_visita) {
+                                                          const d = new Date(lead.fecha_de_visita)
+                                                          const yyyy = d.getFullYear()
+                                                          const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                                          const dd = String(d.getDate()).padStart(2, "0")
+                                                          const hh = String(d.getHours()).padStart(2, "0")
+                                                          const min = String(d.getMinutes()).padStart(2, "0")
+                                                          setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                                          setNewVisitDateTime(`${hh}:${min}`)
+                                                        } else {
+                                                          setNewVisitDateDate("")
+                                                          setNewVisitDateTime("12:00")
+                                                        }
+                                                        setVisitDateDialogOpen(true)
+                                                        await updateLeadStatus(Number(lead.id), "Visita Propuesta")
+                                                      } else {
+                                                        console.log("[v0] Estado is not 'Visita Propuesta', dialog not opened")
+                                                      }
+                                                    }}
                                                 >
                                                   <span
                                                     className="text-xs font-semibold"
@@ -2552,9 +2608,30 @@ export default function LeadsPage() {
                                                   </div>
                                                 </div>
                                               )
-                                            } else if (isDataComplete) {
+                                              } else if (isDataComplete) {
                                               return (
-                                                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-100 border border-green-300">
+                                                <div
+                                                  className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-100 border border-green-300 cursor-pointer hover:opacity-80 transition-opacity"
+                                                  onClick={async () => {
+                                                    setSelectedLeadForVisit(lead)
+                                                    setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
+                                                    if (lead.fecha_de_visita) {
+                                                      const d = new Date(lead.fecha_de_visita)
+                                                      const yyyy = d.getFullYear()
+                                                      const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                                      const dd = String(d.getDate()).padStart(2, "0")
+                                                      const hh = String(d.getHours()).padStart(2, "0")
+                                                      const min = String(d.getMinutes()).padStart(2, "0")
+                                                      setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                                      setNewVisitDateTime(`${hh}:${min}`)
+                                                    } else {
+                                                      setNewVisitDateDate("")
+                                                      setNewVisitDateTime("12:00")
+                                                    }
+                                                    setVisitDateDialogOpen(true)
+                                                    await updateLeadStatus(Number(lead.id), "Visita Propuesta")
+                                                  }}
+                                                >
                                                   <span className="text-xs font-semibold text-green-800">
                                                     ✓ Completo
                                                   </span>
@@ -2921,11 +2998,11 @@ export default function LeadsPage() {
                               ${
                                 selectedPersona === 4
                                   ? selectedLead.tipo4 === "Avalista" 
-                                    ? "bg-green-50 text-green-900 border-green-500 border-b-transparent z-10 -mb-px shadow-md"
-                                    : "bg-amber-50 text-amber-900 border-amber-500 border-b-transparent z-10 -mb-px shadow-md"
+                                    ? "bg-green-50 text-green-900 border-green-500 border-b-transparent z-10 -mb-px shadow-md dark:bg-green-950/50 dark:text-green-100 dark:border-green-500"
+                                    : "bg-amber-50 text-amber-900 border-amber-500 border-b-transparent z-10 -mb-px shadow-md dark:bg-amber-950/50 dark:text-amber-100 dark:border-amber-500"
                                   : selectedLead.tipo4 === "Avalista"
-                                    ? "bg-green-100/50 text-green-700 border-green-300 hover:bg-green-100 hover:border-green-400"
-                                    : "bg-amber-100/50 text-amber-700 border-amber-300 hover:bg-amber-100 hover:border-amber-400"
+                                    ? "bg-green-100/50 text-green-700 border-green-300 hover:bg-green-100 hover:border-green-400 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800 dark:hover:bg-green-900/40"
+                                    : "bg-amber-100/50 text-amber-700 border-amber-300 hover:bg-amber-100 hover:border-amber-400 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800 dark:hover:bg-amber-900/40"
                               }
                             `}
                             >
@@ -2953,56 +3030,23 @@ export default function LeadsPage() {
                             </div>
                             {!isEditingPersonalInfo ? (
                               <button
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "0.5rem",
-                                  background: "none",
-                                  border: "none",
-                                  fontSize: "0.875rem",
-                                  color: "#6b7280",
-                                  cursor: "pointer",
-                                }}
+                                className="flex items-center gap-2 bg-none border-none text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                                 onClick={() => setIsEditingPersonalInfo(true)}
                               >
                                 <Edit size={14} />
                                 Editar
                               </button>
                             ) : (
-                              <div style={{ display: "flex", gap: "0.5rem" }}>
+                              <div className="flex gap-2">
                                 <button
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                    padding: "0.375rem 0.75rem",
-                                    backgroundColor: "#10b981",
-                                    color: "white",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    fontSize: "0.875rem",
-                                    cursor: "pointer",
-                                    fontWeight: "500",
-                                  }}
+                                  className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500 text-white border-none rounded-md text-sm cursor-pointer font-medium hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500"
                                   onClick={savePersonalInfo}
                                 >
                                   <Check size={14} />
                                   Guardar
                                 </button>
                                 <button
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                    padding: "0.375rem 0.75rem",
-                                    backgroundColor: "#ef4444",
-                                    color: "white",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    fontSize: "0.875rem",
-                                    cursor: "pointer",
-                                    fontWeight: "500",
-                                  }}
+                                  className="flex items-center gap-2 px-3 py-1.5 bg-red-500 text-white border-none rounded-md text-sm cursor-pointer font-medium hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-500"
                                   onClick={cancelEdit}
                                 >
                                   <X size={14} />
@@ -3012,21 +3056,11 @@ export default function LeadsPage() {
                             )}
                           </div>
 
-                          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                          <div className="flex flex-col gap-4">
                             {/* Row 1 */}
                             <div style={{ display: "flex", gap: "1.5rem" }}>
                               <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                  }}
-                                >
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
                                   Email
                                   {!isEditingPersonalInfo && selectedLead.Correo && (
                                     <TooltipProvider>
@@ -3034,18 +3068,10 @@ export default function LeadsPage() {
                                         <TooltipTrigger asChild>
                                           <button
                                             onClick={() => copyToClipboard(selectedLead.Correo!, "Email")}
-                                            style={{
-                                              background: "none",
-                                              border: "none",
-                                              cursor: "pointer",
-                                              padding: "0",
-                                              display: "flex",
-                                              alignItems: "center",
-                                              color: "#6b7280",
-                                            }}
+                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
                                           >
                                             {copiedField === "Email" ? (
-                                              <Check size={14} style={{ color: "#10b981" }} />
+                                              <Check size={14} className="text-emerald-500" />
                                             ) : (
                                               <Copy size={14} />
                                             )}
@@ -3066,30 +3092,13 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div
-                                    style={{
-                                      fontSize: "0.875rem",
-                                      fontStyle: selectedLead.Correo ? "normal" : "italic",
-                                      color: selectedLead.Correo ? "inherit" : "#9ca3af",
-                                      wordBreak: "break-word",
-                                    }}
-                                  >
+                                  <div className={`text-sm break-words ${selectedLead.Correo ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Correo || "No especificado"}
                                   </div>
                                 )}
                               </div>
                               <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                  }}
-                                >
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
                                   Teléfono
                                   {!isEditingPersonalInfo && selectedLead.Telefono && (
                                     <TooltipProvider>
@@ -3097,18 +3106,10 @@ export default function LeadsPage() {
                                         <TooltipTrigger asChild>
                                           <button
                                             onClick={() => copyToClipboard(selectedLead.Telefono!, "Teléfono")}
-                                            style={{
-                                              background: "none",
-                                              border: "none",
-                                              cursor: "pointer",
-                                              padding: "0",
-                                              display: "flex",
-                                              alignItems: "center",
-                                              color: "#6b7280",
-                                            }}
+                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
                                           >
                                             {copiedField === "Teléfono" ? (
-                                              <Check size={14} style={{ color: "#10b981" }} />
+                                              <Check size={14} className="text-emerald-500" />
                                             ) : (
                                               <Copy size={14} />
                                             )}
@@ -3129,20 +3130,13 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className="text-sm font-medium text-foreground">
                                     {selectedLead.Telefono || "No especificado"}
                                   </div>
                                 )}
                               </div>
                               <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">
                                   País
                                 </div>
                                 {isEditingPersonalInfo ? (
@@ -3153,13 +3147,7 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div
-                                    style={{
-                                      fontSize: "0.875rem",
-                                      fontStyle: selectedLead.Pais ? "normal" : "italic",
-                                      color: selectedLead.Pais ? "inherit" : "#9ca3af",
-                                    }}
-                                  >
+                                  <div className={`text-sm ${selectedLead.Pais ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Pais || "No especificado"}
                                   </div>
                                 )}
@@ -3169,14 +3157,7 @@ export default function LeadsPage() {
                             {/* Row 2 */}
                             <div style={{ display: "flex", gap: "1.5rem" }}>
                               <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">
                                   Ingresos
                                 </div>
                                 {isEditingPersonalInfo ? (
@@ -3193,26 +3174,13 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div
-                                    style={{
-                                      fontSize: "0.875rem",
-                                      fontStyle: selectedLead.Ingresos ? "normal" : "italic",
-                                      color: selectedLead.Ingresos ? "inherit" : "#9ca3af",
-                                    }}
-                                  >
+                                  <div className={`text-sm ${selectedLead.Ingresos ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Ingresos ? formatCurrency(selectedLead.Ingresos) : "No especificado"}
                                   </div>
                                 )}
                               </div>
                               <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">
                                   Código Postal
                                 </div>
                                 {isEditingPersonalInfo ? (
@@ -3223,26 +3191,13 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div
-                                    style={{
-                                      fontSize: "0.875rem",
-                                      fontStyle: selectedLead.Codigo_Postal ? "normal" : "italic",
-                                      color: selectedLead.Codigo_Postal ? "inherit" : "#9ca3af",
-                                    }}
-                                  >
+                                  <div className={`text-sm ${selectedLead.Codigo_Postal ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Codigo_Postal || "No especificado"}
                                   </div>
                                 )}
                               </div>
                               <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">
                                   Tipo Documento
                                 </div>
                                 {isEditingPersonalInfo ? (
@@ -3253,13 +3208,7 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div
-                                    style={{
-                                      fontSize: "0.875rem",
-                                      fontStyle: selectedLead.Tipo_Documento ? "normal" : "italic",
-                                      color: selectedLead.Tipo_Documento ? "inherit" : "#9ca3af",
-                                    }}
-                                  >
+                                  <div className={`text-sm ${selectedLead.Tipo_Documento ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Tipo_Documento || "No especificado"}
                                   </div>
                                 )}
@@ -3269,17 +3218,7 @@ export default function LeadsPage() {
                             {/* Row 3 */}
                             <div style={{ display: "flex", gap: "1.5rem" }}>
                               <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                  }}
-                                >
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
                                   Documento de Identidad
                                   {!isEditingPersonalInfo && selectedLead.Documento && (
                                     <TooltipProvider>
@@ -3289,18 +3228,10 @@ export default function LeadsPage() {
                                             onClick={() =>
                                               copyToClipboard(selectedLead.Documento!, "Documento de Identidad")
                                             }
-                                            style={{
-                                              background: "none",
-                                              border: "none",
-                                              cursor: "pointer",
-                                              padding: "0",
-                                              display: "flex",
-                                              alignItems: "center",
-                                              color: "#6b7280",
-                                            }}
+                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
                                           >
                                             {copiedField === "Documento de Identidad" ? (
-                                              <Check size={14} style={{ color: "#10b981" }} />
+                                              <Check size={14} className="text-emerald-500" />
                                             ) : (
                                               <Copy size={14} />
                                             )}
@@ -3321,13 +3252,7 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div
-                                    style={{
-                                      fontSize: "0.875rem",
-                                      fontStyle: selectedLead.Documento ? "normal" : "italic",
-                                      color: selectedLead.Documento ? "inherit" : "#9ca3af",
-                                    }}
-                                  >
+                                  <div className={`text-sm ${selectedLead.Documento ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Documento || "No proporcionado"}
                                   </div>
                                 )}
@@ -3339,82 +3264,35 @@ export default function LeadsPage() {
                       )}
 
                       {selectedPersona === 2 && selectedLead?.Persona_2 && (
-                        <div
-                          style={{
-                            border: "1px solid #e5e7eb",
-                            borderRadius: "8px",
-                            padding: "1.25rem",
-                            background: "white",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              marginBottom: "1.25rem",
-                            }}
-                          >
-                            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                              <h2 style={{ fontSize: "1.125rem", fontWeight: "600", margin: 0 }}>
+                        <div className="border border-border bg-background p-5 shadow-sm rounded-lg">
+                          <div className="flex justify-between items-center mb-5">
+                            <div className="flex flex-col gap-1">
+                              <h2 className="text-lg font-semibold m-0">
                                 Información Persona 2
                               </h2>
-                              <div style={{ fontSize: "0.75rem", color: "#6b7280", fontWeight: "500" }}>
+                              <div className="text-xs text-muted-foreground font-medium">
                                 Tipo: {selectedLead.tipo2 || "No especificado"}
                               </div>
                             </div>
                             {!isEditingPersonalInfo ? (
                               <button
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "0.5rem",
-                                  background: "none",
-                                  border: "none",
-                                  fontSize: "0.875rem",
-                                  color: "#6b7280",
-                                  cursor: "pointer",
-                                }}
+                                className="flex items-center gap-2 bg-none border-none text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                                 onClick={() => setIsEditingPersonalInfo(true)}
                               >
                                 <Edit size={14} />
                                 Editar
                               </button>
                             ) : (
-                              <div style={{ display: "flex", gap: "0.5rem" }}>
+                              <div className="flex gap-2">
                                 <button
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                    padding: "0.375rem 0.75rem",
-                                    backgroundColor: "#10b981",
-                                    color: "white",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    fontSize: "0.875rem",
-                                    cursor: "pointer",
-                                    fontWeight: "500",
-                                  }}
+                                  className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500 text-white border-none rounded-md text-sm cursor-pointer font-medium hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500"
                                   onClick={savePersonalInfo}
                                 >
                                   <Check size={14} />
                                   Guardar
                                 </button>
                                 <button
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                    padding: "0.375rem 0.75rem",
-                                    backgroundColor: "#ef4444",
-                                    color: "white",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    fontSize: "0.875rem",
-                                    cursor: "pointer",
-                                    fontWeight: "500",
-                                  }}
+                                  className="flex items-center gap-2 px-3 py-1.5 bg-red-500 text-white border-none rounded-md text-sm cursor-pointer font-medium hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-500"
                                   onClick={cancelEdit}
                                 >
                                   <X size={14} />
@@ -3423,18 +3301,11 @@ export default function LeadsPage() {
                               </div>
                             )}
                           </div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                          <div className="flex flex-col gap-4">
                             {/* Row 1: Nombre and Correo */}
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
+                            <div className="grid grid-cols-2 gap-6">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">
                                   Nombre Persona 2
                                 </div>
                                 {isEditingPersonalInfo ? (
@@ -3445,21 +3316,35 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className={`text-sm ${selectedLead.Persona_2 ? "not-italic text-foreground font-medium" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Persona_2 || "No especificado"}
                                   </div>
                                 )}
                               </div>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
                                   Correo Persona 2
+                                  {!isEditingPersonalInfo && selectedLead["Correo 2"] && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            onClick={() => copyToClipboard(selectedLead["Correo 2"]!, "Correo Persona 2")}
+                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            {copiedField === "Correo Persona 2" ? (
+                                              <Check size={14} className="text-emerald-500" />
+                                            ) : (
+                                              <Copy size={14} />
+                                            )}
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Copiar correo</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
                                 </div>
                                 {isEditingPersonalInfo ? (
                                   <Input
@@ -3469,7 +3354,7 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className={`text-sm break-words ${selectedLead["Correo 2"] ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead["Correo 2"] || "No especificado"}
                                   </div>
                                 )}
@@ -3477,17 +3362,31 @@ export default function LeadsPage() {
                             </div>
 
                             {/* Row 2: Telefono and Pais */}
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
+                            <div className="grid grid-cols-2 gap-6">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
                                   Teléfono Persona 2
+                                  {!isEditingPersonalInfo && selectedLead["Telefono 2"] && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            onClick={() => copyToClipboard(selectedLead["Telefono 2"]!, "Teléfono Persona 2")}
+                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            {copiedField === "Teléfono Persona 2" ? (
+                                              <Check size={14} className="text-emerald-500" />
+                                            ) : (
+                                              <Copy size={14} />
+                                            )}
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Copiar teléfono</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
                                 </div>
                                 {isEditingPersonalInfo ? (
                                   <Input
@@ -3497,20 +3396,13 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className="text-sm font-medium text-foreground">
                                     {selectedLead["Telefono 2"] || "No especificado"}
                                   </div>
                                 )}
                               </div>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">
                                   País Persona 2
                                 </div>
                                 {isEditingPersonalInfo ? (
@@ -3521,7 +3413,7 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className={`text-sm ${selectedLead.Pais_2 ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Pais_2 || "No especificado"}
                                   </div>
                                 )}
@@ -3529,16 +3421,9 @@ export default function LeadsPage() {
                             </div>
 
                             {/* Row 3: Ingresos and Codigo Postal */}
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
+                            <div className="grid grid-cols-2 gap-6">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">
                                   Ingresos Persona 2 (€)
                                 </div>
                                 {isEditingPersonalInfo ? (
@@ -3555,22 +3440,13 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
-                                    {selectedLead.Ingresos_2
-                                      ? formatCurrency(selectedLead.Ingresos_2)
-                                      : "No especificado"}
+                                  <div className={`text-sm ${selectedLead.Ingresos_2 ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                    {selectedLead.Ingresos_2 ? formatCurrency(selectedLead.Ingresos_2) : "No especificado"}
                                   </div>
                                 )}
                               </div>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">
                                   Código Postal Persona 2
                                 </div>
                                 {isEditingPersonalInfo ? (
@@ -3583,7 +3459,7 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className={`text-sm ${selectedLead["Codigo_Postal 2"] ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead["Codigo_Postal 2"] || "No especificado"}
                                   </div>
                                 )}
@@ -3591,16 +3467,9 @@ export default function LeadsPage() {
                             </div>
 
                             {/* Row 4: Tipo Documento and Documento */}
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
+                            <div className="grid grid-cols-2 gap-6">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">
                                   Tipo Documento Persona 2
                                 </div>
                                 {isEditingPersonalInfo ? (
@@ -3613,21 +3482,35 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className={`text-sm ${selectedLead.Tipo_Documento_2 ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Tipo_Documento_2 || "No especificado"}
                                   </div>
                                 )}
                               </div>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
                                   Documento Persona 2
+                                  {!isEditingPersonalInfo && selectedLead.Documento_2 && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            onClick={() => copyToClipboard(selectedLead.Documento_2!, "Documento Persona 2")}
+                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            {copiedField === "Documento Persona 2" ? (
+                                              <Check size={14} className="text-emerald-500" />
+                                            ) : (
+                                              <Copy size={14} />
+                                            )}
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Copiar documento</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
                                 </div>
                                 {isEditingPersonalInfo ? (
                                   <Input
@@ -3637,7 +3520,7 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className={`text-sm ${selectedLead.Documento_2 ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Documento_2 || "No especificado"}
                                   </div>
                                 )}
@@ -3648,85 +3531,34 @@ export default function LeadsPage() {
                       )}
 
                       {selectedPersona === 4 && selectedLead?.Persona_4 && (
-                        <div
-                          style={{
-                            border: "2px solid #f59e0b",
-                            borderRadius: "8px",
-                            padding: "1.25rem",
-                            background: "linear-gradient(to bottom, #fffbeb, #fef3c7)",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              marginBottom: "1.25rem",
-                            }}
-                          >
-                            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                              <h2 style={{ fontSize: "1.125rem", fontWeight: "600", margin: 0, color: "#92400e" }}>
-                                🛡️ Información del AVAL
-                              </h2>
-                              <p style={{ fontSize: "0.75rem", color: "#78350f", margin: 0 }}>
-                                Datos del avalista o garante
-                              </p>
-                              <div style={{ fontSize: "0.75rem", color: "#78350f", fontWeight: "500" }}>
+                        <div className="border border-border bg-background p-5 shadow-sm rounded-lg">
+                          <div className="flex justify-between items-center mb-5">
+                            <div className="flex flex-col gap-1">
+                              <h2 className="text-lg font-semibold m-0">🛡️ Información del AVAL</h2>
+                              <div className="text-xs text-muted-foreground">Datos del avalista o garante</div>
+                              <div className="text-xs text-muted-foreground font-medium">
                                 Tipo: {selectedLead.tipo4 || "No especificado"}
                               </div>
                             </div>
                             {!isEditingPersonalInfo ? (
                               <button
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "0.5rem",
-                                  background: "none",
-                                  border: "none",
-                                  fontSize: "0.875rem",
-                                  color: "#92400e",
-                                  cursor: "pointer",
-                                }}
+                                className="flex items-center gap-2 bg-none border-none text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                                 onClick={() => setIsEditingPersonalInfo(true)}
                               >
                                 <Edit size={14} />
                                 Editar
                               </button>
                             ) : (
-                              <div style={{ display: "flex", gap: "0.5rem" }}>
+                              <div className="flex gap-2">
                                 <button
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                    padding: "0.375rem 0.75rem",
-                                    backgroundColor: "#10b981",
-                                    color: "white",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    fontSize: "0.875rem",
-                                    cursor: "pointer",
-                                    fontWeight: "500",
-                                  }}
+                                  className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500 text-white border-none rounded-md text-sm cursor-pointer font-medium hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500"
                                   onClick={savePersonalInfo}
                                 >
                                   <Check size={14} />
                                   Guardar
                                 </button>
                                 <button
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                    padding: "0.375rem 0.75rem",
-                                    backgroundColor: "#ef4444",
-                                    color: "white",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    fontSize: "0.875rem",
-                                    cursor: "pointer",
-                                    fontWeight: "500",
-                                  }}
+                                  className="flex items-center gap-2 px-3 py-1.5 bg-red-500 text-white border-none rounded-md text-sm cursor-pointer font-medium hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-500"
                                   onClick={cancelEdit}
                                 >
                                   <X size={14} />
@@ -3735,124 +3567,120 @@ export default function LeadsPage() {
                               </div>
                             )}
                           </div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                            {/* Row 1: Nombre and Correo */}
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#92400e",
-                                    fontWeight: "600",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Nombre del AVAL
-                                </div>
+                          <div className="flex flex-col gap-4">
+                            <div className="grid grid-cols-2 gap-6">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">Nombre del AVAL</div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     value={editFormData.Persona_4 || ""}
                                     onChange={(e) => setEditFormData({ ...editFormData, Persona_4: e.target.value })}
                                     placeholder="Nombre del avalista"
-                                    className="h-9 text-sm bg-white"
+                                    className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "600", color: "#78350f" }}>
+                                  <div className={`text-sm ${selectedLead.Persona_4 ? "not-italic text-foreground font-medium" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Persona_4 || "No especificado"}
                                   </div>
                                 )}
                               </div>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#92400e",
-                                    fontWeight: "600",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Correo del AVAL
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">Correo del AVAL
+                                  {!isEditingPersonalInfo && selectedLead["Correo 4"] && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            onClick={() => copyToClipboard(selectedLead["Correo 4"]!, "Correo del AVAL")}
+                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            {copiedField === "Correo del AVAL" ? (
+                                              <Check size={14} className="text-emerald-500" />
+                                            ) : (
+                                              <Copy size={14} />
+                                            )}
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Copiar correo</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
                                 </div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     value={editFormData["Correo 4"] || ""}
                                     onChange={(e) => setEditFormData({ ...editFormData, "Correo 4": e.target.value })}
                                     placeholder="email@ejemplo.com"
-                                    className="h-9 text-sm bg-white"
+                                    className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500", color: "#78350f" }}>
+                                  <div className={`text-sm break-words ${selectedLead["Correo 4"] ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead["Correo 4"] || "No especificado"}
                                   </div>
                                 )}
                               </div>
                             </div>
 
-                            {/* Row 2: Telefono and Pais */}
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#92400e",
-                                    fontWeight: "600",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Teléfono del AVAL
+                            <div className="grid grid-cols-2 gap-6">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">Teléfono del AVAL
+                                  {!isEditingPersonalInfo && selectedLead["Telefono 4"] && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            onClick={() => copyToClipboard(selectedLead["Telefono 4"]!, "Teléfono del AVAL")}
+                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            {copiedField === "Teléfono del AVAL" ? (
+                                              <Check size={14} className="text-emerald-500" />
+                                            ) : (
+                                              <Copy size={14} />
+                                            )}
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Copiar teléfono</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
                                 </div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     value={editFormData["Telefono 4"] || ""}
                                     onChange={(e) => setEditFormData({ ...editFormData, "Telefono 4": e.target.value })}
                                     placeholder="+34 600 000 000"
-                                    className="h-9 text-sm bg-white"
+                                    className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500", color: "#78350f" }}>
+                                  <div className="text-sm font-medium text-foreground">
                                     {selectedLead["Telefono 4"] || "No especificado"}
                                   </div>
                                 )}
                               </div>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#92400e",
-                                    fontWeight: "600",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  País del AVAL
-                                </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">País del AVAL</div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     value={editFormData["Pais 4"] || ""}
                                     onChange={(e) => setEditFormData({ ...editFormData, "Pais 4": e.target.value })}
                                     placeholder="España"
-                                    className="h-9 text-sm bg-white"
+                                    className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500", color: "#78350f" }}>
+                                  <div className={`text-sm ${selectedLead["Pais 4"] ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead["Pais 4"] || "No especificado"}
                                   </div>
                                 )}
                               </div>
                             </div>
 
-                            {/* Row 3: Ingresos and Codigo Postal */}
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#92400e",
-                                    fontWeight: "600",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Ingresos del AVAL (€)
-                                </div>
+                            <div className="grid grid-cols-2 gap-6">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">Ingresos del AVAL (€)</div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     type="number"
@@ -3864,27 +3692,16 @@ export default function LeadsPage() {
                                       })
                                     }
                                     placeholder="2000"
-                                    className="h-9 text-sm bg-white"
+                                    className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500", color: "#78350f" }}>
-                                    {selectedLead.Ingresos_4
-                                      ? formatCurrency(selectedLead.Ingresos_4)
-                                      : "No especificado"}
+                                  <div className={`text-sm ${selectedLead.Ingresos_4 ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                    {selectedLead.Ingresos_4 ? formatCurrency(selectedLead.Ingresos_4) : "No especificado"}
                                   </div>
                                 )}
                               </div>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#92400e",
-                                    fontWeight: "600",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Código Postal del AVAL
-                                </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">Código Postal del AVAL</div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     value={editFormData["Codigo_Postal 4"] || ""}
@@ -3892,29 +3709,19 @@ export default function LeadsPage() {
                                       setEditFormData({ ...editFormData, "Codigo_Postal 4": e.target.value })
                                     }
                                     placeholder="28001"
-                                    className="h-9 text-sm bg-white"
+                                    className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500", color: "#78350f" }}>
+                                  <div className={`text-sm ${selectedLead["Codigo_Postal 4"] ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead["Codigo_Postal 4"] || "No especificado"}
                                   </div>
                                 )}
                               </div>
                             </div>
 
-                            {/* Row 4: Tipo Documento and Documento */}
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#92400e",
-                                    fontWeight: "600",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Tipo Documento del AVAL
-                                </div>
+                            <div className="grid grid-cols-2 gap-6">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">Tipo Documento del AVAL</div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     value={editFormData["Tipo_Documento 4"] || ""}
@@ -3922,34 +3729,47 @@ export default function LeadsPage() {
                                       setEditFormData({ ...editFormData, "Tipo_Documento 4": e.target.value })
                                     }
                                     placeholder="DNI, NIE, Pasaporte"
-                                    className="h-9 text-sm bg-white"
+                                    className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500", color: "#78350f" }}>
+                                  <div className={`text-sm ${selectedLead["Tipo_Documento 4"] ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead["Tipo_Documento 4"] || "No especificado"}
                                   </div>
                                 )}
                               </div>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#92400e",
-                                    fontWeight: "600",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Documento del AVAL
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">Documento del AVAL
+                                  {!isEditingPersonalInfo && selectedLead.Documento_4 && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            onClick={() => copyToClipboard(selectedLead.Documento_4!, "Documento del AVAL")}
+                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            {copiedField === "Documento del AVAL" ? (
+                                              <Check size={14} className="text-emerald-500" />
+                                            ) : (
+                                              <Copy size={14} />
+                                            )}
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Copiar documento</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
                                 </div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     value={editFormData.Documento_4 || ""}
                                     onChange={(e) => setEditFormData({ ...editFormData, Documento_4: e.target.value })}
                                     placeholder="12345678A"
-                                    className="h-9 text-sm bg-white"
+                                    className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500", color: "#78350f" }}>
+                                  <div className={`text-sm ${selectedLead.Documento_4 ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Documento_4 || "No especificado"}
                                   </div>
                                 )}
@@ -3961,82 +3781,33 @@ export default function LeadsPage() {
 
                       {/* Add Persona 3 section */}
                       {selectedPersona === 3 && selectedLead?.Persona_3 && (
-                        <div
-                          style={{
-                            border: "1px solid #e5e7eb",
-                            borderRadius: "8px",
-                            padding: "1.25rem",
-                            background: "white",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              marginBottom: "1.25rem",
-                            }}
-                          >
-                            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                              <h2 style={{ fontSize: "1.125rem", fontWeight: "600", margin: 0 }}>
-                                Información Persona 3
-                              </h2>
-                              <div style={{ fontSize: "0.75rem", color: "#6b7280", fontWeight: "500" }}>
+                        <div className="border border-border bg-background p-5 shadow-sm rounded-lg">
+                          <div className="flex justify-between items-center mb-5">
+                            <div className="flex flex-col gap-1">
+                              <h2 className="text-lg font-semibold m-0">Información Persona 3</h2>
+                              <div className="text-xs text-muted-foreground font-medium">
                                 Tipo: {selectedLead.tipo3 || "No especificado"}
                               </div>
                             </div>
                             {!isEditingPersonalInfo ? (
                               <button
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "0.5rem",
-                                  background: "none",
-                                  border: "none",
-                                  fontSize: "0.875rem",
-                                  color: "#6b7280",
-                                  cursor: "pointer",
-                                }}
+                                className="flex items-center gap-2 bg-none border-none text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
                                 onClick={() => setIsEditingPersonalInfo(true)}
                               >
                                 <Edit size={14} />
                                 Editar
                               </button>
                             ) : (
-                              <div style={{ display: "flex", gap: "0.5rem" }}>
+                              <div className="flex gap-2">
                                 <button
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                    padding: "0.375rem 0.75rem",
-                                    backgroundColor: "#10b981",
-                                    color: "white",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    fontSize: "0.875rem",
-                                    cursor: "pointer",
-                                    fontWeight: "500",
-                                  }}
+                                  className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500 text-white border-none rounded-md text-sm cursor-pointer font-medium hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500"
                                   onClick={savePersonalInfo}
                                 >
                                   <Check size={14} />
                                   Guardar
                                 </button>
                                 <button
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "0.5rem",
-                                    padding: "0.375rem 0.75rem",
-                                    backgroundColor: "#ef4444",
-                                    color: "white",
-                                    border: "none",
-                                    borderRadius: "6px",
-                                    fontSize: "0.875rem",
-                                    cursor: "pointer",
-                                    fontWeight: "500",
-                                  }}
+                                  className="flex items-center gap-2 px-3 py-1.5 bg-red-500 text-white border-none rounded-md text-sm cursor-pointer font-medium hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-500"
                                   onClick={cancelEdit}
                                 >
                                   <X size={14} />
@@ -4045,20 +3816,10 @@ export default function LeadsPage() {
                               </div>
                             )}
                           </div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                            {/* Row 1: Nombre and Correo */}
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Nombre Persona 3
-                                </div>
+                          <div className="flex flex-col gap-4">
+                            <div className="grid grid-cols-2 gap-6">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">Nombre Persona 3</div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     value={editFormData.Persona_3 || ""}
@@ -4067,21 +3828,34 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className={`text-sm ${selectedLead.Persona_3 ? "not-italic text-foreground font-medium" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Persona_3 || "No especificado"}
                                   </div>
                                 )}
                               </div>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Correo Persona 3
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">Correo Persona 3
+                                  {!isEditingPersonalInfo && selectedLead["Correo 3"] && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            onClick={() => copyToClipboard(selectedLead["Correo 3"]!, "Correo Persona 3")}
+                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            {copiedField === "Correo Persona 3" ? (
+                                              <Check size={14} className="text-emerald-500" />
+                                            ) : (
+                                              <Copy size={14} />
+                                            )}
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Copiar correo</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
                                 </div>
                                 {isEditingPersonalInfo ? (
                                   <Input
@@ -4091,25 +3865,37 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className={`text-sm break-words ${selectedLead["Correo 3"] ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead["Correo 3"] || "No especificado"}
                                   </div>
                                 )}
                               </div>
                             </div>
 
-                            {/* Row 2: Telefono and Pais */}
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Teléfono Persona 3
+                            <div className="grid grid-cols-2 gap-6">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">Teléfono Persona 3
+                                  {!isEditingPersonalInfo && selectedLead["Telefono 3"] && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            onClick={() => copyToClipboard(selectedLead["Telefono 3"]!, "Teléfono Persona 3")}
+                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            {copiedField === "Teléfono Persona 3" ? (
+                                              <Check size={14} className="text-emerald-500" />
+                                            ) : (
+                                              <Copy size={14} />
+                                            )}
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Copiar teléfono</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
                                 </div>
                                 {isEditingPersonalInfo ? (
                                   <Input
@@ -4119,22 +3905,13 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className="text-sm font-medium text-foreground">
                                     {selectedLead["Telefono 3"] || "No especificado"}
                                   </div>
                                 )}
                               </div>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  País Persona 3
-                                </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">País Persona 3</div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     value={editFormData["Pais 3"] || ""}
@@ -4143,26 +3920,16 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className={`text-sm ${selectedLead["Pais 3"] ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead["Pais 3"] || "No especificado"}
                                   </div>
                                 )}
                               </div>
                             </div>
 
-                            {/* Row 3: Ingresos and Codigo Postal */}
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Ingresos Persona 3 (€)
-                                </div>
+                            <div className="grid grid-cols-2 gap-6">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">Ingresos Persona 3 (€)</div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     type="number"
@@ -4177,24 +3944,13 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
-                                    {selectedLead.Ingresos_3
-                                      ? formatCurrency(selectedLead.Ingresos_3)
-                                      : "No especificado"}
+                                  <div className={`text-sm ${selectedLead.Ingresos_3 ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                    {selectedLead.Ingresos_3 ? formatCurrency(selectedLead.Ingresos_3) : "No especificado"}
                                   </div>
                                 )}
                               </div>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Código Postal Persona 3
-                                </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">Código Postal Persona 3</div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     value={editFormData["Codigo_Postal 3"] || ""}
@@ -4205,51 +3961,52 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className={`text-sm ${selectedLead["Codigo_Postal 3"] ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead["Codigo_Postal 3"] || "No especificado"}
                                   </div>
                                 )}
                               </div>
                             </div>
 
-                            {/* Row 4: Tipo Documento and Documento */}
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Tipo Documento Persona 3
-                                </div>
+                            <div className="grid grid-cols-2 gap-6">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">Tipo Documento Persona 3</div>
                                 {isEditingPersonalInfo ? (
                                   <Input
                                     value={editFormData.Tipo_Documento_3 || ""}
-                                    onChange={(e) =>
-                                      setEditFormData({ ...editFormData, Tipo_Documento_3: e.target.value })
-                                    }
+                                    onChange={(e) => setEditFormData({ ...editFormData, Tipo_Documento_3: e.target.value })}
                                     placeholder="DNI, NIE, Pasaporte"
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className={`text-sm ${selectedLead.Tipo_Documento_3 ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Tipo_Documento_3 || "No especificado"}
                                   </div>
                                 )}
                               </div>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    color: "#6b7280",
-                                    fontWeight: "500",
-                                    marginBottom: "0.375rem",
-                                  }}
-                                >
-                                  Documento Persona 3
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">Documento Persona 3
+                                  {!isEditingPersonalInfo && selectedLead.Documento_3 && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            onClick={() => copyToClipboard(selectedLead.Documento_3!, "Documento Persona 3")}
+                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            {copiedField === "Documento Persona 3" ? (
+                                              <Check size={14} className="text-emerald-500" />
+                                            ) : (
+                                              <Copy size={14} />
+                                            )}
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Copiar documento</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
                                 </div>
                                 {isEditingPersonalInfo ? (
                                   <Input
@@ -4259,7 +4016,7 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div style={{ fontSize: "0.875rem", fontWeight: "500" }}>
+                                  <div className={`text-sm ${selectedLead.Documento_3 ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Documento_3 || "No especificado"}
                                   </div>
                                 )}
@@ -4284,10 +4041,10 @@ export default function LeadsPage() {
                               borderRadius: "8px",
                               border: `2px solid ${getStatusColors(selectedLead.Estado).border}`,
                               position: "relative",
-                              cursor: selectedLead.Estado === "Visita Propuesta" ? "pointer" : "default",
+                              cursor: ["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || "")) ? "pointer" : "default",
                               transition: "all 0.2s",
                             }}
-                            onClick={() => {
+                            onClick={async () => {
                               console.log("[v0] Estado div clicked, Estado:", selectedLead.Estado)
                               if (selectedLead.Estado === "Visita Propuesta") {
                                 console.log("[v0] Opening visit date dialog for lead:", selectedLead.Nombre, selectedLead.Apellidos)
@@ -4309,18 +4066,38 @@ export default function LeadsPage() {
                                 }
                                 setVisitDateDialogOpen(true)
                                 console.log("[v0] Dialog should now be open")
+                              } else if (selectedLead.Estado === "Datos Completos" || selectedLead.Estado === "Completo" || selectedLead.Estado === "Completado") {
+                                console.log("[v0] Datos Completos -> abrir Programar Visita y cambiar a 'Visita Propuesta'")
+                                setSelectedLeadForVisit(selectedLead)
+                                setSelectedAgenteId(selectedLead.idag ? String(selectedLead.idag) : "")
+                                if (selectedLead.fecha_de_visita) {
+                                  const d = new Date(selectedLead.fecha_de_visita)
+                                  const yyyy = d.getFullYear()
+                                  const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                  const dd = String(d.getDate()).padStart(2, "0")
+                                  const hh = String(d.getHours()).padStart(2, "0")
+                                  const min = String(d.getMinutes()).padStart(2, "0")
+                                  setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                  setNewVisitDateTime(`${hh}:${min}`)
+                                } else {
+                                  setNewVisitDateDate("")
+                                  setNewVisitDateTime("12:00")
+                                }
+                                setVisitDateDialogOpen(true)
+                                await updateLeadStatus(Number(selectedLead.id), "Visita Propuesta")
+                                setSelectedLead({ ...selectedLead, Estado: "Visita Propuesta" })
                               } else {
-                                console.log("[v0] Estado is not 'Visita Propuesta', dialog not opened")
+                                console.log("[v0] Estado no interactivo, dialog no abierto")
                               }
                             }}
                             onMouseEnter={(e) => {
-                              if (selectedLead.Estado === "Visita Propuesta") {
+                              if (["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || ""))) {
                                 e.currentTarget.style.transform = "scale(1.02)"
                                 e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
                               }
                             }}
                             onMouseLeave={(e) => {
-                              if (selectedLead.Estado === "Visita Propuesta") {
+                              if (["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || ""))) {
                                 e.currentTarget.style.transform = "scale(1)"
                                 e.currentTarget.style.boxShadow = "none"
                               }
@@ -4366,7 +4143,9 @@ export default function LeadsPage() {
                               </div>
                             )}
                             <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: "0.5rem" }}>
-                              ESTADO{selectedLead.Estado === "Visita Propuesta" ? " (Click para cambiar)" : ""}
+                              ESTADO
+                              {selectedLead.Estado === "Visita Propuesta" ? " (Click para cambiar)" :
+                               (selectedLead.Estado === "Datos Completos" || selectedLead.Estado === "Completo" || selectedLead.Estado === "Completado") ? " (Click para programar)" : ""}
                             </div>
                           </div>
 

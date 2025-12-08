@@ -43,6 +43,7 @@ interface AnuncioCard {
   activacion: string // From Anuncios.Activacion
   fotoUrl: string // From Anuncios.Foto_Url
   adjuntos?: string[]
+  created_at?: string // From Anuncios.created_at
   // Calculated metrics
   nuevosHoy: number // Count where created_at is today
   emailsEnviados: number // Count from Correos table
@@ -172,7 +173,7 @@ export default function AnunciosPage() {
   const [filterEstado, setFilterEstado] = useState<string>("all")
   const [showInfoFaqsModal, setShowInfoFaqsModal] = useState(false)
   const [showStatsModal, setShowStatsModal] = useState(false)
-  const [selectedAnuncioForStats, setSelectedAnuncioForStats] = useState<AnuncioCard | null>(null)
+  const [selectedAnuncioForStats, setSelectedAnuncioForStats] = useState<AnuncioCard & { statsPeriod?: string } | null>(null)
   const [showArchiveDialog, setShowArchiveDialog] = useState(false)
   const [archivingAnuncio, setArchivingAnuncio] = useState<AnuncioCard | null>(null)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -546,14 +547,16 @@ export default function AnunciosPage() {
 
   useEffect(() => {
     if (selectedAnuncioForStats && showStatsModal) {
-      // Fetch trend data when modal is open
+      // Fetch trend data when modal is open or temporal frame changes
       setLoadingTrendData(true)
-      calculateTrendData(selectedAnuncioForStats, trendTimeframe).then((data) => {
+      
+      // Use the specific period directly instead of mapping to generic timeframes
+      calculateTrendData(selectedAnuncioForStats, statsPeriod).then((data) => {
         setTrendData(data)
         setLoadingTrendData(false)
       })
     }
-  }, [selectedAnuncioForStats, trendTimeframe, showStatsModal]) // Added showStatsModal to dependencies
+  }, [selectedAnuncioForStats, statsPeriod, showStatsModal]) // Added statsPeriod to dependencies
 
   useEffect(() => {
     if (selectedAnuncioForStats && showStatsModal) {
@@ -697,16 +700,16 @@ export default function AnunciosPage() {
     })
   }
 
-  const calculateTrendData = async (anuncio: any, timeframe: "24h" | "7d" | "1m") => {
+  const calculateTrendData = async (anuncio: any, period: string) => {
     const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
     const now = new Date()
 
-    if (timeframe === "24h") {
-      // Last 24 hours - hourly buckets
-      const hourlyData: { hour: string; count: number; isCurrent: boolean }[] = []
+    if (period === "hoy") {
+      // Hoy - datos horarios
+      const hourlyData: { name: string; leads: number; isCurrent: boolean }[] = []
 
       for (let i = 23; i >= 0; i--) {
         const hourStart = new Date(now.getTime() - i * 60 * 60 * 1000)
@@ -723,16 +726,132 @@ export default function AnunciosPage() {
         const isCurrent = i === 0 // Last hour is current
 
         hourlyData.push({
-          hour: hourLabel,
-          count: data?.length || 0,
+          name: hourLabel,
+          leads: data?.length || 0,
           isCurrent,
         })
       }
 
-      return hourlyData
-    } else if (timeframe === "7d") {
-      // Last 7 days - daily buckets
-      const dailyData: { day: string; count: number }[] = []
+      // Filtrar horas con datos o al menos mostrar las últimas 6 horas para evitar muchas celdas vacías
+      const filteredData = hourlyData.filter((item, index) => 
+        item.leads > 0 || index >= hourlyData.length - 6
+      )
+
+      return filteredData
+    } else if (period === "esteMes" || period === "ultimoMes") {
+      // Este mes o último mes - datos diarios
+      const startDate = new Date(now)
+      if (period === "ultimoMes") {
+        startDate.setMonth(startDate.getMonth() - 1)
+      }
+      startDate.setDate(1) // Primer día del mes
+      startDate.setHours(0, 0, 0, 0)
+      
+      const endDate = new Date(now)
+      if (period === "ultimoMes") {
+        endDate.setMonth(endDate.getMonth(), 0) // Último día del mes anterior
+      }
+      endDate.setHours(23, 59, 59, 999)
+
+      const daysInMonth = period === "ultimoMes" 
+        ? new Date(now.getFullYear(), now.getMonth() - 1, 0).getDate()
+        : new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+
+      const dailyData: { name: string; leads: number }[] = []
+
+      for (let i = 0; i < daysInMonth; i++) {
+        const dayStart = new Date(startDate)
+        dayStart.setDate(startDate.getDate() + i)
+        dayStart.setHours(0, 0, 0, 0)
+
+        const dayEnd = new Date(dayStart)
+        dayEnd.setHours(23, 59, 59, 999)
+
+        // Si estamos en el mes actual, no procesar días futuros
+        if (dayStart > now && period === "esteMes") {
+          break
+        }
+
+        const { data, error } = await supabase
+          .from("Clientes")
+          .select("IDC")
+          .ilike("Inmueble", anuncio.referencia)
+          .gte("created_at", dayStart.toISOString())
+          .lte("created_at", dayEnd.toISOString())
+
+        const dayLabel = dayStart.toLocaleDateString("es-ES", { day: "numeric", month: "short" })
+
+        dailyData.push({
+          name: dayLabel,
+          leads: data?.length || 0,
+        })
+      }
+
+      return dailyData
+    } else if (period === "esteAno") {
+      // Este año - datos mensuales
+      const monthlyData: { name: string; leads: number }[] = []
+
+      for (let i = 0; i < 12; i++) {
+        const monthStart = new Date(now.getFullYear(), i, 1)
+        const monthEnd = new Date(now.getFullYear(), i + 1, 0)
+        monthEnd.setHours(23, 59, 59, 999)
+
+        // No procesar meses futuros
+        if (monthStart > now) {
+          break
+        }
+
+        const { data, error } = await supabase
+          .from("Clientes")
+          .select("IDC")
+          .ilike("Inmueble", anuncio.referencia)
+          .gte("created_at", monthStart.toISOString())
+          .lte("created_at", monthEnd.toISOString())
+
+        const monthLabel = monthStart.toLocaleDateString("es-ES", { month: "short" })
+
+        monthlyData.push({
+          name: monthLabel,
+          leads: data?.length || 0,
+        })
+      }
+
+      return monthlyData
+    } else if (period === "periodoActual") {
+      // Periodo actual (basado en planResetAt) - datos semanales
+      const periodStart = planResetAt ? new Date(planResetAt) : new Date(now.getFullYear(), now.getMonth(), 1)
+      const weeksData: { name: string; leads: number }[] = []
+
+      let currentWeekStart = new Date(periodStart)
+      currentWeekStart.setHours(0, 0, 0, 0)
+
+      while (currentWeekStart <= now) {
+        const weekEnd = new Date(currentWeekStart)
+        weekEnd.setDate(currentWeekStart.getDate() + 6)
+        weekEnd.setHours(23, 59, 59, 999)
+
+        const { data, error } = await supabase
+          .from("Clientes")
+          .select("IDC")
+          .ilike("Inmueble", anuncio.referencia)
+          .gte("created_at", currentWeekStart.toISOString())
+          .lte("created_at", weekEnd.toISOString())
+
+        const weekLabel = `Sem ${Math.ceil((currentWeekStart.getDate() + currentWeekStart.getDay()) / 7)}`
+
+        weeksData.push({
+          name: weekLabel,
+          leads: data?.length || 0,
+        })
+
+        currentWeekStart.setDate(currentWeekStart.getDate() + 7)
+      }
+
+      return weeksData
+    } else {
+      // Default: últimos 7 días
+      const dailyData: { name: string; leads: number }[] = []
 
       for (let i = 6; i >= 0; i--) {
         const dayStart = new Date(now)
@@ -752,44 +871,12 @@ export default function AnunciosPage() {
         const dayLabel = dayStart.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })
 
         dailyData.push({
-          day: dayLabel,
-          count: data?.length || 0,
+          name: dayLabel,
+          leads: data?.length || 0,
         })
       }
 
       return dailyData
-    } else {
-      // Last 4 weeks - weekly buckets with month identification
-      const weeklyData: { week: string; count: number }[] = []
-
-      for (let i = 3; i >= 0; i--) {
-        const weekEnd = new Date(now)
-        weekEnd.setDate(weekEnd.getDate() - i * 7)
-        weekEnd.setHours(23, 59, 59, 999)
-
-        const weekStart = new Date(weekEnd)
-        weekStart.setDate(weekStart.getDate() - 6)
-        weekStart.setHours(0, 0, 0, 0)
-
-        const { data, error } = await supabase
-          .from("Clientes")
-          .select("IDC")
-          .ilike("Inmueble", anuncio.referencia)
-          .gte("created_at", weekStart.toISOString())
-          .lte("created_at", weekEnd.toISOString())
-
-        // Determine week number in the month
-        const monthName = weekStart.toLocaleDateString("es-ES", { month: "short" })
-        const weekInMonth = Math.ceil(weekStart.getDate() / 7)
-        const weekLabel = `${weekInMonth}ª ${monthName}`
-
-        weeklyData.push({
-          week: weekLabel,
-          count: data?.length || 0,
-        })
-      }
-
-      return weeklyData
     }
   }
 
@@ -1845,35 +1932,51 @@ export default function AnunciosPage() {
       )
 
       const dayMs = 24 * 60 * 60 * 1000
-      const weeks = 53
-      const rows = 7
-      const totalDays = weeks * rows
       const now = new Date()
-      const firstDate = new Date(now.getTime() - (totalDays - 1) * dayMs)
-      firstDate.setHours(0, 0, 0, 0)
-      const activityYear: number[] = Array.from({ length: totalDays }, (_, i) => {
-        const ds = new Date(firstDate.getTime() + i * dayMs)
-        const de = new Date(ds.getTime() + dayMs)
+      
+      // Usar la fecha de publicación del anuncio como fecha de inicio
+      const anuncioCreationDate = anuncio.created_at ? new Date(anuncio.created_at) : new Date(now.getTime() - 30 * dayMs)
+      anuncioCreationDate.setHours(0, 0, 0, 0)
+      
+      // Calcular días desde la creación del anuncio hasta hoy
+      const daysSinceCreation = Math.ceil((now.getTime() - anuncioCreationDate.getTime()) / dayMs)
+      const totalDays = Math.min(Math.max(daysSinceCreation, 7), 365) // Mínimo 7 días, máximo 1 año
+      
+      const activityData: number[] = []
+      const activityDates: Date[] = []
+      
+      // Generar datos solo desde la fecha de creación del anuncio
+      for (let i = totalDays - 1; i >= 0; i--) {
+        const currentDate = new Date(now.getTime() - i * dayMs)
+        currentDate.setHours(0, 0, 0, 0)
+        const nextDate = new Date(currentDate.getTime() + dayMs)
+        
         const cnt =
           allLeads?.filter((lead) => {
             const createdAt = lead?.created_at ? new Date(lead.created_at) : null
-            return createdAt && createdAt >= ds && createdAt < de
+            return createdAt && createdAt >= currentDate && createdAt < nextDate
           }).length || 0
-        return cnt
-      })
+        
+        // Solo incluir días con datos o los últimos 7 días para contexto
+        if (cnt > 0 || i >= totalDays - 7) {
+          activityData.push(cnt)
+          activityDates.push(currentDate)
+        }
+      }
 
       // Populate stats with real data
       const statsWithRealData = {
         ...anuncio,
         datosCompletos: datosCompletosCount,
         descartados,
-        activityData: activityYear,
-        activityStartDate: firstDate,
+        activityData: activityData,
+        activityStartDate: activityDates.length > 0 ? activityDates[0] : anuncioCreationDate,
         phaseMetrics: {
           aceptados,
           visitaPropuesta,
           visitaCompletada,
         },
+        statsPeriod: "esteMes", // Initialize with default period for this anuncio
         // These are placeholders, actual calculation might be needed or removed
         rebotesAltos: Math.random() > 0.5,
         incompletosAlto: Math.random() > 0.7,
@@ -2143,21 +2246,15 @@ export default function AnunciosPage() {
   const ActivityHeatmap = ({
     data,
     startDate,
-    weeks = 53,
-    rows = 7,
     periodStart,
     periodEnd,
   }: {
     data: number[]
     startDate: Date
-    weeks?: number
-    rows?: number
     periodStart?: Date
     periodEnd?: Date
   }) => {
-    const total = weeks * rows
-    const slice = data.slice(-total)
-    const max = Math.max(...slice, 1)
+    const max = Math.max(...data, 1)
     const dayMs = 24 * 60 * 60 * 1000
     const cls = (ratio: number, active: boolean) =>
       !active
@@ -2173,24 +2270,111 @@ export default function AnunciosPage() {
                 : "bg-emerald-800"
     const start = new Date(startDate)
     start.setHours(0, 0, 0, 0)
-    const cells = Array.from({ length: total }, (_, i) => {
-      const value = slice[i] || 0
-      const ratio = max > 0 ? value / max : 0
+    const cells = data.map((value, i) => {
       const date = new Date(start.getTime() + i * dayMs)
+      const ratio = max > 0 ? value / max : 0
       const active = periodStart && periodEnd ? date >= periodStart && date < periodEnd : true
       const label = `${date.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" })}: ${value} leads`
       return { ratio, active, label }
     })
+    // Calcular tamaño de celdas basado en la cantidad de datos (más estrecho)
+    const cellSize = data.length <= 30 ? 2.5 : 
+                    data.length <= 60 ? 2 :
+                    data.length <= 90 ? 1.8 :
+                    data.length <= 180 ? 1.5 : 1.2
+    
+    // Determinar número de filas basado en la cantidad de datos
+    const totalRows = data.length <= 7 ? 1 :
+                     data.length <= 14 ? 2 :
+                     data.length <= 21 ? 3 :
+                     data.length <= 28 ? 4 :
+                     data.length <= 35 ? 5 : 7
+    
+    // Mejorar leyenda de meses - mostrar inicio de cada mes
+    const showMonthLabels = data.length > 14
+    const monthLabels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+    
+    // Encontrar las posiciones donde comienza cada mes
+    const monthStarts: {month: string, position: number}[] = []
+    let lastMonth = -1
+    
+    cells.forEach((_, idx) => {
+      const date = new Date(start.getTime() + idx * dayMs)
+      const currentMonth = date.getMonth()
+      
+      if (currentMonth !== lastMonth) {
+        monthStarts.push({
+          month: monthLabels[currentMonth],
+          position: idx
+        })
+        lastMonth = currentMonth
+      }
+    })
+    
+    // Leyenda simple para el eje Y (días de la semana)
+    const showDayLabels = totalRows > 1
+    const dayLabels = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+    
     return (
       <div className="overflow-x-auto">
-        <div className="grid grid-flow-col grid-rows-7 gap-[3px]">
-          {cells.map((c, idx) => (
-            <div
-              key={idx}
-              title={c.label}
-              className={`w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 ${cls(c.ratio, c.active)}`}
-            />
-          ))}
+        {/* Leyenda de meses - mostrar inicio de cada mes */}
+        {showMonthLabels && monthStarts.length > 0 && (
+          <div className="flex mb-1 text-[10px] text-muted-foreground">
+            {monthStarts.map(({month, position}, idx) => (
+              <div 
+                key={idx}
+                className="text-center"
+                style={{ 
+                  marginLeft: idx === 0 ? '0' : `${(position - monthStarts[idx-1].position) * cellSize}rem`
+                }}
+              >
+                {month}
+              </div>
+            ))}
+          </div>
+        )}
+        
+        <div className="flex items-start gap-1">
+          {/* Leyenda de días (eje Y) - Solo mostrar si hay múltiples filas */}
+          {showDayLabels && (
+            <div className="flex flex-col justify-between text-[10px] text-muted-foreground">
+              {dayLabels.map((day, idx) => (
+                <div 
+                  key={idx}
+                  className="text-right flex items-center justify-end"
+                  style={{ 
+                    height: `${cellSize}rem`,
+                    lineHeight: `${cellSize}rem`
+                  }}
+                >
+                  {day}
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Heatmap principal */}
+          <div 
+            className="grid grid-flow-col gap-[1px]"
+            style={{
+              gridTemplateRows: `repeat(${totalRows}, minmax(0, 1fr))`,
+              gridAutoColumns: `${cellSize}rem`
+            }}
+          >
+            {cells.map((c, idx) => (
+              <div
+                key={idx}
+                title={c.label}
+                className={`rounded-[2px] border border-muted-foreground/20 ${cls(c.ratio, c.active)}`}
+                style={{
+                  width: `${cellSize}rem`,
+                  height: `${cellSize}rem`,
+                  minWidth: `${cellSize}rem`,
+                  minHeight: `${cellSize}rem`
+                }}
+              />
+            ))}
+          </div>
         </div>
       </div>
     )
@@ -2329,7 +2513,8 @@ export default function AnunciosPage() {
           .eq("idi", inmobiliariaId)
         if (!error) {
           setReactivationUpdated(true)
-          toast({ title: "Límites restablecidos", description: "Se ha marcado la inmobiliaria como Activa" })
+          // Solo mostrar toast si realmente se ha restablecido el límite (ej: nuevo mes)
+          // El mensaje "Límites restablecidos" se mostrará en otro lugar cuando ocurra un restablecimiento real
         }
       } catch {}
     }
@@ -2613,10 +2798,10 @@ export default function AnunciosPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs px-2 py-0">
+                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800 text-xs px-2 py-0">
                   Anuncios activos {activeAnuncios}/{formatPlanValue(anunciosLimit)}
                 </Badge>
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs px-2 py-0">
+                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800 text-xs px-2 py-0">
                   {totalCompletos} Leads completos (hoy)
                 </Badge>
               </div>
@@ -2728,7 +2913,7 @@ export default function AnunciosPage() {
                   </div>
                 )}
                 {anunciosLimit > 0 && activeAnuncios >= anunciosLimit && (
-                  <div className="mt-1.5 flex items-start gap-2 p-2 rounded-lg border border-red-500 bg-red-50">
+                  <div className="mt-1.5 flex items-start gap-2 p-2 rounded-lg border border-red-500 bg-red-50 dark:bg-red-950/50 dark:border-red-800">
                     <span className="text-sm">🚨</span>
                     <div className="flex-1">
                       <p className="text-xs font-medium text-red-600">Has alcanzado el límite de anuncios activos de tu plan.</p>
@@ -2766,7 +2951,7 @@ export default function AnunciosPage() {
                     {/* Alert message */}
                     {alertConfig && (
                       <div
-                        className={`flex items-start gap-2 p-2 rounded-lg border ${alertConfig.borderColor} ${alertConfig.level === "critical" || alertConfig.level === "danger" ? "bg-red-50" : alertConfig.level === "warning" ? "bg-orange-50" : alertConfig.level === "caution" ? "bg-yellow-50" : "bg-green-50"}`}
+                        className={`flex items-start gap-2 p-2 rounded-lg border ${alertConfig.borderColor} ${alertConfig.level === "critical" || alertConfig.level === "danger" ? "bg-red-50 dark:bg-red-950/50" : alertConfig.level === "warning" ? "bg-orange-50 dark:bg-orange-950/50" : alertConfig.level === "caution" ? "bg-yellow-50 dark:bg-yellow-950/50" : "bg-green-50 dark:bg-green-950/50"}`}
                       >
                         <span className="text-sm">{alertConfig.icon}</span>
                         <div className="flex-1">
@@ -3185,20 +3370,20 @@ export default function AnunciosPage() {
                                   key={lead.id}
                                   className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
                                     lead.fecha_de_visita
-                                      ? 'bg-blue-50 border-blue-200 hover:border-blue-300'
+                                      ? 'bg-blue-50 border-blue-200 hover:border-blue-300 dark:bg-blue-950/50 dark:border-blue-800 dark:hover:border-blue-700'
                                       : 'bg-background hover:border-primary/50'
                                   }`}
                                 >
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
-                                      <p className="font-medium text-sm truncate">{lead.Nombre}</p>
+                                      <p className="font-medium text-sm truncate text-foreground">{lead.Nombre}</p>
                                       {lead.Agentes?.Nombre && (
-                                        <div className="text-xs text-gray-500">
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">
                                           Agente: {lead.Agentes.Nombre}
                                         </div>
                                       )}
                                       {lead.fecha_de_visita && (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
                                           <Calendar className="h-3 w-3 mr-1" />
                                           Visita programada
                                         </span>
@@ -3892,16 +4077,16 @@ export default function AnunciosPage() {
                 <>
                   {/* Métricas Principales */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="text-center p-4 bg-blue-50 rounded-lg">
-                      <div className="text-2xl font-bold text-blue-600">{selectedAnuncioForStats.leadsTotales}</div>
-                      <div className="text-sm text-blue-800">Leads Totales</div>
+                    <div className="text-center p-4 bg-blue-50 dark:bg-blue-950/50 rounded-lg">
+                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{selectedAnuncioForStats.leadsTotales}</div>
+                        <div className="text-sm text-blue-800 dark:text-blue-300">Leads Totales</div>
                     </div>
-                    <div className="text-center p-4 bg-green-50 rounded-lg">
-                      <div className="text-2xl font-bold text-green-600">{selectedAnuncioForStats.datosCompletos}</div>
-                      <div className="text-sm text-green-800">Datos Completos</div>
+                    <div className="text-center p-4 bg-green-50 dark:bg-green-950/50 rounded-lg">
+                      <div className="text-2xl font-bold text-green-600 dark:text-green-400">{selectedAnuncioForStats.datosCompletos}</div>
+                        <div className="text-sm text-green-800 dark:text-green-300">Datos Completos</div>
                     </div>
-                    <div className="text-center p-4 bg-purple-50 rounded-lg">
-                      <div className="text-2xl font-bold text-purple-600">
+                    <div className="text-center p-4 bg-purple-50 dark:bg-purple-950/50 rounded-lg">
+                      <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                         {selectedAnuncioForStats.leadsTotales > 0
                           ? (
                               (selectedAnuncioForStats.datosCompletos / selectedAnuncioForStats.leadsTotales) *
@@ -3910,11 +4095,11 @@ export default function AnunciosPage() {
                           : "0.0"}
                         %
                       </div>
-                      <div className="text-sm text-purple-800">Tasa Conversión</div>
+                      <div className="text-sm text-purple-800 dark:text-purple-300">Tasa Conversión</div>
                     </div>
-                    <div className="text-center p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="text-2xl font-bold text-gray-600">{selectedAnuncioForStats.descartados || 0}</div>
-                      <div className="text-sm text-gray-700">Descartados</div>
+                    <div className="text-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="text-2xl font-bold text-gray-600 dark:text-gray-300">{selectedAnuncioForStats.descartados || 0}</div>
+                        <div className="text-sm text-gray-700 dark:text-gray-400">Descartados</div>
                     </div>
                   </div>
 
@@ -3923,7 +4108,7 @@ export default function AnunciosPage() {
                     <div className="grid grid-cols-3 gap-3">
                       <Button
                         variant="outline"
-                        className="w-full justify-between hover:bg-green-50 h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
+                        className="w-full justify-between hover:bg-green-50 dark:hover:bg-green-950/30 h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
                         onClick={() => handlePhaseMetricClick("aceptado")}
                       >
                         <span className="text-sm">Candidatos Aprobados</span>
@@ -3933,7 +4118,7 @@ export default function AnunciosPage() {
                       </Button>
                       <Button
                         variant="outline"
-                        className="w-full justify-between hover:bg-blue-50 h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
+                        className="w-full justify-between hover:bg-blue-50 dark:hover:bg-blue-950/30 h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
                         onClick={() => handlePhaseMetricClick("visita_propuesta")}
                       >
                         <span className="text-sm">Visita Propuesta</span>
@@ -3956,10 +4141,11 @@ export default function AnunciosPage() {
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <h4 className="font-semibold">Actividad de Leads</h4>
+                      <h4 className="font-semibold">Visualización de Leads</h4>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="h-7 text-[10px]">
                           {(() => {
+                            const period = selectedAnuncioForStats?.statsPeriod || "esteMes"
                             const now = new Date()
                             const dayStart = new Date(now); dayStart.setHours(0,0,0,0)
                             const dayEnd = new Date(dayStart.getTime() + 24*60*60*1000)
@@ -3968,31 +4154,33 @@ export default function AnunciosPage() {
                             const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
                             const yearStart = new Date(now.getFullYear(), 0, 1)
                             const start =
-                              statsPeriod === "hoy"
+                              period === "hoy"
                                 ? dayStart
-                                : statsPeriod === "ultimoMes"
+                                : period === "ultimoMes"
                                 ? prevMonthStart
-                                : statsPeriod === "esteMes"
+                                : period === "esteMes"
                                 ? thisMonthStart
-                                : statsPeriod === "esteAno"
+                                : period === "esteAno"
                                 ? yearStart
                                 : (planResetAt ? new Date(planResetAt) : thisMonthStart)
-                            const end = statsPeriod === "hoy" ? dayEnd : statsPeriod === "ultimoMes" ? prevMonthEndDisplay : now
+                            const end = period === "hoy" ? dayEnd : period === "ultimoMes" ? prevMonthEndDisplay : now
                             const fmt = (d: Date) => d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" })
                             const label =
-                              statsPeriod === "hoy"
+                              period === "hoy"
                                 ? "Hoy"
-                                : statsPeriod === "ultimoMes"
+                                : period === "ultimoMes"
                                 ? "Último mes"
-                                : statsPeriod === "esteMes"
+                                : period === "esteMes"
                                 ? "Este mes"
-                                : statsPeriod === "esteAno"
+                                : period === "esteAno"
                                 ? "Este año"
                                 : "Periodo actual"
-                            return statsPeriod === "hoy" ? `${label}: ${fmt(start)}` : `${label}: ${fmt(start)} – ${fmt(end)}`
+                            return period === "hoy" ? `${label}: ${fmt(start)}` : `${label}: ${fmt(start)} – ${fmt(end)}`
                           })()}
                         </Badge>
-                        <Select value={statsPeriod} onValueChange={(v) => setStatsPeriod(v as any)}>
+                        <Select value={selectedAnuncioForStats?.statsPeriod || "esteMes"} onValueChange={(v) => {
+                          setSelectedAnuncioForStats(prev => prev ? {...prev, statsPeriod: v} : null)
+                        }}>
                           <SelectTrigger className="h-7 w-[140px] text-xs">
                             <SelectValue placeholder="Periodo" />
                           </SelectTrigger>
@@ -4006,51 +4194,107 @@ export default function AnunciosPage() {
                         </Select>
                       </div>
                     </div>
-                    <div className="bg-muted p-4 rounded-lg">
-                      {!selectedAnuncioForStats?.activityData || selectedAnuncioForStats.activityData.length === 0 ? (
-                        <div className="flex items-center justify-center h-32">
-                          <div className="text-sm text-muted-foreground">Sin datos</div>
+                    
+                    {/* Layout de gráficos uno al lado del otro */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      
+                      {/* Actividad de Leads */}
+                      <div className="space-y-3">
+                        <h4 className="font-semibold text-sm">Actividad de Leads</h4>
+                        <div className="bg-muted p-4 rounded-lg">
+                          {!selectedAnuncioForStats?.activityData || selectedAnuncioForStats.activityData.length === 0 ? (
+                            <div className="flex items-center justify-center h-32">
+                              <div className="text-sm text-muted-foreground">Sin datos</div>
+                            </div>
+                          ) : (
+                            (() => {
+                              const now = new Date()
+                              const dayStart = new Date(now); dayStart.setHours(0,0,0,0)
+                              const dayEnd = new Date(dayStart.getTime() + 24*60*60*1000)
+                              const prevMonthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
+                              const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1)
+                              const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+                              const yearStart = new Date(now.getFullYear(), 0, 1)
+                              const periodStart =
+                                statsPeriod === "hoy"
+                                  ? dayStart
+                                  : statsPeriod === "ultimoMes"
+                                  ? prevMonthStart
+                                  : statsPeriod === "esteMes"
+                                  ? thisMonthStart
+                                  : statsPeriod === "esteAno"
+                                  ? yearStart
+                                  : (planResetAt ? new Date(planResetAt) : thisMonthStart)
+                              const periodEnd = statsPeriod === "hoy" ? dayEnd : statsPeriod === "ultimoMes" ? prevMonthEnd : now
+                              return (
+                                <ActivityHeatmap
+                                  data={selectedAnuncioForStats.activityData}
+                                  startDate={selectedAnuncioForStats.activityStartDate || thisMonthStart}
+                                  periodStart={periodStart}
+                                  periodEnd={periodEnd}
+                                />
+                              )
+                            })()
+                          )}
+                          <div className="flex items-center justify-end mt-2 gap-1 text-[10px] text-muted-foreground">
+                            <span>Menor</span>
+                            <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-muted/30" />
+                            <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-200/80" />
+                            <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-400/80" />
+                            <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-600" />
+                            <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-800" />
+                            <span>Mayor</span>
+                          </div>
                         </div>
-                      ) : (
-                        (() => {
-                          const now = new Date()
-                          const dayStart = new Date(now); dayStart.setHours(0,0,0,0)
-                          const dayEnd = new Date(dayStart.getTime() + 24*60*60*1000)
-                          const prevMonthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
-                          const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1)
-                          const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-                          const yearStart = new Date(now.getFullYear(), 0, 1)
-                          const periodStart =
-                            statsPeriod === "hoy"
-                              ? dayStart
-                              : statsPeriod === "ultimoMes"
-                              ? prevMonthStart
-                              : statsPeriod === "esteMes"
-                              ? thisMonthStart
-                              : statsPeriod === "esteAno"
-                              ? yearStart
-                              : (planResetAt ? new Date(planResetAt) : thisMonthStart)
-                          const periodEnd = statsPeriod === "hoy" ? dayEnd : statsPeriod === "ultimoMes" ? prevMonthEnd : now
-                          return (
-                            <ActivityHeatmap
-                              data={selectedAnuncioForStats.activityData}
-                              startDate={selectedAnuncioForStats.activityStartDate || thisMonthStart}
-                              weeks={53}
-                              rows={7}
-                              periodStart={periodStart}
-                              periodEnd={periodEnd}
-                            />
-                          )
-                        })()
-                      )}
-                      <div className="flex items-center justify-end mt-2 gap-1 text-[10px] text-muted-foreground">
-                        <span>Menor</span>
-                        <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-muted/30" />
-                        <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-200/80" />
-                        <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-400/80" />
-                        <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-600" />
-                        <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-800" />
-                        <span>Mayor</span>
+                      </div>
+
+                      {/* Gráfico de Tendencia de Leads */}
+                      <div className="space-y-3">
+                        <h4 className="font-semibold text-sm">Tendencia de Leads</h4>
+                        <div className="bg-muted p-4 rounded-lg" style={{ 
+                          height: trendData && trendData.length > 10 ? '300px' : 
+                                 trendData && trendData.length > 5 ? '250px' : '200px' 
+                        }}>
+                          {!trendData || trendData.length === 0 ? (
+                            <div className="flex items-center justify-center h-full">
+                              <div className="text-sm text-muted-foreground">Sin datos de tendencia</div>
+                            </div>
+                          ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart
+                                data={trendData}
+                                margin={{ 
+                                  top: 5, 
+                                  right: trendData.length > 10 ? 10 : 30, 
+                                  left: 20, 
+                                  bottom: trendData.length > 10 ? 40 : 5 
+                                }}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis 
+                                  dataKey="name" 
+                                  tick={{ fontSize: trendData.length > 10 ? 10 : 12 }}
+                                  angle={trendData.length > 10 ? -45 : 0}
+                                  textAnchor="end"
+                                  height={trendData.length > 10 ? 80 : 60}
+                                  interval={trendData.length > 15 ? "preserveStartEnd" : 0}
+                                />
+                                <YAxis tick={{ fontSize: 12 }} />
+                                <Tooltip 
+                                  formatter={(value) => [`${value} leads`, 'Cantidad']}
+                                  labelFormatter={(label) => `Período: ${label}`}
+                                />
+                                <Line 
+                                  type="monotone" 
+                                  dataKey="leads" 
+                                  stroke="#3b82f6" 
+                                  strokeWidth={2}
+                                  activeDot={{ r: 6 }}
+                                />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -4060,13 +4304,13 @@ export default function AnunciosPage() {
                     <h4 className="font-semibold">Análisis de Calidad</h4>
                     <div className="grid grid-cols-3 gap-3">
                       {/* Leads Rebotados */}
-                      <div className="text-center p-4 bg-orange-50 rounded-lg border border-orange-200">
+                      <div className="text-center p-4 bg-orange-50 dark:bg-orange-950/50 rounded-lg border border-orange-200 dark:border-orange-800">
                         <div className="flex items-center justify-center gap-1 mb-2">
-                          <span className="text-xs font-medium text-orange-800">Leads Rebotados</span>
+                          <span className="text-xs font-medium text-orange-800 dark:text-orange-300">Leads Rebotados</span>
                           <Popover>
                             <PopoverTrigger asChild>
-                              <button className="inline-flex items-center justify-center rounded-full w-4 h-4 bg-orange-200 hover:bg-orange-300 transition-colors">
-                                <Info className="h-3 w-3 text-orange-700" />
+                              <button className="inline-flex items-center justify-center rounded-full w-4 h-4 bg-orange-200 hover:bg-orange-300 dark:bg-orange-800 dark:hover:bg-orange-700 transition-colors">
+                                <Info className="h-3 w-3 text-orange-700 dark:text-orange-300" />
                               </button>
                             </PopoverTrigger>
                             <PopoverContent className="w-80" side="top">
@@ -4088,19 +4332,19 @@ export default function AnunciosPage() {
                             </PopoverContent>
                           </Popover>
                         </div>
-                        <div className="text-3xl font-bold text-orange-600">{qualityMetrics.leadsRebotados}</div>
+                        <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{qualityMetrics.leadsRebotados}</div>
                       </div>
 
                       {/* Datos Incompletos */}
-                      <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                        <div className="text-xs font-medium text-yellow-800 mb-2">Datos Incompletos</div>
-                        <div className="text-3xl font-bold text-yellow-600">{qualityMetrics.datosIncompletos}</div>
+                      <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-950/50 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                        <div className="text-xs font-medium text-yellow-800 dark:text-yellow-300 mb-2">Datos Incompletos</div>
+                        <div className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">{qualityMetrics.datosIncompletos}</div>
                       </div>
 
                       {/* Necesidad de Aval */}
-                      <div className="text-center p-4 bg-purple-50 rounded-lg border border-purple-200">
-                        <div className="text-xs font-medium text-purple-800 mb-2">Necesidad de Aval</div>
-                        <div className="text-3xl font-bold text-purple-600">{qualityMetrics.necesidadAval}</div>
+                      <div className="text-center p-4 bg-purple-50 dark:bg-purple-950/50 rounded-lg border border-purple-200 dark:border-purple-800">
+                        <div className="text-xs font-medium text-purple-800 dark:text-purple-300 mb-2">Necesidad de Aval</div>
+                        <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">{qualityMetrics.necesidadAval}</div>
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground text-center">
@@ -4183,7 +4427,7 @@ export default function AnunciosPage() {
                       <div className="space-y-2">
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm truncate">{lead.Nombre || "Sin nombre"}</p>
+                            <p className="font-medium text-sm truncate text-foreground">{lead.Nombre || "Sin nombre"}</p>
                             <p className="text-xs text-muted-foreground truncate">{lead.Correo}</p>
                             {lead.Telefono && <p className="text-xs text-muted-foreground">{lead.Telefono}</p>}
                           </div>
