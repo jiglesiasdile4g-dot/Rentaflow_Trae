@@ -1,3 +1,19 @@
+## [0.5.2](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.5.1...v0.5.2) (2025-12-08)
+
+
+### Bug Fixes
+
+* **dark-mode:** aplicar tema oscuro en modal Leads, dropzones y comunicaciones ([8896213](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/88962130c7afff3a5aef36e862ca9f145b8b6ca4))
+* mejorar visibilidad badge incompleto - fondo naranja claro, texto ambar oscuro, colores consistentes ([69944af](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/69944affa96e12f6dee141c3504d7a247d0b60f6))
+
+
+### Features
+
+* Destacar pestañas de Avalista en verde para Personas 2, 3 y 4. Muestra '🛡️ AVALISTA:' cuando el tipo es Avalista y aplica colores verdes destacados. Mantiene funcionalidad existente para no Avalistas. ([a2a33ac](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/a2a33acac59e4533057930ce72538fe0ea9ab38d))
+* **leads:** clic en 'Datos Completos' para programar visita y cambiar a 'Visita Propuesta'; patrón Personas 2/3/4 replicado ([a5b8bba](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/a5b8bbae698cd6c71e6dae143c21dd2309e3f248))
+
+
+
 ## [0.5.1](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.5.0...v0.5.1) (2025-12-03)
 
 
