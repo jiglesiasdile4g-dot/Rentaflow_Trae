@@ -2375,42 +2375,42 @@ export default function LeadsPage() {
                                             <DropdownMenuItem
                                               onClick={(e) => {
                                                 e.stopPropagation()
-                                                updateLeadStatus(Number(lead.id), "Pendiente")
+                                                updateLeadStatus(Number(lead.id), "Datos Incompletos")
                                               }}
                                             >
-                                              Pendiente
+                                              Datos Incompletos
                                             </DropdownMenuItem>
                                             <DropdownMenuItem
                                               onClick={(e) => {
                                                 e.stopPropagation()
-                                                updateLeadStatus(Number(lead.id), "Validado")
+                                                updateLeadStatus(Number(lead.id), "Datos Completos")
                                               }}
                                             >
-                                              Validado
+                                              Datos Completos
                                             </DropdownMenuItem>
                                             <DropdownMenuItem
                                               onClick={(e) => {
                                                 e.stopPropagation()
-                                                updateLeadStatus(Number(lead.id), "Completado")
+                                                setSelectedLeadForVisit(lead)
+                                                setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
+                                                if (lead.fecha_de_visita) {
+                                                  const d = new Date(lead.fecha_de_visita)
+                                                  const yyyy = d.getFullYear()
+                                                  const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                                  const dd = String(d.getDate()).padStart(2, "0")
+                                                  const hh = String(d.getHours()).padStart(2, "0")
+                                                  const min = String(d.getMinutes()).padStart(2, "0")
+                                                  setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                                  setNewVisitDateTime(`${hh}:${min}`)
+                                                } else {
+                                                  setNewVisitDateDate("")
+                                                  setNewVisitDateTime("12:00")
+                                                }
+                                                setVisitDateDialogOpen(true)
+                                                updateLeadStatus(Number(lead.id), "Visita Propuesta")
                                               }}
                                             >
-                                              Completado
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                updateLeadStatus(Number(lead.id), "Rechazado")
-                                              }}
-                                            >
-                                              Rechazado
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                updateLeadStatus(Number(lead.id), "Aceptado")
-                                              }}
-                                            >
-                                              Aceptado
+                                              Visita Propuesta
                                             </DropdownMenuItem>
                                             <DropdownMenuItem
                                               onClick={(e) => {
@@ -2419,6 +2419,16 @@ export default function LeadsPage() {
                                               }}
                                             >
                                               Descartado
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                setSelectedLead(lead)
+                                                openAvalDialog()
+                                                updateLeadStatus(Number(lead.id), "Pedir Aval")
+                                              }}
+                                            >
+                                              Aval Pedido
                                             </DropdownMenuItem>
                                           </DropdownMenuContent>
                                         </DropdownMenu>
@@ -2771,42 +2781,42 @@ export default function LeadsPage() {
                                           <DropdownMenuItem
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              updateLeadStatus(Number(lead.id), "Pendiente")
+                                              updateLeadStatus(Number(lead.id), "Datos Incompletos")
                                             }}
                                           >
-                                            Pendiente
+                                            Datos Incompletos
                                           </DropdownMenuItem>
                                           <DropdownMenuItem
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              updateLeadStatus(Number(lead.id), "Validado")
+                                              updateLeadStatus(Number(lead.id), "Datos Completos")
                                             }}
                                           >
-                                            Validado
+                                            Datos Completos
                                           </DropdownMenuItem>
                                           <DropdownMenuItem
                                             onClick={(e) => {
                                               e.stopPropagation()
-                                              updateLeadStatus(Number(lead.id), "Completado")
+                                              setSelectedLeadForVisit(lead)
+                                              setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
+                                              if (lead.fecha_de_visita) {
+                                                const d = new Date(lead.fecha_de_visita)
+                                                const yyyy = d.getFullYear()
+                                                const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                                const dd = String(d.getDate()).padStart(2, "0")
+                                                const hh = String(d.getHours()).padStart(2, "0")
+                                                const min = String(d.getMinutes()).padStart(2, "0")
+                                                setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                                setNewVisitDateTime(`${hh}:${min}`)
+                                              } else {
+                                                setNewVisitDateDate("")
+                                                setNewVisitDateTime("12:00")
+                                              }
+                                              setVisitDateDialogOpen(true)
+                                              updateLeadStatus(Number(lead.id), "Visita Propuesta")
                                             }}
                                           >
-                                            Completado
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              updateLeadStatus(Number(lead.id), "Rechazado")
-                                            }}
-                                          >
-                                            Rechazado
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              updateLeadStatus(Number(lead.id), "Aceptado")
-                                            }}
-                                          >
-                                            Aceptado
+                                            Visita Propuesta
                                           </DropdownMenuItem>
                                           <DropdownMenuItem
                                             onClick={(e) => {
@@ -2815,6 +2825,16 @@ export default function LeadsPage() {
                                             }}
                                           >
                                             Descartado
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              setSelectedLead(lead)
+                                              openAvalDialog()
+                                              updateLeadStatus(Number(lead.id), "Pedir Aval")
+                                            }}
+                                          >
+                                            Aval Pedido
                                           </DropdownMenuItem>
                                         </DropdownMenuContent>
                                       </DropdownMenu>
