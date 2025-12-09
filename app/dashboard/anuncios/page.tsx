@@ -754,7 +754,7 @@ export default function AnunciosPage() {
       endDate.setHours(23, 59, 59, 999)
 
       const daysInMonth = period === "ultimoMes" 
-        ? new Date(now.getFullYear(), now.getMonth() - 1, 0).getDate()
+        ? new Date(now.getFullYear(), now.getMonth(), 0).getDate()
         : new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
 
       const dailyData: { name: string; leads: number }[] = []
@@ -2798,11 +2798,20 @@ export default function AnunciosPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800 text-xs px-2 py-0">
-                  Anuncios activos {activeAnuncios}/{formatPlanValue(anunciosLimit)}
+                <Badge
+                  variant="outline"
+                  className="rounded-full bg-blue-500/10 text-foreground border-blue-300 dark:bg-blue-400/10 dark:text-foreground dark:border-blue-700 text-xs px-2 py-0"
+                >
+                  <span className="text-xs text-muted-foreground mr-1.5">Anuncios activos</span>
+                  <span className="text-sm font-semibold text-blue-700 dark:text-blue-300 mr-0.5">{activeAnuncios}</span>
+                  <span className="text-xs text-muted-foreground">/ {formatPlanValue(anunciosLimit)}</span>
                 </Badge>
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800 text-xs px-2 py-0">
-                  {totalCompletos} Leads completos (hoy)
+                <Badge
+                  variant="outline"
+                  className="rounded-full bg-emerald-500/10 text-foreground border-emerald-300 dark:bg-emerald-400/10 dark:text-foreground dark:border-emerald-700 text-xs px-2 py-0"
+                >
+                  <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 mr-1">{totalCompletos}</span>
+                  <span className="text-xs text-muted-foreground">Leads completos (hoy)</span>
                 </Badge>
               </div>
             </div>
@@ -4077,29 +4086,29 @@ export default function AnunciosPage() {
                 <>
                   {/* Métricas Principales */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="text-center p-4 bg-blue-50 dark:bg-blue-950/50 rounded-lg">
-                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{selectedAnuncioForStats.leadsTotales}</div>
-                        <div className="text-sm text-blue-800 dark:text-blue-300">Leads Totales</div>
+                    <div className="text-center p-4 bg-muted rounded-lg border">
+                      <div className="text-3xl font-bold text-foreground">{selectedAnuncioForStats.leadsTotales}</div>
+                        <div className="text-xs text-muted-foreground">Leads Totales</div>
                     </div>
-                    <div className="text-center p-4 bg-green-50 dark:bg-green-950/50 rounded-lg">
-                      <div className="text-2xl font-bold text-green-600 dark:text-green-400">{selectedAnuncioForStats.datosCompletos}</div>
-                        <div className="text-sm text-green-800 dark:text-green-300">Datos Completos</div>
+                    <div className="text-center p-4 bg-muted rounded-lg border">
+                      <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{selectedAnuncioForStats.datosCompletos}</div>
+                        <div className="text-xs text-muted-foreground">Datos Completos</div>
                     </div>
-                    <div className="text-center p-4 bg-purple-50 dark:bg-purple-950/50 rounded-lg">
-                      <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                    <div className="text-center p-4 bg-muted rounded-lg border">
+                      <div className="text-3xl font-bold text-violet-600 dark:text-violet-400">
                         {selectedAnuncioForStats.leadsTotales > 0
                           ? (
                               (selectedAnuncioForStats.datosCompletos / selectedAnuncioForStats.leadsTotales) *
                               100
-                            ).toFixed(1)
+                          ).toFixed(1)
                           : "0.0"}
                         %
                       </div>
-                      <div className="text-sm text-purple-800 dark:text-purple-300">Tasa Conversión</div>
+                      <div className="text-xs text-muted-foreground">Tasa Conversión</div>
                     </div>
-                    <div className="text-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <div className="text-2xl font-bold text-gray-600 dark:text-gray-300">{selectedAnuncioForStats.descartados || 0}</div>
-                        <div className="text-sm text-gray-700 dark:text-gray-400">Descartados</div>
+                    <div className="text-center p-4 bg-muted rounded-lg border">
+                      <div className="text-3xl font-bold text-red-600 dark:text-red-400">{selectedAnuncioForStats.descartados || 0}</div>
+                        <div className="text-xs text-muted-foreground">Descartados</div>
                     </div>
                   </div>
 
@@ -4111,8 +4120,8 @@ export default function AnunciosPage() {
                         className="w-full justify-between hover:bg-green-50 dark:hover:bg-green-950/30 h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
                         onClick={() => handlePhaseMetricClick("aceptado")}
                       >
-                        <span className="text-sm">Candidatos Aprobados</span>
-                        <span className="text-lg font-bold text-green-600">
+                        <span className="text-xs text-muted-foreground">Candidatos Aprobados</span>
+                        <span className="text-lg font-bold text-green-600 dark:text-green-400">
                           {selectedAnuncioForStats.phaseMetrics?.aceptados || 0}
                         </span>
                       </Button>
@@ -4121,18 +4130,18 @@ export default function AnunciosPage() {
                         className="w-full justify-between hover:bg-blue-50 dark:hover:bg-blue-950/30 h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
                         onClick={() => handlePhaseMetricClick("visita_propuesta")}
                       >
-                        <span className="text-sm">Visita Propuesta</span>
-                        <span className="text-lg font-bold text-blue-600">
+                        <span className="text-xs text-muted-foreground">Visita Propuesta</span>
+                        <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
                           {selectedAnuncioForStats.phaseMetrics?.visitaPropuesta || 0}
                         </span>
                       </Button>
                       <Button
                         variant="outline"
-                        className="w-full justify-between hover:bg-purple-50 h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
+                        className="w-full justify-between hover:bg-purple-50 dark:hover:bg-purple-950/30 h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
                         onClick={() => handlePhaseMetricClick("visita_completada")}
                       >
-                        <span className="text-sm">Visita Completada</span>
-                        <span className="text-lg font-bold text-purple-600">
+                        <span className="text-xs text-muted-foreground">Visita Completada</span>
+                        <span className="text-lg font-bold text-purple-600 dark:text-purple-400">
                           {selectedAnuncioForStats.phaseMetrics?.visitaCompletada || 0}
                         </span>
                       </Button>
@@ -4145,41 +4154,45 @@ export default function AnunciosPage() {
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="h-7 text-[10px]">
                           {(() => {
-                            const period = selectedAnuncioForStats?.statsPeriod || "esteMes"
-                            const now = new Date()
-                            const dayStart = new Date(now); dayStart.setHours(0,0,0,0)
-                            const dayEnd = new Date(dayStart.getTime() + 24*60*60*1000)
-                            const prevMonthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
-                            const prevMonthEndDisplay = new Date(now.getFullYear(), now.getMonth(), 0)
-                            const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-                            const yearStart = new Date(now.getFullYear(), 0, 1)
-                            const start =
-                              period === "hoy"
-                                ? dayStart
-                                : period === "ultimoMes"
-                                ? prevMonthStart
-                                : period === "esteMes"
-                                ? thisMonthStart
-                                : period === "esteAno"
-                                ? yearStart
-                                : (planResetAt ? new Date(planResetAt) : thisMonthStart)
-                            const end = period === "hoy" ? dayEnd : period === "ultimoMes" ? prevMonthEndDisplay : now
-                            const fmt = (d: Date) => d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" })
-                            const label =
-                              period === "hoy"
-                                ? "Hoy"
-                                : period === "ultimoMes"
-                                ? "Último mes"
-                                : period === "esteMes"
-                                ? "Este mes"
-                                : period === "esteAno"
-                                ? "Este año"
-                                : "Periodo actual"
-                            return period === "hoy" ? `${label}: ${fmt(start)}` : `${label}: ${fmt(start)} – ${fmt(end)}`
+                            const period = statsPeriod || "esteMes"
+                              const now = new Date()
+                              const dayStart = new Date(now); dayStart.setHours(0,0,0,0)
+                              const dayEnd = new Date(dayStart.getTime() + 24*60*60*1000)
+                              const prevMonthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
+                              const prevMonthEndDisplay = new Date(now.getFullYear(), now.getMonth(), 0)
+                              const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+                              const yearStart = new Date(now.getFullYear(), 0, 1)
+                              const start =
+                                period === "hoy"
+                                  ? dayStart
+                                  : period === "ultimoMes"
+                                  ? prevMonthStart
+                                  : period === "esteMes"
+                                  ? thisMonthStart
+                                  : period === "esteAno"
+                                  ? yearStart
+                                  : (planResetAt ? new Date(planResetAt) : thisMonthStart)
+                              const end = period === "hoy" ? dayEnd : period === "ultimoMes" ? prevMonthEndDisplay : now
+                              const fmt = (d: Date) => d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" })
+                              const label =
+                                period === "hoy"
+                                  ? "Hoy"
+                                  : period === "ultimoMes"
+                                  ? "Último mes"
+                                  : period === "esteMes"
+                                  ? "Este mes"
+                                  : period === "esteAno"
+                                  ? "Este año"
+                                  : "Periodo actual"
+                              return period === "hoy" ? `${label}: ${fmt(start)}` : `${label}: ${fmt(start)} – ${fmt(end)}`
                           })()}
                         </Badge>
-                        <Select value={selectedAnuncioForStats?.statsPeriod || "esteMes"} onValueChange={(v) => {
-                          setSelectedAnuncioForStats(prev => prev ? {...prev, statsPeriod: v} : null)
+                        <Select value={statsPeriod} onValueChange={(v) => {
+                          setStatsPeriod(v as any)
+                          setSelectedAnuncioForStats(prev => prev ? { ...prev, statsPeriod: v } : prev)
+                          if (v === "hoy") setTrendTimeframe("24h")
+                          else if (v === "esteMes" || v === "ultimoMes") setTrendTimeframe("1m")
+                          else setTrendTimeframe("7d")
                         }}>
                           <SelectTrigger className="h-7 w-[140px] text-xs">
                             <SelectValue placeholder="Periodo" />
@@ -4303,22 +4316,20 @@ export default function AnunciosPage() {
                   <div className="space-y-3">
                     <h4 className="font-semibold">Análisis de Calidad</h4>
                     <div className="grid grid-cols-3 gap-3">
-                      {/* Leads Rebotados */}
-                      <div className="text-center p-4 bg-orange-50 dark:bg-orange-950/50 rounded-lg border border-orange-200 dark:border-orange-800">
+                      <div className="text-center p-4 bg-muted rounded-lg border">
                         <div className="flex items-center justify-center gap-1 mb-2">
-                          <span className="text-xs font-medium text-orange-800 dark:text-orange-300">Leads Rebotados</span>
+                          <span className="text-xs text-muted-foreground">Leads Rebotados</span>
                           <Popover>
                             <PopoverTrigger asChild>
-                              <button className="inline-flex items-center justify-center rounded-full w-4 h-4 bg-orange-200 hover:bg-orange-300 dark:bg-orange-800 dark:hover:bg-orange-700 transition-colors">
-                                <Info className="h-3 w-3 text-orange-700 dark:text-orange-300" />
+                              <button className="inline-flex items-center justify-center rounded-full w-4 h-4 bg-muted hover:bg-muted/80 transition-colors">
+                                <Info className="h-3 w-3 text-foreground/60" />
                               </button>
                             </PopoverTrigger>
                             <PopoverContent className="w-80" side="top">
                               <div className="space-y-2">
                                 <h4 className="font-semibold text-sm">¿Qué son los Leads Rebotados?</h4>
                                 <p className="text-sm text-muted-foreground">
-                                  Leads que han entrado en tu flujo pero no han respondido ni interactuado contigo ni
-                                  una sola vez. No tienen ningún correo ni mensaje de WhatsApp registrado.
+                                  Leads que han entrado en tu flujo pero no han respondido ni interactuado contigo ni una sola vez. No tienen ningún correo ni mensaje de WhatsApp registrado.
                                 </p>
                                 <div className="pt-2 border-t">
                                   <p className="text-sm font-medium mb-1">Cómo usarlo:</p>
@@ -4335,16 +4346,14 @@ export default function AnunciosPage() {
                         <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{qualityMetrics.leadsRebotados}</div>
                       </div>
 
-                      {/* Datos Incompletos */}
-                      <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-950/50 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                        <div className="text-xs font-medium text-yellow-800 dark:text-yellow-300 mb-2">Datos Incompletos</div>
-                        <div className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">{qualityMetrics.datosIncompletos}</div>
+                      <div className="text-center p-4 bg-muted rounded-lg border">
+                        <div className="text-xs text-muted-foreground mb-2">Datos Incompletos</div>
+                        <div className="text-3xl font-bold text-amber-600 dark:text-amber-400">{qualityMetrics.datosIncompletos}</div>
                       </div>
 
-                      {/* Necesidad de Aval */}
-                      <div className="text-center p-4 bg-purple-50 dark:bg-purple-950/50 rounded-lg border border-purple-200 dark:border-purple-800">
-                        <div className="text-xs font-medium text-purple-800 dark:text-purple-300 mb-2">Necesidad de Aval</div>
-                        <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">{qualityMetrics.necesidadAval}</div>
+                      <div className="text-center p-4 bg-muted rounded-lg border">
+                        <div className="text-xs text-muted-foreground mb-2">Necesidad de Aval</div>
+                        <div className="text-3xl font-bold text-violet-600 dark:text-violet-400">{qualityMetrics.necesidadAval}</div>
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground text-center">
@@ -4360,8 +4369,8 @@ export default function AnunciosPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
-                          <span>Leads del mes</span>
-                          <span className="font-medium">{selectedAnuncioForStats.ejecuciones}</span>
+                          <span className="text-xs text-muted-foreground">Leads del mes</span>
+                          <span className="text-sm font-semibold text-foreground">{selectedAnuncioForStats.ejecuciones}</span>
                         </div>
                         <Progress
                           value={planLimit > 0 ? (selectedAnuncioForStats.ejecuciones / planLimit) * 100 : 0}
@@ -4374,8 +4383,8 @@ export default function AnunciosPage() {
                       </div>
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
-                          <span>Tiempo ahorrado</span>
-                          <span className="font-medium">{formatTime(selectedAnuncioForStats.tiempoAhorrado)}</span>
+                          <span className="text-xs text-muted-foreground">Tiempo ahorrado</span>
+                          <span className="text-sm font-semibold text-foreground">{formatTime(selectedAnuncioForStats.tiempoAhorrado)}</span>
                         </div>
                         <div className="text-xs text-muted-foreground">Basado en 1.27 min/email procesado</div>
                       </div>

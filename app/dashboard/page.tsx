@@ -272,37 +272,37 @@ export default async function DashboardPage({ searchParams }: { searchParams?: P
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Leads</CardTitle>
-              <User className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium text-foreground">Total Leads</CardTitle>
+              <User className="h-4 w-4 text-gray-500 dark:text-gray-400" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{leadsMetrics.totalLeads}</div>
+              <div className="text-2xl font-bold text-foreground">{leadsMetrics.totalLeads}</div>
               <p className="text-xs text-muted-foreground">Todos los clientes registrados</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Leads Nuevos Hoy</CardTitle>
-              <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+              <CardTitle className="text-sm font-medium text-foreground">Leads Nuevos Hoy</CardTitle>
+              <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
                 Hoy
               </Badge>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-600">{leadsMetrics.newToday}</div>
+              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{leadsMetrics.newToday}</div>
               <p className="text-xs text-muted-foreground">Registrados en las últimas 24h</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Leads con información completa</CardTitle>
-              <Badge variant="secondary" className="bg-green-100 text-green-800">
+              <CardTitle className="text-sm font-medium text-foreground">Leads con información completa</CardTitle>
+              <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
                 Hoy
               </Badge>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{leadsMetrics.completed}</div>
+              <div className="text-2xl font-bold text-green-600 dark:text-green-400">{leadsMetrics.completed}</div>
               <p className="text-xs text-muted-foreground">Con estado &quot;Datos Completos&quot; hoy</p>
             </CardContent>
           </Card>

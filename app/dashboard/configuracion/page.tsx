@@ -95,6 +95,15 @@ export default async function ConfiguracionPage() {
                 <Label htmlFor="inmobiliaria-nombre">Nombre de la Inmobiliaria</Label>
                 <Input id="inmobiliaria-nombre" value={inmobiliariaData.Nombre || ""} disabled className="bg-muted" />
               </div>
+              {(() => {
+                const mailSistema = (inmobiliariaData as any)["Mail sistema"] ?? (inmobiliariaData as any).mail_sistema ?? (inmobiliariaData as any).Mail_sistema ?? (inmobiliariaData as any).MailSistema ?? (inmobiliariaData as any).mailSistema ?? (inmobiliariaData as any).EmailSistema ?? (inmobiliariaData as any).email_sistema
+                return mailSistema ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="mail-sistema">Mail sistema</Label>
+                    <Input id="mail-sistema" value={mailSistema} disabled className="bg-muted" />
+                  </div>
+                ) : null
+              })()}
               {inmobiliariaData.telefono && (
                 <div className="space-y-2">
                   <Label htmlFor="telefono">Teléfono</Label>

@@ -13,7 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Checkbox } from "@/components/ui/checkbox"
 
 import { useState, useEffect, useRef } from "react"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -198,6 +198,7 @@ export default function LeadsPage() {
   const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading, isAdmin } = useInmobiliaria() // Added isAdmin
 
   const supabase = createClient()
+  const searchParams = useSearchParams()
   const pathname = usePathname()
   const router = useRouter()
 
@@ -353,6 +354,7 @@ export default function LeadsPage() {
       setAttachmentPreviewName("")
     }
   }
+
 
   const loadLeadDocsList = async () => {
     if (!selectedLead) return
@@ -528,6 +530,17 @@ export default function LeadsPage() {
       run()
     }
   }, [inmobiliariaId, inmobiliariaLoading])
+
+  useEffect(() => {
+    const adId = searchParams.get("ad")
+    const ref = searchParams.get("filter")
+    if (adId) {
+      setSelectedAdvertisement(adId)
+    } else if (ref && advertisements.length > 0) {
+      const ad = advertisements.find((a) => a.Referencia === ref)
+      if (ad) setSelectedAdvertisement(ad.ida)
+    }
+  }, [searchParams, advertisements])
 
   useEffect(() => {
     filterLeads()
@@ -1766,41 +1779,41 @@ export default function LeadsPage() {
                 {/* Added mt-8 */}
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Leads</CardTitle>
-                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-sm font-medium text-foreground">Total Leads</CardTitle>
+                    <Users className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{totalLeads}</div>
+                    <div className="text-2xl font-bold text-foreground">{totalLeads}</div>
                     <p className="text-xs text-muted-foreground">Últimos 30 días</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Nuevos Hoy</CardTitle>
-                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-sm font-medium text-foreground">Nuevos Hoy</CardTitle>
+                    <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold text-green-600">{newLeadsToday}</div>
+                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{newLeadsToday}</div>
                     <p className="text-xs text-muted-foreground">Últimas 24 horas</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Completados</CardTitle>
-                    <CheckCircle className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-sm font-medium text-foreground">Completados</CardTitle>
+                    <CheckCircle className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold text-blue-600">{completedLeads}</div>
+                    <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{completedLeads}</div>
                     <p className="text-xs text-muted-foreground">Últimas 24 horas</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Tasa Conversión</CardTitle>
-                    <Star className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-sm font-medium text-foreground">Tasa Conversión</CardTitle>
+                    <Star className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold text-purple-600">{conversionRate}%</div>
+                    <div className="text-2xl font-bold text-violet-600 dark:text-violet-400">{conversionRate}%</div>
                     <p className="text-xs text-muted-foreground">Conversión total</p>
                   </CardContent>
                 </Card>
