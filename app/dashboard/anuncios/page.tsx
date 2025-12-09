@@ -1,7 +1,7 @@
 "use client"
 
 import { createClient } from "@/lib/supabase/client"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useRouter, usePathname } from 'next/navigation'
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -26,11 +26,12 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
 import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink, Copy } from 'lucide-react'
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover" // Added Popover imports
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { loadStripe, type Stripe as StripeJS } from "@stripe/stripe-js"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
 import ChangePlanButton from "@/components/change-plan-button"
 import { createBrowserClient } from "@/lib/supabase/client" // Added for createBrowserClient
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts" // Added recharts imports
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts"
 
 interface AnuncioCard {
   id: string
@@ -197,6 +198,30 @@ export default function AnunciosPage() {
     informacionDetallada: "",
     faqs: [{ pregunta: "", respuesta: "" }],
   })
+
+  const startStripeCheckout = async (planId: number) => {
+    try {
+      const res = await fetch("/api/stripe/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId, email: user?.email || "" }),
+      })
+      if (!res.ok) {
+        toast({ title: "Error", description: "No se pudo iniciar el pago", variant: "destructive" })
+        return
+      }
+      const data = await res.json()
+      const publishable = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""
+      const stripeJs = (await loadStripe(publishable)) as StripeJS | null
+      if (!stripeJs) {
+        toast({ title: "Error", description: "Stripe no está configurado", variant: "destructive" })
+        return
+      }
+      await (stripeJs as any).redirectToCheckout({ sessionId: data.sessionId })
+    } catch {
+      toast({ title: "Error", description: "Fallo iniciando Checkout", variant: "destructive" })
+    }
+  }
 
   const [isReferenciaEditable, setIsReferenciaEditable] = useState(false)
   const [isCodPortalEditable, setIsCodPortalEditable] = useState(false)
@@ -518,11 +543,12 @@ export default function AnunciosPage() {
     if (!inmobiliariaLoading && inmobiliariaId !== null) {
       console.log("[DEBUG] Calling ordered fetch with inmobiliariaId:", inmobiliariaId);
       const run = async () => {
+        const u = await checkUser()
+        if (!u) return
         await fetchPlanLimit()
         await fetchAvailablePlans()
         await fetchAnuncios()
         await fetchAgentes(inmobiliariaId)
-        checkUser()
       }
       run()
     } else {
@@ -708,8 +734,7 @@ export default function AnunciosPage() {
     const now = new Date()
 
     if (period === "hoy") {
-      // Hoy - datos horarios
-      const hourlyData: { name: string; leads: number; isCurrent: boolean }[] = []
+      const hourlyData: { name: string; total: number; completos: number; aceptados: number; visitaPropuesta: number; visitaCompletada: number; descartados: number; isCurrent: boolean }[] = []
 
       for (let i = 23; i >= 0; i--) {
         const hourStart = new Date(now.getTime() - i * 60 * 60 * 1000)
@@ -717,7 +742,7 @@ export default function AnunciosPage() {
 
         const { data, error } = await supabase
           .from("Clientes")
-          .select("IDC")
+          .select("IDC, Estado, aceptado, visita_propuesta, visita_completada")
           .ilike("Inmueble", anuncio.referencia)
           .gte("created_at", hourStart.toISOString())
           .lt("created_at", hourEnd.toISOString())
@@ -725,21 +750,28 @@ export default function AnunciosPage() {
         const hourLabel = hourStart.getHours().toString().padStart(2, "0") + ":00"
         const isCurrent = i === 0 // Last hour is current
 
-        hourlyData.push({
-          name: hourLabel,
-          leads: data?.length || 0,
-          isCurrent,
-        })
+        const total = data?.length || 0
+        let completos = 0
+        let aceptados = 0
+        let visitaPropuesta = 0
+        let visitaCompletada = 0
+        let descartados = 0
+        for (const lead of data || []) {
+          const est = String((lead as any).Estado || "").toLowerCase()
+          if (est.includes("complet")) completos++
+          if (String((lead as any).aceptado) === "true") aceptados++
+          if (String((lead as any).visita_propuesta) === "true") visitaPropuesta++
+          if (String((lead as any).visita_completada) === "true") visitaCompletada++
+          if (est === "descartado") descartados++
+        }
+        hourlyData.push({ name: hourLabel, total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados, isCurrent })
       }
 
       // Filtrar horas con datos o al menos mostrar las últimas 6 horas para evitar muchas celdas vacías
-      const filteredData = hourlyData.filter((item, index) => 
-        item.leads > 0 || index >= hourlyData.length - 6
-      )
+      const filteredData = hourlyData.filter((item, index) => item.total > 0 || index >= hourlyData.length - 6)
 
       return filteredData
     } else if (period === "esteMes" || period === "ultimoMes") {
-      // Este mes o último mes - datos diarios
       const startDate = new Date(now)
       if (period === "ultimoMes") {
         startDate.setMonth(startDate.getMonth() - 1)
@@ -757,7 +789,7 @@ export default function AnunciosPage() {
         ? new Date(now.getFullYear(), now.getMonth(), 0).getDate()
         : new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
 
-      const dailyData: { name: string; leads: number }[] = []
+      const dailyData: { name: string; total: number; completos: number; aceptados: number; visitaPropuesta: number; visitaCompletada: number; descartados: number }[] = []
 
       for (let i = 0; i < daysInMonth; i++) {
         const dayStart = new Date(startDate)
@@ -774,23 +806,33 @@ export default function AnunciosPage() {
 
         const { data, error } = await supabase
           .from("Clientes")
-          .select("IDC")
+          .select("IDC, Estado, aceptado, visita_propuesta, visita_completada")
           .ilike("Inmueble", anuncio.referencia)
           .gte("created_at", dayStart.toISOString())
           .lte("created_at", dayEnd.toISOString())
 
         const dayLabel = dayStart.toLocaleDateString("es-ES", { day: "numeric", month: "short" })
 
-        dailyData.push({
-          name: dayLabel,
-          leads: data?.length || 0,
-        })
+        const total = data?.length || 0
+        let completos = 0
+        let aceptados = 0
+        let visitaPropuesta = 0
+        let visitaCompletada = 0
+        let descartados = 0
+        for (const lead of data || []) {
+          const est = String((lead as any).Estado || "").toLowerCase()
+          if (est.includes("complet")) completos++
+          if (String((lead as any).aceptado) === "true") aceptados++
+          if (String((lead as any).visita_propuesta) === "true") visitaPropuesta++
+          if (String((lead as any).visita_completada) === "true") visitaCompletada++
+          if (est === "descartado") descartados++
+        }
+        dailyData.push({ name: dayLabel, total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados })
       }
 
       return dailyData
     } else if (period === "esteAno") {
-      // Este año - datos mensuales
-      const monthlyData: { name: string; leads: number }[] = []
+      const monthlyData: { name: string; total: number; completos: number; aceptados: number; visitaPropuesta: number; visitaCompletada: number; descartados: number }[] = []
 
       for (let i = 0; i < 12; i++) {
         const monthStart = new Date(now.getFullYear(), i, 1)
@@ -804,24 +846,34 @@ export default function AnunciosPage() {
 
         const { data, error } = await supabase
           .from("Clientes")
-          .select("IDC")
+          .select("IDC, Estado, aceptado, visita_propuesta, visita_completada")
           .ilike("Inmueble", anuncio.referencia)
           .gte("created_at", monthStart.toISOString())
           .lte("created_at", monthEnd.toISOString())
 
         const monthLabel = monthStart.toLocaleDateString("es-ES", { month: "short" })
 
-        monthlyData.push({
-          name: monthLabel,
-          leads: data?.length || 0,
-        })
+        const total = data?.length || 0
+        let completos = 0
+        let aceptados = 0
+        let visitaPropuesta = 0
+        let visitaCompletada = 0
+        let descartados = 0
+        for (const lead of data || []) {
+          const est = String((lead as any).Estado || "").toLowerCase()
+          if (est.includes("complet")) completos++
+          if (String((lead as any).aceptado) === "true") aceptados++
+          if (String((lead as any).visita_propuesta) === "true") visitaPropuesta++
+          if (String((lead as any).visita_completada) === "true") visitaCompletada++
+          if (est === "descartado") descartados++
+        }
+        monthlyData.push({ name: monthLabel, total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados })
       }
 
       return monthlyData
     } else if (period === "periodoActual") {
-      // Periodo actual (basado en planResetAt) - datos semanales
       const periodStart = planResetAt ? new Date(planResetAt) : new Date(now.getFullYear(), now.getMonth(), 1)
-      const weeksData: { name: string; leads: number }[] = []
+      const weeksData: { name: string; total: number; completos: number; aceptados: number; visitaPropuesta: number; visitaCompletada: number; descartados: number }[] = []
 
       let currentWeekStart = new Date(periodStart)
       currentWeekStart.setHours(0, 0, 0, 0)
@@ -833,25 +885,35 @@ export default function AnunciosPage() {
 
         const { data, error } = await supabase
           .from("Clientes")
-          .select("IDC")
+          .select("IDC, Estado, aceptado, visita_propuesta, visita_completada")
           .ilike("Inmueble", anuncio.referencia)
           .gte("created_at", currentWeekStart.toISOString())
           .lte("created_at", weekEnd.toISOString())
 
         const weekLabel = `Sem ${Math.ceil((currentWeekStart.getDate() + currentWeekStart.getDay()) / 7)}`
 
-        weeksData.push({
-          name: weekLabel,
-          leads: data?.length || 0,
-        })
+        const total = data?.length || 0
+        let completos = 0
+        let aceptados = 0
+        let visitaPropuesta = 0
+        let visitaCompletada = 0
+        let descartados = 0
+        for (const lead of data || []) {
+          const est = String((lead as any).Estado || "").toLowerCase()
+          if (est.includes("complet")) completos++
+          if (String((lead as any).aceptado) === "true") aceptados++
+          if (String((lead as any).visita_propuesta) === "true") visitaPropuesta++
+          if (String((lead as any).visita_completada) === "true") visitaCompletada++
+          if (est === "descartado") descartados++
+        }
+        weeksData.push({ name: weekLabel, total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados })
 
         currentWeekStart.setDate(currentWeekStart.getDate() + 7)
       }
 
       return weeksData
     } else {
-      // Default: últimos 7 días
-      const dailyData: { name: string; leads: number }[] = []
+      const dailyData: { name: string; total: number; completos: number; aceptados: number; visitaPropuesta: number; visitaCompletada: number; descartados: number }[] = []
 
       for (let i = 6; i >= 0; i--) {
         const dayStart = new Date(now)
@@ -863,17 +925,28 @@ export default function AnunciosPage() {
 
         const { data, error } = await supabase
           .from("Clientes")
-          .select("IDC")
+          .select("IDC, Estado, aceptado, visita_propuesta, visita_completada")
           .ilike("Inmueble", anuncio.referencia)
           .gte("created_at", dayStart.toISOString())
           .lte("created_at", dayEnd.toISOString())
 
         const dayLabel = dayStart.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })
 
-        dailyData.push({
-          name: dayLabel,
-          leads: data?.length || 0,
-        })
+        const total = data?.length || 0
+        let completos = 0
+        let aceptados = 0
+        let visitaPropuesta = 0
+        let visitaCompletada = 0
+        let descartados = 0
+        for (const lead of data || []) {
+          const est = String((lead as any).Estado || "").toLowerCase()
+          if (est.includes("complet")) completos++
+          if (String((lead as any).aceptado) === "true") aceptados++
+          if (String((lead as any).visita_propuesta) === "true") visitaPropuesta++
+          if (String((lead as any).visita_completada) === "true") visitaCompletada++
+          if (est === "descartado") descartados++
+        }
+        dailyData.push({ name: dayLabel, total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados })
       }
 
       return dailyData
@@ -1133,11 +1206,11 @@ export default function AnunciosPage() {
     const {
       data: { user },
     } = await supabase.auth.getUser()
-    if (!user) {
-      router.push("/login")
-      return
+    if (user) {
+      setUser(user)
+      return user
     }
-    setUser(user)
+    return null
   }
 
   const fetchAnuncios = async () => {
@@ -1945,9 +2018,9 @@ export default function AnunciosPage() {
       const activityData: number[] = []
       const activityDates: Date[] = []
       
-      // Generar datos solo desde la fecha de creación del anuncio
-      for (let i = totalDays - 1; i >= 0; i--) {
-        const currentDate = new Date(now.getTime() - i * dayMs)
+      // Generar datos contiguos desde la fecha de creación del anuncio hasta hoy
+      for (let i = 0; i < totalDays; i++) {
+        const currentDate = new Date(anuncioCreationDate.getTime() + i * dayMs)
         currentDate.setHours(0, 0, 0, 0)
         const nextDate = new Date(currentDate.getTime() + dayMs)
         
@@ -1957,11 +2030,8 @@ export default function AnunciosPage() {
             return createdAt && createdAt >= currentDate && createdAt < nextDate
           }).length || 0
         
-        // Solo incluir días con datos o los últimos 7 días para contexto
-        if (cnt > 0 || i >= totalDays - 7) {
-          activityData.push(cnt)
-          activityDates.push(currentDate)
-        }
+        activityData.push(cnt)
+        activityDates.push(currentDate)
       }
 
       // Populate stats with real data
@@ -1970,7 +2040,7 @@ export default function AnunciosPage() {
         datosCompletos: datosCompletosCount,
         descartados,
         activityData: activityData,
-        activityStartDate: activityDates.length > 0 ? activityDates[0] : anuncioCreationDate,
+        activityStartDate: anuncioCreationDate,
         phaseMetrics: {
           aceptados,
           visitaPropuesta,
@@ -2254,6 +2324,8 @@ export default function AnunciosPage() {
     periodStart?: Date
     periodEnd?: Date
   }) => {
+    const [hover, setHover] = useState<{ label: string; x: number; y: number } | null>(null)
+    const containerRef = useRef<HTMLDivElement | null>(null)
     const max = Math.max(...data, 1)
     const dayMs = 24 * 60 * 60 * 1000
     const cls = (ratio: number, active: boolean) =>
@@ -2270,62 +2342,56 @@ export default function AnunciosPage() {
                 : "bg-emerald-800"
     const start = new Date(startDate)
     start.setHours(0, 0, 0, 0)
-    const cells = data.map((value, i) => {
+    const baseCells = data.map((value, i) => {
       const date = new Date(start.getTime() + i * dayMs)
       const ratio = max > 0 ? value / max : 0
       const active = periodStart && periodEnd ? date >= periodStart && date < periodEnd : true
-      const label = `${date.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" })}: ${value} leads`
-      return { ratio, active, label }
+      const label = `${date.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "2-digit" })} · ${value} leads`
+      return { ratio, active, label, date, value }
     })
-    // Calcular tamaño de celdas basado en la cantidad de datos (más estrecho)
-    const cellSize = data.length <= 30 ? 2.5 : 
-                    data.length <= 60 ? 2 :
-                    data.length <= 90 ? 1.8 :
-                    data.length <= 180 ? 1.5 : 1.2
-    
-    // Determinar número de filas basado en la cantidad de datos
-    const totalRows = data.length <= 7 ? 1 :
-                     data.length <= 14 ? 2 :
-                     data.length <= 21 ? 3 :
-                     data.length <= 28 ? 4 :
-                     data.length <= 35 ? 5 : 7
-    
-    // Mejorar leyenda de meses - mostrar inicio de cada mes
-    const showMonthLabels = data.length > 14
+    const rows = 7
+    const paddingDays = start.getDay()
+    const paddedCells = Array.from({ length: paddingDays }, () => ({ ratio: 0, active: false, label: "", date: null as any, value: 0, pad: true }))
+    const cells = [...paddedCells, ...baseCells]
+    const columns = Math.ceil(cells.length / rows)
+    const cellSize = columns <= 8 ? 1 : columns <= 16 ? 0.9 : columns <= 24 ? 0.8 : 0.7
+    const showMonthLabels = columns > 4
     const monthLabels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
     
-    // Encontrar las posiciones donde comienza cada mes
-    const monthStarts: {month: string, position: number}[] = []
+    const monthStarts: {month: string, col: number}[] = []
     let lastMonth = -1
     
-    cells.forEach((_, idx) => {
+    baseCells.forEach((_, idx) => {
       const date = new Date(start.getTime() + idx * dayMs)
       const currentMonth = date.getMonth()
       
       if (currentMonth !== lastMonth) {
-        monthStarts.push({
-          month: monthLabels[currentMonth],
-          position: idx
-        })
+        const col = Math.floor((idx + paddingDays) / rows)
+        monthStarts.push({ month: monthLabels[currentMonth], col })
         lastMonth = currentMonth
       }
     })
     
-    // Leyenda simple para el eje Y (días de la semana)
-    const showDayLabels = totalRows > 1
+    const showDayLabels = true
     const dayLabels = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+
+    const total = data.reduce((a, b) => a + b, 0)
+    const avg = data.length > 0 ? Math.round((total / data.length) * 10) / 10 : 0
+    const maxVal = Math.max(...data, 0)
+    const maxIdx = data.findIndex((v) => v === maxVal)
+    const maxDate = new Date(start.getTime() + Math.max(0, maxIdx) * dayMs)
+    const maxLabel = `${maxDate.toLocaleDateString("es-ES", { day: "2-digit", month: "short" })} (${maxVal})`
     
     return (
-      <div className="overflow-x-auto">
-        {/* Leyenda de meses - mostrar inicio de cada mes */}
+      <div ref={containerRef} className="overflow-x-auto relative">
         {showMonthLabels && monthStarts.length > 0 && (
           <div className="flex mb-1 text-[10px] text-muted-foreground">
-            {monthStarts.map(({month, position}, idx) => (
+            {monthStarts.map(({month, col}, idx) => (
               <div 
                 key={idx}
                 className="text-center"
                 style={{ 
-                  marginLeft: idx === 0 ? '0' : `${(position - monthStarts[idx-1].position) * cellSize}rem`
+                  marginLeft: idx === 0 ? '0' : `${(col - monthStarts[idx-1].col) * cellSize}rem`
                 }}
               >
                 {month}
@@ -2335,7 +2401,6 @@ export default function AnunciosPage() {
         )}
         
         <div className="flex items-start gap-1">
-          {/* Leyenda de días (eje Y) - Solo mostrar si hay múltiples filas */}
           {showDayLabels && (
             <div className="flex flex-col justify-between text-[10px] text-muted-foreground">
               {dayLabels.map((day, idx) => (
@@ -2353,18 +2418,16 @@ export default function AnunciosPage() {
             </div>
           )}
           
-          {/* Heatmap principal */}
           <div 
-            className="grid grid-flow-col gap-[1px]"
+            className="grid grid-flow-col gap-[2px]"
             style={{
-              gridTemplateRows: `repeat(${totalRows}, minmax(0, 1fr))`,
+              gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
               gridAutoColumns: `${cellSize}rem`
             }}
           >
             {cells.map((c, idx) => (
               <div
                 key={idx}
-                title={c.label}
                 className={`rounded-[2px] border border-muted-foreground/20 ${cls(c.ratio, c.active)}`}
                 style={{
                   width: `${cellSize}rem`,
@@ -2372,9 +2435,37 @@ export default function AnunciosPage() {
                   minWidth: `${cellSize}rem`,
                   minHeight: `${cellSize}rem`
                 }}
+                onMouseEnter={(e) => {
+                  if ((c as any).pad) return
+                  const rect = containerRef.current?.getBoundingClientRect()
+                  const x = rect ? e.clientX - rect.left : 0
+                  const y = rect ? e.clientY - rect.top : 0
+                  setHover({ label: c.label, x, y })
+                }}
+                onMouseMove={(e) => {
+                  if ((c as any).pad) return
+                  const rect = containerRef.current?.getBoundingClientRect()
+                  const x = rect ? e.clientX - rect.left : 0
+                  const y = rect ? e.clientY - rect.top : 0
+                  setHover((prev) => (prev ? { label: prev.label, x, y } : null))
+                }}
+                onMouseLeave={() => setHover(null)}
               />
             ))}
           </div>
+        </div>
+        {hover && (
+          <div
+            className="absolute z-20 px-2 py-1 text-[10px] rounded bg-background border shadow"
+            style={{ left: hover.x + 12, top: hover.y + 12 }}
+          >
+            {hover.label}
+          </div>
+        )}
+        <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+          <span>Total: {total}</span>
+          <span>Promedio diario: {avg}</span>
+          <span>Pico: {maxLabel}</span>
         </div>
       </div>
     )
@@ -4261,29 +4352,29 @@ export default function AnunciosPage() {
                         </div>
                       </div>
 
-                      {/* Gráfico de Tendencia de Leads */}
+                      {/* Gráfico de Totales (línea) */}
                       <div className="space-y-3">
-                        <h4 className="font-semibold text-sm">Tendencia de Leads</h4>
+                        <h4 className="font-semibold text-sm">Leads por día</h4>
                         <div className="bg-muted p-4 rounded-lg" style={{ 
                           height: trendData && trendData.length > 10 ? '300px' : 
                                  trendData && trendData.length > 5 ? '250px' : '200px' 
                         }}>
                           {!trendData || trendData.length === 0 ? (
                             <div className="flex items-center justify-center h-full">
-                              <div className="text-sm text-muted-foreground">Sin datos de tendencia</div>
+                              <div className="text-sm text-muted-foreground">Sin datos</div>
                             </div>
                           ) : (
                             <ResponsiveContainer width="100%" height="100%">
                               <LineChart
                                 data={trendData}
                                 margin={{ 
-                                  top: 5, 
-                                  right: trendData.length > 10 ? 10 : 30, 
-                                  left: 20, 
-                                  bottom: trendData.length > 10 ? 40 : 5 
+                                  top: 10, 
+                                  right: trendData.length > 10 ? 12 : 36, 
+                                  left: 28, 
+                                  bottom: trendData.length > 10 ? 48 : 28 
                                 }}
                               >
-                                <CartesianGrid strokeDasharray="3 3" />
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                                 <XAxis 
                                   dataKey="name" 
                                   tick={{ fontSize: trendData.length > 10 ? 10 : 12 }}
@@ -4291,19 +4382,26 @@ export default function AnunciosPage() {
                                   textAnchor="end"
                                   height={trendData.length > 10 ? 80 : 60}
                                   interval={trendData.length > 15 ? "preserveStartEnd" : 0}
+                                  tickMargin={6}
+                                  padding={{ left: 6, right: 6 }}
                                 />
-                                <YAxis tick={{ fontSize: 12 }} />
+                                <YAxis tick={{ fontSize: 12 }} tickMargin={6} domain={["dataMin - 2", "dataMax + 4"]} allowDecimals={false} />
                                 <Tooltip 
-                                  formatter={(value) => [`${value} leads`, 'Cantidad']}
+                                  formatter={(value, name) => [String(value), String(name)]}
                                   labelFormatter={(label) => `Período: ${label}`}
                                 />
-                                <Line 
-                                  type="monotone" 
-                                  dataKey="leads" 
-                                  stroke="#3b82f6" 
-                                  strokeWidth={2}
-                                  activeDot={{ r: 6 }}
+                                <Legend 
+                                  verticalAlign="bottom" 
+                                  align="center" 
+                                  iconSize={8}
+                                  wrapperStyle={{ paddingTop: 6, fontSize: 11, color: 'var(--muted-foreground)', opacity: 0.75 }}
+                                  formatter={(value) => (
+                                    <span style={{ fontSize: 11, color: 'var(--muted-foreground)', opacity: 0.75 }}>{String(value)}</span>
+                                  )}
                                 />
+                                <Line type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} name="Leads Totales" />
+                                <Line type="monotone" dataKey="completos" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} name="Datos Completos" />
+                                <Line type="monotone" dataKey="descartados" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} name="Descartados" />
                               </LineChart>
                             </ResponsiveContainer>
                           )}
@@ -4507,7 +4605,7 @@ export default function AnunciosPage() {
                         Plan Actual
                       </Badge>
                     )}
-                    <div className="mt-4 flex justify-end">
+                    <div className="mt-4 flex justify-end gap-2">
                       <ChangePlanButton
                         idi={Number(inmobiliariaId || 0)}
                         planId={Number(plan.idp)}
@@ -4528,6 +4626,9 @@ export default function AnunciosPage() {
                           setPlanResetAt(new Date())
                         }}
                       />
+                      <Button onClick={() => startStripeCheckout(Number(plan.idp))}>
+                        Pagar con Stripe
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>

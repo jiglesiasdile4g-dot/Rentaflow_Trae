@@ -573,7 +573,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
-                {appVersion && <Badge variant="secondary">v{appVersion}{appChannel ? ` (${appChannel})` : ""}</Badge>}
+                {appVersion && <Badge variant="secondary">Versión {appVersion}</Badge>}
               </div>
               {whatsNewSections.length > 0 ? (
                 <div className="space-y-6">
