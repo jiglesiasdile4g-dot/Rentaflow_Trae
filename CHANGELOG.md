@@ -1,3 +1,12 @@
+## [0.7.1](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.0...v0.7.1) (2025-12-09)
+
+
+### Bug Fixes
+
+* **leads:** seleccionar anuncio al entrar con ?filter o ?ad ([4126af1](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/4126af1df3b5508b56e33525225accc36d9bf94a))
+
+
+
 # [0.7.0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.6.0...v0.7.0) (2025-12-09)
 
 
