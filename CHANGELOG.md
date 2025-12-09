@@ -1,3 +1,12 @@
+# [0.7.0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.6.0...v0.7.0) (2025-12-09)
+
+
+### Features
+
+* **leads:** menú de estados y acciones especiales (Visita Propuesta, Aval Pedido) ([0391a71](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/0391a7185b707e94aff0c4c061ec0506d83b4096))
+
+
+
 # [0.6.0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.5.2...v0.6.0) (2025-12-08)
 
 
