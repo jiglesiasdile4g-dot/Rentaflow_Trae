@@ -147,7 +147,7 @@ export default function RegisterPage() {
             <UserPlus className="h-12 w-12 text-primary" />
           </div>
           <CardTitle className="text-2xl">Crear Cuenta</CardTitle>
-          <CardDescription>Regístrate para acceder al Dashboard Básico Alfa</CardDescription>
+          <CardDescription>Regístrate para acceder</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleRegister} className="space-y-4">
