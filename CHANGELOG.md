@@ -5,6 +5,13 @@
 
 * **leads:** ajustar email largo en modal Eliminar Lead (break-all) ([eba9bdb](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/eba9bdb30f975784e3498e4787d6196c17243e11))
 
+### Improvements
+
+- Evitar desbordes en el diálogo "Eliminar Lead" aplicando `break-all` al campo Email.
+- Limitar el ancho del bloque informativo con `max-w-full` para mantener el contenido dentro del modal.
+- Mantener botones de acción siempre visibles y sin desplazamientos inesperados.
+
+
 
 
 ## [0.7.2](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.1...v0.7.2) (2025-12-09)
@@ -206,6 +213,5 @@
 ### Bug Fixes
 
 * remove vercel analytics for easypanel deployment ([936a507](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/936a50744be56b5ed43950a703ef8fb429138e87))
-
 
 
