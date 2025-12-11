@@ -1,3 +1,12 @@
+## [0.7.3](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.2...v0.7.3) (2025-12-11)
+
+
+### Bug Fixes
+
+* **leads:** ajustar email largo en modal Eliminar Lead (break-all) ([eba9bdb](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/eba9bdb30f975784e3498e4787d6196c17243e11))
+
+
+
 ## [0.7.2](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.1...v0.7.2) (2025-12-09)
 
 
