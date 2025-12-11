@@ -149,6 +149,7 @@ export default function LeadsPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [availableStatuses, setAvailableStatuses] = useState<string[]>([])
   const [totalLeads, setTotalLeads] = useState(0)
@@ -227,6 +228,54 @@ export default function LeadsPage() {
   const [isDocsDialogOpen, setIsDocsDialogOpen] = useState(false)
   const [docsUploadLoading, setDocsUploadLoading] = useState(false)
   const [docsError, setDocsError] = useState<string | null>(null)
+  const [visibleCount, setVisibleCount] = useState(100)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null)
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState("")
+  const [isDeletingLead, setIsDeletingLead] = useState(false)
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearchTerm(searchTerm), 250)
+    return () => clearTimeout(t)
+  }, [searchTerm])
+
+  useEffect(() => {
+    setVisibleCount(100)
+  }, [debouncedSearchTerm, statusFilter, selectedAdvertisement])
+
+  const openDeleteDialog = (lead: Lead) => {
+    setLeadToDelete(lead)
+    setDeleteConfirmInput("")
+    setIsDeleteDialogOpen(true)
+  }
+
+  const confirmDeleteLead = async () => {
+    if (!leadToDelete) return
+    const typed = String(deleteConfirmInput).trim()
+    const targetId = String(leadToDelete.id).trim()
+    if (typed !== targetId) {
+      toast({ title: "ID incorrecto", description: "Debes escribir exactamente el ID del lead.", variant: "destructive" })
+      return
+    }
+    try {
+      setIsDeletingLead(true)
+      const { error } = await supabase.from("Clientes").delete().eq("id", Number(leadToDelete.id))
+      if (error) throw error
+      setLeads(leads.filter((l) => String(l.id) !== String(leadToDelete.id)))
+      setFilteredLeads(filteredLeads.filter((l) => String(l.id) !== String(leadToDelete.id)))
+      if (selectedLead && String(selectedLead.id) === targetId) {
+        setSelectedLead(null)
+      }
+      setIsDeleteDialogOpen(false)
+      setLeadToDelete(null)
+      toast({ title: "Lead eliminado", description: `Se eliminó el lead con ID ${targetId}` })
+    } catch (err) {
+      console.error("[v0] Error deleting lead:", err)
+      toast({ title: "Error", description: "No se pudo eliminar el lead", variant: "destructive" })
+    } finally {
+      setIsDeletingLead(false)
+    }
+  }
   const [docsList, setDocsList] = useState<Array<{ name: string; path: string; href: string; lastModified: string; size: number; contentType: string }>>([])
   const [docsLoading, setDocsLoading] = useState(false)
   const [docsDeletingPath, setDocsDeletingPath] = useState<string | null>(null)
@@ -520,12 +569,11 @@ export default function LeadsPage() {
       const run = async () => {
         if (inmobiliariaId !== null) {
           await fetchPlanStatus()
-          await fetchAgentes(inmobiliariaId)
+          await Promise.all([fetchAgentes(inmobiliariaId), fetchAdvertisements(), fetchLeads()])
         } else {
           setPlanInactive(false)
+          await Promise.all([fetchAdvertisements(), fetchLeads()])
         }
-        await fetchLeads()
-        await fetchAdvertisements()
       }
       run()
     }
@@ -544,7 +592,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     filterLeads()
-  }, [searchTerm, statusFilter, selectedAdvertisement, leads, advertisements])
+  }, [debouncedSearchTerm, statusFilter, selectedAdvertisement, leads, advertisements])
 
   useEffect(() => {
     try {
@@ -552,10 +600,15 @@ export default function LeadsPage() {
       const t = setTimeout(() => setAdsLoading(false), 300)
       return () => clearTimeout(t)
     } catch {}
-  }, [searchTerm, statusFilter, selectedAdvertisement, advertisements])
+  }, [debouncedSearchTerm, statusFilter, selectedAdvertisement, advertisements])
 
   useEffect(() => {
-    calculateMetrics()
+    const t = setTimeout(() => {
+      React.startTransition(() => {
+        calculateMetrics()
+      })
+    }, 200)
+    return () => clearTimeout(t)
   }, [leads, selectedAdvertisement, advertisements])
 
   const calculateMetrics = () => {
@@ -735,16 +788,21 @@ export default function LeadsPage() {
     try {
       setLoading(true)
 
-      const { data: activeAds, error: adsError } = await supabase
-        .from("Anuncios")
-        .select("Referencia")
-        .in("Activacion", ["Activo", "Pausado"])
-        .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
-
-      if (adsError) throw adsError
-
-      // Extract the referencias from active/paused ads
-      const activeReferences = activeAds?.map((ad) => ad.Referencia).filter(Boolean) || []
+      let activeReferences: string[] = []
+      if (advertisements && advertisements.length > 0) {
+        activeReferences = advertisements
+          .filter((ad) => ["Activo", "Pausado"].includes(String(ad.Activacion || "")))
+          .map((ad) => ad.Referencia)
+          .filter(Boolean) as string[]
+      } else {
+        const { data: activeAds, error: adsError } = await supabase
+          .from("Anuncios")
+          .select("Referencia")
+          .in("Activacion", ["Activo", "Pausado"])
+          .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
+        if (adsError) throw adsError
+        activeReferences = activeAds?.map((ad) => ad.Referencia).filter(Boolean) || []
+      }
 
       // If no active ads, return empty leads
       if (activeReferences.length === 0) {
@@ -904,11 +962,10 @@ export default function LeadsPage() {
   }
 
   const filterLeads = () => {
-    console.log("[v0] Filtering leads with selectedAdvertisement:", selectedAdvertisement)
     let filtered = leads
 
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase()
+    if (debouncedSearchTerm) {
+      const term = debouncedSearchTerm.toLowerCase()
       const toLowerStr = (v: unknown) => String(v ?? "").toLowerCase()
       filtered = filtered.filter(
         (lead) =>
@@ -940,22 +997,12 @@ export default function LeadsPage() {
 
     if (selectedAdvertisement && selectedAdvertisement !== "all") {
       const selectedAd = advertisements.find((ad) => ad.ida === selectedAdvertisement)
-      console.log("[v0] Selected advertisement:", selectedAd)
       if (selectedAd && selectedAd.Referencia) {
-        console.log("[v0] Filtering by Referencia:", selectedAd.Referencia)
-        // Filter leads where Inmueble field exactly matches the advertisement's Referencia
-        filtered = filtered.filter((lead) => {
-          const matches = lead.Inmueble === selectedAd.Referencia
-          if (matches) {
-            console.log("[v0] Lead matches:", lead.Nombre, "- Inmueble:", lead.Inmueble)
-          }
-          return matches
-        })
+        filtered = filtered.filter((lead) => lead.Inmueble === selectedAd.Referencia)
       }
     }
 
-    console.log("[v0] Filtered leads count:", filtered.length)
-    setFilteredLeads(filtered)
+    React.startTransition(() => setFilteredLeads(filtered))
   }
 
   const openLeadDetail = async (lead: Lead) => {
@@ -1359,7 +1406,7 @@ export default function LeadsPage() {
         setIsNewLeadDialogOpen(false)
 
         // Refresh leads
-        await fetchLeads()
+        fetchLeads()
       } catch (err) {
         console.error("[v0] Error creating new lead:", err)
         alert("Error al crear el lead. Por favor, intenta de nuevo.")
@@ -1656,7 +1703,7 @@ export default function LeadsPage() {
                   <h2 className="text-3xl font-bold text-foreground">Leads</h2>
                   <p className="text-muted-foreground mt-2">Gestión de clientes potenciales</p>
                 </div>
-                <Button onClick={() => setIsNewLeadDialogOpen(true)} disabled>
+                <Button onClick={() => setIsNewLeadDialogOpen(true)}>
                   <Users className="h-4 w-4 mr-2" />
                   Nuevo Lead
                 </Button>
@@ -2063,7 +2110,7 @@ export default function LeadsPage() {
                     ) : (
                       <div className="grid gap-3">
                         {filteredLeads.length > 0 ? (
-                          filteredLeads.map((lead) => {
+                          filteredLeads.slice(0, visibleCount).map((lead) => {
                             const isComplete = isLeadComplete(lead)
                             const isDescartado = lead.Estado === "Descartado"
                             const isAceptado = lead.Estado === "Aceptado"
@@ -2443,10 +2490,19 @@ export default function LeadsPage() {
                                             >
                                               Aval Pedido
                                             </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              className="text-red-600"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                openDeleteDialog(lead)
+                                              }}
+                                            >
+                                              Eliminar Lead
+                                            </DropdownMenuItem>
                                           </DropdownMenuContent>
                                         </DropdownMenu>
                                       </div>
-                                    </TooltipProvider>
+                                      </TooltipProvider>
                                   </div>
                                 </CardContent>
                               </Card>
@@ -2458,6 +2514,13 @@ export default function LeadsPage() {
                               <p className="text-muted-foreground">No se encontraron leads</p>
                             </CardContent>
                           </Card>
+                        )}
+                        {filteredLeads.length > visibleCount && (
+                          <div className="flex justify-center mt-2">
+                            <Button size="sm" variant="outline" onClick={() => setVisibleCount((c) => c + 100)}>
+                              Mostrar más
+                            </Button>
+                          </div>
                         )}
                       </div>
                     )}
@@ -2477,7 +2540,7 @@ export default function LeadsPage() {
                   ) : (
                     <div className="grid gap-3">
                       {filteredLeads.length > 0 ? (
-                        filteredLeads.map((lead) => {
+                        filteredLeads.slice(0, visibleCount).map((lead) => {
                           const isComplete = isLeadComplete(lead)
                           const isDescartado = lead.Estado === "Descartado"
                           const isAceptado = lead.Estado === "Aceptado"
@@ -2849,6 +2912,15 @@ export default function LeadsPage() {
                                           >
                                             Aval Pedido
                                           </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            className="text-red-600"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              openDeleteDialog(lead)
+                                            }}
+                                          >
+                                            Eliminar Lead
+                                          </DropdownMenuItem>
                                         </DropdownMenuContent>
                                       </DropdownMenu>
                                     </div>
@@ -2864,6 +2936,13 @@ export default function LeadsPage() {
                             <p className="text-muted-foreground">No se encontraron leads</p>
                           </CardContent>
                         </Card>
+                      )}
+                      {filteredLeads.length > visibleCount && (
+                        <div className="flex justify-center mt-2">
+                          <Button size="sm" variant="outline" onClick={() => setVisibleCount((c) => c + 100)}>
+                            Mostrar más
+                          </Button>
+                        </div>
                       )}
                     </div>
                   )}
@@ -5101,6 +5180,73 @@ export default function LeadsPage() {
                 Cerrar
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md z-[600]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-red-600" />
+              Eliminar Lead
+            </DialogTitle>
+            <DialogDescription>
+              Esta acción es irreversible. Para confirmar, escribe el ID exacto del lead.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {leadToDelete && (
+              <div className="p-3 bg-gray-50 rounded-lg border max-w-full">
+                <div className="text-sm">
+                  <span className="text-muted-foreground">ID:</span> <span className="font-semibold">{String(leadToDelete.id)}</span>
+                </div>
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Nombre:</span> <span className="font-semibold">{leadToDelete.Nombre || "Sin nombre"}</span>
+                </div>
+                <div className="text-sm max-w-full">
+                  <span className="text-muted-foreground">Email:</span>{" "}
+                  <span className="font-semibold break-all">{leadToDelete.Correo || "Sin email"}</span>
+                </div>
+              </div>
+            )}
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Escribe el ID para confirmar</label>
+              <Input
+                value={deleteConfirmInput}
+                onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                placeholder="ID del lead"
+                className="h-9 text-sm"
+              />
+              {leadToDelete && deleteConfirmInput && String(deleteConfirmInput).trim() !== String(leadToDelete.id).trim() && (
+                <p className="text-xs text-red-600">El ID no coincide</p>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="flex-1 bg-transparent"
+              onClick={() => setIsDeleteDialogOpen(false)}
+              disabled={isDeletingLead}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1 bg-red-600 hover:bg-red-700"
+              onClick={confirmDeleteLead}
+              disabled={isDeletingLead || !leadToDelete || String(deleteConfirmInput).trim() !== String(leadToDelete?.id || "").trim()}
+            >
+              {isDeletingLead ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Eliminando...
+                </>
+              ) : (
+                "Eliminar"
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
