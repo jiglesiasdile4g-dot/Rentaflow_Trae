@@ -2503,8 +2503,21 @@ export default function LeadsPage() {
                                         {lead.origen && null}
                                         <div className="flex-1 min-w-0 mt-2" onClick={(e) => { console.log("[router] note_click", { id: lead.id }); e.stopPropagation(); openNoteDialog(lead) }}>
                                           <div className="text-xs text-muted-foreground font-medium mb-1.5">Anotaciones</div>
-                                          <div className={`text-sm ${(lead.Observaciones || lead.Obsevaciones) ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                        <div className={`text-sm ${(lead.Observaciones || lead.Obsevaciones) ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                             {lead.Observaciones || lead.Obsevaciones || "Sin anotaciones"}
+                                          </div>
+                                          <div className="mt-1">
+                                            <Button
+                                              variant="link"
+                                              size="sm"
+                                              className="p-0 h-auto text-xs"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                openNoteDialog(lead)
+                                              }}
+                                            >
+                                              Hacer clic aquí para anotar
+                                            </Button>
                                           </div>
                                         </div>
                                       </div>
@@ -2936,6 +2949,19 @@ export default function LeadsPage() {
                                         <div className="text-xs text-muted-foreground font-medium mb-1.5">Anotaciones</div>
                                         <div className={`text-sm ${lead.Observaciones ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                           {lead.Observaciones || "Sin anotaciones"}
+                                        </div>
+                                        <div className="mt-1">
+                                          <Button
+                                            variant="link"
+                                            size="sm"
+                                            className="p-0 h-auto text-xs"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              openNoteDialog(lead)
+                                            }}
+                                          >
+                                            Hacer clic aquí para anotar
+                                          </Button>
                                         </div>
                                       </div>
                                     </div>
@@ -3537,6 +3563,16 @@ export default function LeadsPage() {
                               <div style={{ flex: "1", minWidth: 0 }}>
                                 <div className="text-xs text-muted-foreground font-medium mb-1.5">
                                   Anotaciones
+                                </div>
+                                <div className="mt-0.5">
+                                  <Button
+                                    variant="link"
+                                    size="sm"
+                                    className="p-0 h-auto text-xs"
+                                    onClick={() => openNoteDialog(selectedLead)}
+                                  >
+                                    Hacer clic aquí para anotar
+                                  </Button>
                                 </div>
                                 {isEditingPersonalInfo ? (
                                   <Textarea
