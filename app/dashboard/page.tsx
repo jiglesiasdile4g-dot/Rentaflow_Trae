@@ -256,9 +256,14 @@ export default async function DashboardPage({ searchParams }: { searchParams?: P
 
     leadsMetrics.completed = completedTodayCount
     console.log("[v0] Completed leads today:", leadsMetrics.completed)
-  } catch (err) {
-    console.log("[v0] Error fetching leads metrics:", err)
-    leadsMetrics.error = "Error al cargar métricas de leads"
+  } catch (err: any) {
+    const msg = typeof err?.message === "string" ? err.message : String(err)
+    if (/Abort|ERR_ABORTED/i.test(msg)) {
+      console.log("[v0] Supabase metrics request aborted (likely navigation)")
+    } else {
+      console.log("[v0] Error fetching leads metrics:", err)
+      leadsMetrics.error = "Error al cargar métricas de leads"
+    }
   }
 
   return (

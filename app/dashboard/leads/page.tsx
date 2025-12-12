@@ -852,8 +852,13 @@ export default function LeadsPage() {
       if (adsError) throw adsError
       console.log("[v0] Advertisements fetched for leads page:", adsData?.length || 0)
       setAdvertisements(adsData || [])
-    } catch (err) {
-      console.error("[v0] Error fetching advertisements:", err)
+    } catch (err: any) {
+      const msg = typeof err?.message === "string" ? err.message : String(err)
+      if (/Abort|ERR_ABORTED/i.test(msg)) {
+        console.log("[v0] Advertisements request aborted")
+      } else {
+        console.error("[v0] Error fetching advertisements:", err)
+      }
     }
     finally {
       setAdsLoading(false)
@@ -955,9 +960,14 @@ export default function LeadsPage() {
         const uniqueStatuses = Array.from(new Set((rows || []).map((lead) => lead.Estado).filter(Boolean)))
         setAvailableStatuses(uniqueStatuses)
       }
-    } catch (err) {
-      console.error("[v0] Error fetching leads:", err)
-      setError("Error al cargar los leads")
+    } catch (err: any) {
+      const msg = typeof err?.message === "string" ? err.message : String(err)
+      if (/Abort|ERR_ABORTED/i.test(msg)) {
+        console.log("[v0] Leads request aborted")
+      } else {
+        console.error("[v0] Error fetching leads:", err)
+        setError("Error al cargar los leads")
+      }
     } finally {
       setLoading(false)
     }
