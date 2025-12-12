@@ -310,31 +310,52 @@ export default function LeadsPage() {
   const saveNoteDialog = async () => {
     try {
       console.log("[observ] dialog_save_start", { id: noteDialog.leadId, len: noteDialog.value.length })
-      const target = leads.find((l) => Number(l.id) === noteDialog.leadId) || selectedLead
-      const hasObs = target && Object.prototype.hasOwnProperty.call(target, "Observaciones")
-      const hasObsev = target && Object.prototype.hasOwnProperty.call(target, "Obsevaciones")
-      const payload: any = {}
-      if (hasObs) payload["Observaciones"] = noteDialog.value
-      if (hasObsev) payload["Obsevaciones"] = noteDialog.value
-      if (!hasObs && !hasObsev) payload["Observaciones"] = noteDialog.value
-      const { error } = await supabase.from("Clientes").update(payload).eq("id", noteDialog.leadId)
-      if (error) throw error
+      const idStr = String(noteDialog.leadId)
+      const target = leads.find((l) => String(l.id) === idStr) || selectedLead
+      const idVal = Number.isFinite(Number(noteDialog.leadId)) ? Number(noteDialog.leadId) : idStr
+      let updatedOk = false
+      // Prefer escribir en 'Observaciones'
+      {
+        const { error } = await supabase
+          .from("Clientes")
+          .update({ Observaciones: noteDialog.value })
+          .eq("id", idVal)
+        if (!error) {
+          updatedOk = true
+        } else {
+          console.log("[observ] update Observaciones error, will try fallback", error)
+        }
+      }
+      // Fallback al campo con typo si existe
+      if (!updatedOk) {
+        const { error } = await supabase
+          .from("Clientes")
+          .update({ Obsevaciones: noteDialog.value })
+          .eq("id", idVal)
+        if (error) {
+          throw error
+        }
+        updatedOk = true
+      }
       setLeads((prev) =>
         prev.map((l) =>
-          Number(l.id) === noteDialog.leadId
-            ? { ...l, Observaciones: noteDialog.value, Obsevaciones: noteDialog.value }
-            : l,
+          String(l.id) === idStr ? { ...l, Observaciones: noteDialog.value, Obsevaciones: noteDialog.value } : l,
+        ),
+      )
+      setFilteredLeads((prev) =>
+        prev.map((l) =>
+          String(l.id) === idStr ? { ...l, Observaciones: noteDialog.value, Obsevaciones: noteDialog.value } : l,
         ),
       )
       setSelectedLead((prev) =>
-        prev && Number(prev.id) === noteDialog.leadId
-          ? { ...prev, Observaciones: noteDialog.value, Obsevaciones: noteDialog.value }
-          : prev,
+        prev && String(prev.id) === idStr ? { ...prev, Observaciones: noteDialog.value, Obsevaciones: noteDialog.value } : prev,
       )
       setNoteDialog((prev) => ({ ...prev, open: false }))
+      toast({ title: "Anotación guardada", description: "Se guardó en Observaciones", duration: 2000 })
       console.log("[observ] dialog_save_success", { id: noteDialog.leadId })
     } catch (err) {
       console.error("[observ] dialog_save_error", err)
+      toast({ title: "Error al guardar", description: "No se pudo guardar la anotación", variant: "destructive" })
     }
   }
   const uploadLeadDocuments = async (files: FileList | null) => {
@@ -2518,15 +2539,15 @@ export default function LeadsPage() {
                                           </div>
                                           <div className="mt-1">
                                             <Button
-                                              variant="link"
+                                              variant="outline"
                                               size="sm"
-                                              className="p-0 h-auto text-xs"
+                                              className="h-8 mt-1.5"
                                               onClick={(e) => {
                                                 e.stopPropagation()
                                                 openNoteDialog(lead)
                                               }}
                                             >
-                                              Hacer clic aquí para anotar
+                                              Anotar
                                             </Button>
                                           </div>
                                         </div>
@@ -2957,20 +2978,20 @@ export default function LeadsPage() {
                                       </div>
                                       <div className="flex-1 min-w-0 mt-2" onClick={(e) => { e.stopPropagation(); openNoteDialog(lead) }}>
                                         <div className="text-xs text-muted-foreground font-medium mb-1.5">Anotaciones</div>
-                                        <div className={`text-sm ${lead.Observaciones ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
-                                          {lead.Observaciones || "Sin anotaciones"}
+                                        <div className={`text-sm ${(lead.Observaciones || lead.Obsevaciones) ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                          {lead.Observaciones || lead.Obsevaciones || "Sin anotaciones"}
                                         </div>
                                         <div className="mt-1">
                                           <Button
-                                            variant="link"
+                                            variant="outline"
                                             size="sm"
-                                            className="p-0 h-auto text-xs"
+                                            className="h-8 mt-1.5"
                                             onClick={(e) => {
                                               e.stopPropagation()
                                               openNoteDialog(lead)
                                             }}
                                           >
-                                            Hacer clic aquí para anotar
+                                            Anotar
                                           </Button>
                                         </div>
                                       </div>
@@ -3576,12 +3597,12 @@ export default function LeadsPage() {
                                 </div>
                                 <div className="mt-0.5">
                                   <Button
-                                    variant="link"
+                                    variant="outline"
                                     size="sm"
-                                    className="p-0 h-auto text-xs"
+                                    className="h-8 mt-1.5"
                                     onClick={() => openNoteDialog(selectedLead)}
                                   >
-                                    Hacer clic aquí para anotar
+                                    Anotar
                                   </Button>
                                 </div>
                                 {isEditingPersonalInfo ? (
@@ -3593,8 +3614,8 @@ export default function LeadsPage() {
                                     className="text-sm"
                                   />
                                 ) : (
-                                  <div className={`text-sm ${selectedLead.Observaciones ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
-                                    {selectedLead.Observaciones || "Sin anotaciones"}
+                                  <div className={`text-sm ${((selectedLead as any).Observaciones || (selectedLead as any).Obsevaciones) ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                    {(selectedLead as any).Observaciones || (selectedLead as any).Obsevaciones || "Sin anotaciones"}
                                   </div>
                                 )}
                               </div>
