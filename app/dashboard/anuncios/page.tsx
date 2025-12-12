@@ -32,6 +32,7 @@ import { getPlanData, formatPlanValue } from "@/lib/plan-data"
 import ChangePlanButton from "@/components/change-plan-button"
 import { createBrowserClient } from "@/lib/supabase/client" // Added for createBrowserClient
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts"
+import Link from "next/link"
 
 interface AnuncioCard {
   id: string
@@ -3239,9 +3240,15 @@ export default function AnunciosPage() {
                                     <Copy className="h-3.5 w-3.5 mr-2" />
                                     Duplicar como nuevo
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleVerCompletos(anuncio.referencia)}>
-                                    <CheckCircle className="h-3.5 w-3.5 mr-2" />
-                                    Ver &quot;Datos completos&quot;
+                                  <DropdownMenuItem asChild>
+                                    <Link
+                                      href={`/dashboard/leads?filter=${encodeURIComponent(anuncio.referencia)}&status=completos`}
+                                      prefetch={false}
+                                      onClick={() => console.log("[nav] anuncios_to_leads_completos_click", anuncio.referencia)}
+                                    >
+                                      <CheckCircle className="h-3.5 w-3.5 mr-2" />
+                                      Ver &quot;Datos completos&quot;
+                                    </Link>
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={() => handleInfoFaqs(anuncio)}>
                                     <Settings className="h-3.5 w-3.5 mr-2" />
@@ -3283,13 +3290,15 @@ export default function AnunciosPage() {
                           </div>
 
                           <div className="flex justify-center mt-1">
-                            <Button
-                              size="sm"
-                              className="bg-primary hover:bg-primary/90 h-7 text-xs"
-                              onClick={() => handleVerLeads(anuncio.referencia)}
-                            >
-                              <Eye className="h-3 w-3 mr-1.5" />
-                              Ver leads filtrados ({anuncio.leadsTotales})
+                            <Button asChild size="sm" className="bg-primary hover:bg-primary/90 h-7 text-xs">
+                              <Link
+                                href={`/dashboard/leads?filter=${encodeURIComponent(anuncio.referencia)}`}
+                                prefetch={false}
+                                onClick={() => console.log("[nav] anuncios_to_leads_filter_click", anuncio.referencia)}
+                              >
+                                <Eye className="h-3 w-3 mr-1.5" />
+                                Ver leads filtrados ({anuncio.leadsTotales})
+                              </Link>
                             </Button>
                           </div>
 

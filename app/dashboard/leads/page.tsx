@@ -21,8 +21,9 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2 } from 'lucide-react'
+import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Tag } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
 import React from "react" // Imported React
 import { LeadApproveWrapper } from "@/components/lead-approve-wrapper"
@@ -104,6 +105,7 @@ type Lead = {
   visita_completada?: string | boolean
   idag?: number | string
   Observaciones?: string
+  origen?: string
 }
 
 interface Advertisement {
@@ -233,6 +235,13 @@ export default function LeadsPage() {
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null)
   const [deleteConfirmInput, setDeleteConfirmInput] = useState("")
   const [isDeletingLead, setIsDeletingLead] = useState(false)
+  const [noteDialog, setNoteDialog] = useState<{ open: boolean; leadId: number; leadName: string; value: string }>({ open: false, leadId: 0, leadName: "", value: "" })
+  useEffect(() => {
+    console.log("[router] leads_mount", { path: pathname })
+    return () => {
+      console.log("[router] leads_unmount")
+    }
+  }, [])
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearchTerm(searchTerm), 250)
@@ -287,6 +296,47 @@ export default function LeadsPage() {
   const [attachmentPreviewKind, setAttachmentPreviewKind] = useState<"pdf" | "image" | "unknown">("unknown")
   const [attachmentPreviewName, setAttachmentPreviewName] = useState<string>("")
 
+  const openNoteDialog = (lead: Lead) => {
+    const v = (lead.Observaciones ?? lead.Obsevaciones ?? "")
+    console.log("[observ] dialog_open", { id: lead.id, len: String(v).length })
+    setNoteDialog({
+      open: true,
+      leadId: Number(lead.id),
+      leadName: lead.Nombre || "Sin nombre",
+      value: v,
+    })
+  }
+
+  const saveNoteDialog = async () => {
+    try {
+      console.log("[observ] dialog_save_start", { id: noteDialog.leadId, len: noteDialog.value.length })
+      const target = leads.find((l) => Number(l.id) === noteDialog.leadId) || selectedLead
+      const hasObs = target && Object.prototype.hasOwnProperty.call(target, "Observaciones")
+      const hasObsev = target && Object.prototype.hasOwnProperty.call(target, "Obsevaciones")
+      const payload: any = {}
+      if (hasObs) payload["Observaciones"] = noteDialog.value
+      if (hasObsev) payload["Obsevaciones"] = noteDialog.value
+      if (!hasObs && !hasObsev) payload["Observaciones"] = noteDialog.value
+      const { error } = await supabase.from("Clientes").update(payload).eq("id", noteDialog.leadId)
+      if (error) throw error
+      setLeads((prev) =>
+        prev.map((l) =>
+          Number(l.id) === noteDialog.leadId
+            ? { ...l, Observaciones: noteDialog.value, Obsevaciones: noteDialog.value }
+            : l,
+        ),
+      )
+      setSelectedLead((prev) =>
+        prev && Number(prev.id) === noteDialog.leadId
+          ? { ...prev, Observaciones: noteDialog.value, Obsevaciones: noteDialog.value }
+          : prev,
+      )
+      setNoteDialog((prev) => ({ ...prev, open: false }))
+      console.log("[observ] dialog_save_success", { id: noteDialog.leadId })
+    } catch (err) {
+      console.error("[observ] dialog_save_error", err)
+    }
+  }
   const uploadLeadDocuments = async (files: FileList | null) => {
     if (!files || files.length === 0) return
     if (!selectedLead) {
@@ -535,6 +585,19 @@ export default function LeadsPage() {
     }
   }, [selectedLead])
 
+  useEffect(() => {
+    if (!selectedLead) return
+    if (String(selectedLead.Estado || "") === "Datos Completos") return
+    if (isPersona1CompleteExceptCP(selectedLead)) {
+      ;(async () => {
+        console.log("[regla-cp] Auto-corrección en modal lead -> 'Datos Completos':", selectedLead.id)
+        await updateLeadStatus(Number(selectedLead.id), "Datos Completos")
+        setSelectedLead({ ...selectedLead, Estado: "Datos Completos" })
+        setLeads((prev) => prev.map((l) => (String(l.id) === String(selectedLead.id) ? { ...l, Estado: "Datos Completos" } : l)))
+      })()
+    }
+  }, [selectedLead])
+
   const fetchAgentes = async (inmobiliariaId: number) => {
     try {
       const supabase = createClient()
@@ -582,11 +645,24 @@ export default function LeadsPage() {
   useEffect(() => {
     const adId = searchParams.get("ad")
     const ref = searchParams.get("filter")
+    console.log("[nav] leads_filter_param", ref)
+    const st = searchParams.get("status")
+    console.log("[nav] leads_status_param", st)
     if (adId) {
       setSelectedAdvertisement(adId)
     } else if (ref && advertisements.length > 0) {
       const ad = advertisements.find((a) => a.Referencia === ref)
-      if (ad) setSelectedAdvertisement(ad.ida)
+      if (ad) {
+        console.log("[nav] leads_select_ad_by_ref", ad.ida)
+        setSelectedAdvertisement(ad.ida)
+      }
+    }
+    if (st) {
+      if (st === "completos") {
+        setStatusFilter("Datos Completos")
+      } else if (st === "all") {
+        setStatusFilter("all")
+      }
     }
   }, [searchParams, advertisements])
 
@@ -787,6 +863,11 @@ export default function LeadsPage() {
   const fetchLeads = async () => {
     try {
       setLoading(true)
+      console.log("[leads] fetchLeads:start", {
+        inmobiliariaId,
+        adsCount: advertisements?.length || 0,
+        planInactive,
+      })
 
       let activeReferences: string[] = []
       if (advertisements && advertisements.length > 0) {
@@ -803,6 +884,11 @@ export default function LeadsPage() {
         if (adsError) throw adsError
         activeReferences = activeAds?.map((ad) => ad.Referencia).filter(Boolean) || []
       }
+
+      console.log("[leads] activeReferences", {
+        count: activeReferences.length,
+        sample: activeReferences.slice(0, 5),
+      })
 
       // If no active ads, return empty leads
       if (activeReferences.length === 0) {
@@ -824,8 +910,32 @@ export default function LeadsPage() {
       const { data: leadsData, error: leadsError } = await dataQuery
 
       if (leadsError) throw leadsError
+      console.log("[leads] leadsData:fetched", leadsData?.length || 0)
 
-      let rows = leadsData || []
+      let baseRows: any[] = (leadsData || []).map((lead: any) => ({
+        ...lead,
+        origen: lead?.origen ?? lead?.Origen ?? lead?.origin ?? null,
+      }))
+
+      const toCorrect = baseRows.filter((lead: any) => String(lead?.Estado || "") !== "Datos Completos" && isPersona1CompleteExceptCP(lead))
+      console.log("[regla-cp] candidates_to_correct", toCorrect.length)
+      if (toCorrect.length > 0) {
+        try {
+          console.log("[regla-cp] Corrigiendo leads a 'Datos Completos':", toCorrect.map((l: any) => l.id))
+          await Promise.all(
+            toCorrect.map((lead: any) =>
+              supabase.from("Clientes").update({ Estado: "Datos Completos" }).eq("id", lead.id)
+            )
+          )
+          const correctedIds = new Set(toCorrect.map((l: any) => String(l.id)))
+          baseRows = baseRows.map((l: any) => (correctedIds.has(String(l.id)) ? { ...l, Estado: "Datos Completos" } : l))
+          console.log("[regla-cp] corrected_count", correctedIds.size)
+        } catch (e) {
+          console.error("[v0] Error corrigiendo estados existentes:", e)
+        }
+      }
+
+      let rows = baseRows
       if (planInactive) {
         const processed = new Set([
           "Datos Completos",
@@ -838,6 +948,7 @@ export default function LeadsPage() {
         ])
         rows = rows.filter((lead: any) => processed.has(String(lead?.Estado || "")))
       }
+
       setLeads(rows)
 
       if (leadsData) {
@@ -1033,6 +1144,7 @@ export default function LeadsPage() {
           Codigo_Postal: editFormData.Codigo_Postal,
           Tipo_Documento: editFormData.Tipo_Documento,
           Documento: editFormData.Documento,
+          Observaciones: editFormData.Observaciones,
           // Update persona-specific fields based on selectedPersona
           ...(selectedPersona === 1 && {
             Persona_2: editFormData.Persona_2, // Only update if editing persona 1
@@ -1106,6 +1218,11 @@ export default function LeadsPage() {
       setLeads(leads.map((lead) => (lead.id === selectedLead.id ? updatedLead : lead)))
       setIsEditingPersonalInfo(false)
 
+      if (isPersona1CompleteExceptCP(updatedLead)) {
+        await updateLeadStatus(Number(selectedLead.id), "Datos Completos")
+        setSelectedLead({ ...updatedLead, Estado: "Datos Completos" })
+      }
+
       console.log("[v0] Personal information updated successfully")
     } catch (err) {
       console.error("[v0] Error updating personal information:", err)
@@ -1156,7 +1273,7 @@ export default function LeadsPage() {
           bg: "#dcfce7",
           border: "#22c55e",
           text: "#16a34a",
-          label: estado === "Datos Completos" ? "Datos Completos" : "Completado",
+          label: "Datos Completos",
         }
       case "Datos Incompletos":
         return {
@@ -1298,6 +1415,20 @@ export default function LeadsPage() {
       return { percentage, filledFields, totalFields }
     }
 
+    const isPersona1CompleteExceptCP = (lead: Lead) => {
+      const requiredStrings = [
+        lead.Nombre,
+        lead.Correo,
+        lead.Telefono,
+        lead.Documento,
+        lead.Tipo_Documento,
+        lead.Pais,
+      ]
+      const stringsOk = requiredStrings.every((field) => field !== null && field !== undefined && String(field).trim() !== "")
+      const ingresosOk = typeof lead.Ingresos === "number" ? lead.Ingresos > 0 : String(lead.Ingresos || "").trim() !== ""
+      return stringsOk && ingresosOk
+    }
+
     const countPersonas = (lead: Lead) => {
       let count = 1 // Always at least Persona 1
       if (lead.Persona_2) count++
@@ -1395,7 +1526,12 @@ export default function LeadsPage() {
 
         // Add the new lead to the list
         if (data && data.length > 0) {
-          setLeads([data[0], ...leads])
+          const created = data[0] as Lead
+          if (isPersona1CompleteExceptCP(created)) {
+            await updateLeadStatus(Number(created.id), "Datos Completos")
+            created.Estado = "Datos Completos"
+          }
+          setLeads([created, ...leads])
         }
 
         // Reset form and close dialog
@@ -2294,7 +2430,7 @@ export default function LeadsPage() {
                                                     }}
                                                   >
                                                     <span className="text-xs font-semibold text-green-800">
-                                                      ✓ Completo
+                                                      Datos Completos
                                                     </span>
                                                     <div className="h-3 w-px bg-green-400" />
                                                     <div className="flex items-center gap-0.5">
@@ -2324,6 +2460,12 @@ export default function LeadsPage() {
                                             })()}
                                           </div>
                                         </div>
+                                        {lead.origen && (
+                                          <Badge variant="secondary" className="text-xs flex items-center gap-1">
+                                            <Tag className="h-3 w-3" />
+                                            Origen: {lead.origen}
+                                          </Badge>
+                                        )}
 
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-0 text-xs text-muted-foreground mb-2">
                                           <div className="flex items-center gap-1">
@@ -2355,6 +2497,14 @@ export default function LeadsPage() {
                                           <div className="flex items-center gap-1 text-muted-foreground">
                                             <Clock className="h-3 w-3" />
                                             <span>{formatDate(lead.created_at)}</span>
+                                          </div>
+                                        </div>
+
+                                        {lead.origen && null}
+                                        <div className="flex-1 min-w-0 mt-2" onClick={(e) => { console.log("[router] note_click", { id: lead.id }); e.stopPropagation(); openNoteDialog(lead) }}>
+                                          <div className="text-xs text-muted-foreground font-medium mb-1.5">Anotaciones</div>
+                                          <div className={`text-sm ${(lead.Observaciones || lead.Obsevaciones) ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                            {lead.Observaciones || lead.Obsevaciones || "Sin anotaciones"}
                                           </div>
                                         </div>
                                       </div>
@@ -2719,7 +2869,7 @@ export default function LeadsPage() {
                                                   }}
                                                 >
                                                   <span className="text-xs font-semibold text-green-800">
-                                                    ✓ Completo
+                                                    Datos Completos
                                                   </span>
                                                   <div className="h-3 w-px bg-green-400" />
                                                   <div className="flex items-center gap-0.5">
@@ -2780,6 +2930,12 @@ export default function LeadsPage() {
                                         <div className="flex items-center gap-1 text-muted-foreground">
                                           <Clock className="h-3 w-3" />
                                           <span>{formatDate(lead.created_at)}</span>
+                                        </div>
+                                      </div>
+                                      <div className="flex-1 min-w-0 mt-2" onClick={(e) => { e.stopPropagation(); openNoteDialog(lead) }}>
+                                        <div className="text-xs text-muted-foreground font-medium mb-1.5">Anotaciones</div>
+                                        <div className={`text-sm ${lead.Observaciones ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                          {lead.Observaciones || "Sin anotaciones"}
                                         </div>
                                       </div>
                                     </div>
@@ -2966,6 +3122,12 @@ export default function LeadsPage() {
                     <h1 className="text-2xl font-bold m-0">{selectedLead.Nombre || "Sin nombre"}</h1>
                     <span className="text-sm text-muted-foreground font-normal">| {selectedLead.Inmueble || "Sin inmueble"}</span>
                     <span className="text-xs text-muted-foreground ml-2">ID: {selectedLead.id}</span>
+                    {selectedLead.origen && (
+                      <Badge variant="secondary" className="text-xs ml-2 flex items-center gap-1">
+                        <Tag className="h-3 w-3" />
+                        Origen: {selectedLead.origen}
+                      </Badge>
+                    )}
                   </div>
                   <button className="p-1 text-muted-foreground hover:text-foreground" onClick={() => setSelectedLead(null)}>
                     <X size={20} />
@@ -3370,6 +3532,26 @@ export default function LeadsPage() {
                                 )}
                               </div>
                               <div style={{ flex: "2" }}></div>
+                            </div>
+                            <div style={{ display: "flex", gap: "1.5rem" }}>
+                              <div style={{ flex: "1", minWidth: 0 }}>
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5">
+                                  Anotaciones
+                                </div>
+                                {isEditingPersonalInfo ? (
+                                  <Textarea
+                                    rows={3}
+                                    value={editFormData.Observaciones || ""}
+                                    onChange={(e) => setEditFormData({ ...editFormData, Observaciones: e.target.value })}
+                                    placeholder="Notas sobre el candidato..."
+                                    className="text-sm"
+                                  />
+                                ) : (
+                                  <div className={`text-sm ${selectedLead.Observaciones ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                    {selectedLead.Observaciones || "Sin anotaciones"}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -4143,123 +4325,121 @@ export default function LeadsPage() {
                         <h2 className="text-lg font-semibold mb-5">Evaluación</h2>
 
                         <div className="flex gap-4 flex-wrap">
-                          <div
-                            style={{
-                              flex: "1",
-                              minWidth: "120px",
-                              textAlign: "center",
-                              padding: "1rem",
-                              backgroundColor: getStatusColors(selectedLead.Estado).bg,
-                              borderRadius: "8px",
-                              border: `2px solid ${getStatusColors(selectedLead.Estado).border}`,
-                              position: "relative",
-                              cursor: ["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || "")) ? "pointer" : "default",
-                              transition: "all 0.2s",
-                            }}
-                            onClick={async () => {
-                              console.log("[v0] Estado div clicked, Estado:", selectedLead.Estado)
-                              if (selectedLead.Estado === "Visita Propuesta") {
-                                console.log("[v0] Opening visit date dialog for lead:", selectedLead.Nombre, selectedLead.Apellidos)
-                                console.log("[v0] Current fecha_de_visita:", selectedLead.fecha_de_visita)
-                                setSelectedLeadForVisit(selectedLead)
-                                setSelectedAgenteId(selectedLead.idag ? String(selectedLead.idag) : "")
-                                if (selectedLead.fecha_de_visita) {
-                                  const d = new Date(selectedLead.fecha_de_visita)
-                                  const yyyy = d.getFullYear()
-                                  const mm = String(d.getMonth() + 1).padStart(2, "0")
-                                  const dd = String(d.getDate()).padStart(2, "0")
-                                  const hh = String(d.getHours()).padStart(2, "0")
-                                  const min = String(d.getMinutes()).padStart(2, "0")
-                                  setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
-                                  setNewVisitDateTime(`${hh}:${min}`)
-                                } else {
-                                  setNewVisitDateDate("")
-                                  setNewVisitDateTime("12:00")
-                                }
-                                setVisitDateDialogOpen(true)
-                                console.log("[v0] Dialog should now be open")
-                              } else if (selectedLead.Estado === "Datos Completos" || selectedLead.Estado === "Completo" || selectedLead.Estado === "Completado") {
-                                console.log("[v0] Datos Completos -> abrir Programar Visita y cambiar a 'Visita Propuesta'")
-                                setSelectedLeadForVisit(selectedLead)
-                                setSelectedAgenteId(selectedLead.idag ? String(selectedLead.idag) : "")
-                                if (selectedLead.fecha_de_visita) {
-                                  const d = new Date(selectedLead.fecha_de_visita)
-                                  const yyyy = d.getFullYear()
-                                  const mm = String(d.getMonth() + 1).padStart(2, "0")
-                                  const dd = String(d.getDate()).padStart(2, "0")
-                                  const hh = String(d.getHours()).padStart(2, "0")
-                                  const min = String(d.getMinutes()).padStart(2, "0")
-                                  setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
-                                  setNewVisitDateTime(`${hh}:${min}`)
-                                } else {
-                                  setNewVisitDateDate("")
-                                  setNewVisitDateTime("12:00")
-                                }
-                                setVisitDateDialogOpen(true)
-                                await updateLeadStatus(Number(selectedLead.id), "Visita Propuesta")
-                                setSelectedLead({ ...selectedLead, Estado: "Visita Propuesta" })
-                              } else {
-                                console.log("[v0] Estado no interactivo, dialog no abierto")
-                              }
-                            }}
-                            onMouseEnter={(e) => {
-                              if (["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || ""))) {
-                                e.currentTarget.style.transform = "scale(1.02)"
-                                e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || ""))) {
-                                e.currentTarget.style.transform = "scale(1)"
-                                e.currentTarget.style.boxShadow = "none"
-                              }
-                            }}
-                          >
-                            {selectedLead.Estado === "Completado" && (
+                          {(() => {
+                            const statusColors = getStatusColors(selectedLead.Estado)
+                            return (
                               <div
                                 style={{
-                                  position: "absolute",
-                                  top: "0.5rem",
-                                  right: "0.5rem",
-                                  backgroundColor: "#22c55e",
-                                  borderRadius: "50%",
-                                  width: "20px",
-                                  height: "20px",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  color: "white",
-                                  fontSize: "0.75rem",
+                                  flex: "1",
+                                  minWidth: "120px",
+                                  textAlign: "center",
+                                  padding: "1rem",
+                                  backgroundColor: statusColors.bg,
+                                  borderRadius: "8px",
+                                  border: `2px solid ${statusColors.border}`,
+                                  position: "relative",
+                                  cursor: ["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || "")) ? "pointer" : "default",
+                                  transition: "all 0.2s",
+                                }}
+                                onClick={async () => {
+                                  if (selectedLead.Estado === "Visita Propuesta") {
+                                    setSelectedLeadForVisit(selectedLead)
+                                    setSelectedAgenteId(selectedLead.idag ? String(selectedLead.idag) : "")
+                                    if (selectedLead.fecha_de_visita) {
+                                      const d = new Date(selectedLead.fecha_de_visita)
+                                      const yyyy = d.getFullYear()
+                                      const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                      const dd = String(d.getDate()).padStart(2, "0")
+                                      const hh = String(d.getHours()).padStart(2, "0")
+                                      const min = String(d.getMinutes()).padStart(2, "0")
+                                      setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                      setNewVisitDateTime(`${hh}:${min}`)
+                                    } else {
+                                      setNewVisitDateDate("")
+                                      setNewVisitDateTime("12:00")
+                                    }
+                                    setVisitDateDialogOpen(true)
+                                  } else if (["Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || ""))) {
+                                    setSelectedLeadForVisit(selectedLead)
+                                    setSelectedAgenteId(selectedLead.idag ? String(selectedLead.idag) : "")
+                                    if (selectedLead.fecha_de_visita) {
+                                      const d = new Date(selectedLead.fecha_de_visita)
+                                      const yyyy = d.getFullYear()
+                                      const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                      const dd = String(d.getDate()).padStart(2, "0")
+                                      const hh = String(d.getHours()).padStart(2, "0")
+                                      const min = String(d.getMinutes()).padStart(2, "0")
+                                      setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                      setNewVisitDateTime(`${hh}:${min}`)
+                                    } else {
+                                      setNewVisitDateDate("")
+                                      setNewVisitDateTime("12:00")
+                                    }
+                                    setVisitDateDialogOpen(true)
+                                    await updateLeadStatus(Number(selectedLead.id), "Visita Propuesta")
+                                    setSelectedLead({ ...selectedLead, Estado: "Visita Propuesta" })
+                                  }
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || ""))) {
+                                    e.currentTarget.style.transform = "scale(1.02)"
+                                    e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
+                                  }
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || ""))) {
+                                    e.currentTarget.style.transform = "scale(1)"
+                                    e.currentTarget.style.boxShadow = "none"
+                                  }
                                 }}
                               >
-                                ✓
+                                {selectedLead.Estado === "Completado" && (
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      top: "0.5rem",
+                                      right: "0.5rem",
+                                      backgroundColor: "#22c55e",
+                                      borderRadius: "50%",
+                                      width: "20px",
+                                      height: "20px",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      color: "white",
+                                      fontSize: "0.75rem",
+                                    }}
+                                  >
+                                    ✓
+                                  </div>
+                                )}
+                                <div
+                                  style={{
+                                    fontSize: "1.25rem",
+                                    fontWeight: "bold",
+                                    color: statusColors.text,
+                                  }}
+                                >
+                                  {selectedLead.Estado || "Sin Estado"}
+                                </div>
+                                {selectedLead.Estado === "Visita Propuesta" && selectedLead.fecha_de_visita && (
+                                  <div style={{ fontSize: "0.875rem", color: statusColors.text, marginTop: "0.5rem", fontWeight: "500" }}>
+                                    {new Date(selectedLead.fecha_de_visita).toLocaleString("es-ES", {
+                                      day: "2-digit",
+                                      month: "short",
+                                      hour: "2-digit",
+                                      minute: "2-digit"
+                                    })}
+                                  </div>
+                                )}
+                                <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: "0.5rem" }}>
+                                  ESTADO
+                                  {selectedLead.Estado === "Visita Propuesta" ? " (Click para cambiar)" :
+                                   (["Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || "")) ? " (Click para programar)" : "")}
+                                </div>
                               </div>
-                            )}
-                            <div
-                              style={{
-                                fontSize: "1.25rem",
-                                fontWeight: "bold",
-                                color: getStatusColors(selectedLead.Estado).text,
-                              }}
-                            >
-                              {getStatusColors(selectedLead.Estado).label}
-                            </div>
-                            {selectedLead.Estado === "Visita Propuesta" && selectedLead.fecha_de_visita && (
-                              <div style={{ fontSize: "0.875rem", color: getStatusColors(selectedLead.Estado).text, marginTop: "0.5rem", fontWeight: "500" }}>
-                                {new Date(selectedLead.fecha_de_visita).toLocaleString("es-ES", {
-                                  day: "2-digit",
-                                  month: "short",
-                                  hour: "2-digit",
-                                  minute: "2-digit"
-                                })}
-                              </div>
-                            )}
-                            <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: "0.5rem" }}>
-                              ESTADO
-                              {selectedLead.Estado === "Visita Propuesta" ? " (Click para cambiar)" :
-                               (selectedLead.Estado === "Datos Completos" || selectedLead.Estado === "Completo" || selectedLead.Estado === "Completado") ? " (Click para programar)" : ""}
-                            </div>
-                          </div>
+                            )
+                          })()}
 
                           <div className="flex-1 min-w-[120px] text-center p-4 rounded-lg bg-muted/50 dark:bg-input/30">
                             <div className="text-xl font-bold">
@@ -5380,8 +5560,48 @@ export default function LeadsPage() {
                 </div>
               </div>
             )}
-          </DialogContent>
+        </DialogContent>
         </Dialog>
+      <Dialog
+        open={noteDialog.open}
+        onOpenChange={(open) => {
+          console.log("[observ] dialog_open_change", open)
+          setNoteDialog((prev) => ({ ...prev, open }))
+        }}
+      >
+        <DialogContent className="sm:max-w-md z-[280]">
+          <DialogHeader>
+            <DialogTitle>Anotaciones</DialogTitle>
+            <DialogDescription>{noteDialog.leadName ? `Lead: ${noteDialog.leadName}` : ""}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Textarea
+              rows={6}
+              value={noteDialog.value}
+              onChange={(e) => {
+                console.log("[observ] dialog_text_change", { len: e.target.value.length })
+                setNoteDialog((prev) => ({ ...prev, value: e.target.value }))
+              }}
+              placeholder="Escribe las anotaciones..."
+            />
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1 bg-transparent"
+                onClick={() => {
+                  console.log("[observ] dialog_cancel", noteDialog.leadId)
+                  setNoteDialog((prev) => ({ ...prev, open: false }))
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button className="flex-1" onClick={saveNoteDialog}>
+                Guardar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       </>
     )
   }

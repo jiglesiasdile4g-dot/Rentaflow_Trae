@@ -111,12 +111,7 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              ¿No tienes cuenta?{" "}
-              <Link href="/register" className="text-primary hover:underline">
-                Regístrate aquí
-              </Link>
-            </p>
+            <p className="text-sm text-blue-700">Powered by RentAflow</p>
           </div>
         </CardContent>
       </Card>
