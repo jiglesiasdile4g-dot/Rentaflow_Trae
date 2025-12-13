@@ -1,3 +1,19 @@
+## [0.7.5](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.4...v0.7.5) (2025-12-13)
+
+
+### Bug Fixes
+
+* **leads:** ver anotaciones guardadas (Observaciones); CTA 'Anotar'; ignorar aborts; mantener versión ([3f8c136](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/3f8c136cb8325a8e5cbf8849fc2a37516569e9cf))
+
+
+### Features
+
+* **leads, documents, comunicaciones:** mejoras de UI y búsqueda ([ae610c2](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/ae610c2fb8ad963ae00276d596ea6a7a50a1c253))
+* **leads): eliminar anotaciones desde modal; mejorar zona de anotaciones (sombreado, ocultar bloque si vacío); fix(leads): Cancelar en modal con DialogClose; feat(leads): metadatos en anotaciones; fix(auth:** manejar AuthSessionMissingError ([c9017fb](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/c9017fb4f44d07c95df5961d4f4320030bf81217))
+* **leads:** CTA 'Hacer clic aquí para anotar' en tarjetas y detalle ([754dcb3](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/754dcb3fb9c72a9c136e06dc3d75a3139e89c2eb))
+
+
+
 ## [0.7.4](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.3...v0.7.4) (2025-12-12)
 
 
