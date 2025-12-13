@@ -5,7 +5,7 @@
 // import { DialogHeader } from "@/components/ui/dialog"
 // import { DialogContent } from "@/components/ui/dialog"
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Tag } from 'lucide-react'
+import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Tag, Trash } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
 import React from "react" // Imported React
 import { LeadApproveWrapper } from "@/components/lead-approve-wrapper"
@@ -235,7 +235,7 @@ export default function LeadsPage() {
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null)
   const [deleteConfirmInput, setDeleteConfirmInput] = useState("")
   const [isDeletingLead, setIsDeletingLead] = useState(false)
-  const [noteDialog, setNoteDialog] = useState<{ open: boolean; leadId: number; leadName: string; value: string }>({ open: false, leadId: 0, leadName: "", value: "" })
+  const [noteDialog, setNoteDialog] = useState<{ open: boolean; leadId: number; leadName: string; value: string; existing: string }>({ open: false, leadId: 0, leadName: "", value: "", existing: "" })
   useEffect(() => {
     console.log("[router] leads_mount", { path: pathname })
     return () => {
@@ -303,22 +303,76 @@ export default function LeadsPage() {
       open: true,
       leadId: Number(lead.id),
       leadName: lead.Nombre || "Sin nombre",
-      value: v,
+      value: "",
+      existing: v,
     })
   }
 
+  const splitNotes = (text: string) => {
+    const t = String(text || "")
+    const re = /^\[[^\]]+\]/gm
+    const indices: number[] = []
+    const entries: Array<{ header: string; body: string; raw: string }> = []
+    let m: RegExpExecArray | null
+    while ((m = re.exec(t)) !== null) {
+      indices.push(m.index)
+    }
+    for (let i = 0; i < indices.length; i++) {
+      const start = indices[i]
+      const end = i + 1 < indices.length ? indices[i + 1] : t.length
+      const segment = t.slice(start, end).replace(/^\n+|\n+$/g, "")
+      const headerMatch = segment.match(/^\[[^\]]+\]/)
+      const header = headerMatch ? headerMatch[0] : ""
+      const body = segment.replace(/^\[[^\]]+\]\s*/, "")
+      entries.push({ header, body, raw: segment })
+    }
+    return entries
+  }
+
+  const deleteNoteEntry = async (idx: number) => {
+    try {
+      const idStr = String(noteDialog.leadId)
+      const idVal = Number.isFinite(Number(noteDialog.leadId)) ? Number(noteDialog.leadId) : idStr
+      const entries = splitNotes(noteDialog.existing)
+      const remaining = entries.filter((_, i) => i !== idx).map((e) => e.raw).join(entries.length > 1 ? "\n" : "")
+      let ok = false
+      {
+        const { error } = await supabase.from("Clientes").update({ Observaciones: remaining }).eq("id", idVal)
+        if (!error) ok = true
+      }
+      if (!ok) {
+        const { error } = await supabase.from("Clientes").update({ Obsevaciones: remaining }).eq("id", idVal)
+        if (error) throw error
+        ok = true
+      }
+      setLeads((prev) => prev.map((l) => (String(l.id) === idStr ? { ...l, Observaciones: remaining, Obsevaciones: remaining } : l)))
+      setFilteredLeads((prev) => prev.map((l) => (String(l.id) === idStr ? { ...l, Observaciones: remaining, Obsevaciones: remaining } : l)))
+      setSelectedLead((prev) => (prev && String(prev.id) === idStr ? { ...prev, Observaciones: remaining, Obsevaciones: remaining } : prev))
+      setNoteDialog((prev) => ({ ...prev, existing: remaining }))
+      toast({ title: "Anotación eliminada", description: "Se eliminó de Observaciones", duration: 2000 })
+    } catch (err) {
+      toast({ title: "Error al eliminar", description: "No se pudo eliminar la anotación", variant: "destructive" })
+    }
+  }
   const saveNoteDialog = async () => {
     try {
       console.log("[observ] dialog_save_start", { id: noteDialog.leadId, len: noteDialog.value.length })
       const idStr = String(noteDialog.leadId)
       const target = leads.find((l) => String(l.id) === idStr) || selectedLead
       const idVal = Number.isFinite(Number(noteDialog.leadId)) ? Number(noteDialog.leadId) : idStr
+      const supabaseUser = await supabase.auth.getUser()
+      const userEmail = supabaseUser?.data?.user?.email || ""
+      const now = new Date()
+      const two = (n: number) => String(n).padStart(2, "0")
+      const ts = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())} ${two(now.getHours())}:${two(now.getMinutes())}`
+      const existingText = String((target as any)?.Observaciones ?? (target as any)?.Obsevaciones ?? "")
+      const entry = `[${ts}${userEmail ? ` • ${userEmail}` : ""}] ${noteDialog.value}`
+      const joined = existingText ? `${entry}\n${existingText}` : entry
       let updatedOk = false
-      // Prefer escribir en 'Observaciones'
       {
         const { error } = await supabase
           .from("Clientes")
-          .update({ Observaciones: noteDialog.value })
+          .update({ Observaciones: joined })
           .eq("id", idVal)
         if (!error) {
           updatedOk = true
@@ -326,11 +380,10 @@ export default function LeadsPage() {
           console.log("[observ] update Observaciones error, will try fallback", error)
         }
       }
-      // Fallback al campo con typo si existe
       if (!updatedOk) {
         const { error } = await supabase
           .from("Clientes")
-          .update({ Obsevaciones: noteDialog.value })
+          .update({ Obsevaciones: joined })
           .eq("id", idVal)
         if (error) {
           throw error
@@ -339,16 +392,16 @@ export default function LeadsPage() {
       }
       setLeads((prev) =>
         prev.map((l) =>
-          String(l.id) === idStr ? { ...l, Observaciones: noteDialog.value, Obsevaciones: noteDialog.value } : l,
+          String(l.id) === idStr ? { ...l, Observaciones: joined, Obsevaciones: joined } : l,
         ),
       )
       setFilteredLeads((prev) =>
         prev.map((l) =>
-          String(l.id) === idStr ? { ...l, Observaciones: noteDialog.value, Obsevaciones: noteDialog.value } : l,
+          String(l.id) === idStr ? { ...l, Observaciones: joined, Obsevaciones: joined } : l,
         ),
       )
       setSelectedLead((prev) =>
-        prev && String(prev.id) === idStr ? { ...prev, Observaciones: noteDialog.value, Obsevaciones: noteDialog.value } : prev,
+        prev && String(prev.id) === idStr ? { ...prev, Observaciones: joined, Obsevaciones: joined } : prev,
       )
       setNoteDialog((prev) => ({ ...prev, open: false }))
       toast({ title: "Anotación guardada", description: "Se guardó en Observaciones", duration: 2000 })
@@ -2532,12 +2585,28 @@ export default function LeadsPage() {
                                         </div>
 
                                         {lead.origen && null}
-                                        <div className="flex-1 min-w-0 mt-2" onClick={(e) => { console.log("[router] note_click", { id: lead.id }); e.stopPropagation(); openNoteDialog(lead) }}>
-                                          <div className="text-xs text-muted-foreground font-medium mb-1.5">Anotaciones</div>
-                                        <div className={`text-sm ${(lead.Observaciones || lead.Obsevaciones) ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
-                                            {lead.Observaciones || lead.Obsevaciones || "Sin anotaciones"}
+                                        {(lead.Observaciones || lead.Obsevaciones) ? (
+                                          <div className="flex-1 min-w-0 mt-2 bg-muted/50 dark:bg-input/30 border rounded-md p-2 transition hover:bg-muted/70" onClick={(e) => { console.log("[router] note_click", { id: lead.id }); e.stopPropagation(); openNoteDialog(lead) }}>
+                                            <div className="text-xs text-muted-foreground font-medium mb-1.5">Anotaciones</div>
+                                            <div className="text-sm not-italic text-foreground whitespace-pre-wrap">
+                                              {lead.Observaciones || lead.Obsevaciones}
+                                            </div>
+                                            <div className="mt-1">
+                                              <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-8 mt-1.5"
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  openNoteDialog(lead)
+                                                }}
+                                              >
+                                                Anotar
+                                              </Button>
+                                            </div>
                                           </div>
-                                          <div className="mt-1">
+                                        ) : (
+                                          <div className="mt-2">
                                             <Button
                                               variant="outline"
                                               size="sm"
@@ -2550,7 +2619,7 @@ export default function LeadsPage() {
                                               Anotar
                                             </Button>
                                           </div>
-                                        </div>
+                                        )}
                                       </div>
                                     </div>
 
@@ -2976,12 +3045,28 @@ export default function LeadsPage() {
                                           <span>{formatDate(lead.created_at)}</span>
                                         </div>
                                       </div>
-                                      <div className="flex-1 min-w-0 mt-2" onClick={(e) => { e.stopPropagation(); openNoteDialog(lead) }}>
-                                        <div className="text-xs text-muted-foreground font-medium mb-1.5">Anotaciones</div>
-                                        <div className={`text-sm ${(lead.Observaciones || lead.Obsevaciones) ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
-                                          {lead.Observaciones || lead.Obsevaciones || "Sin anotaciones"}
+                                      {(lead.Observaciones || lead.Obsevaciones) ? (
+                                        <div className="flex-1 min-w-0 mt-2 bg-muted/50 dark:bg-input/30 border rounded-md p-2 transition hover:bg-muted/70" onClick={(e) => { e.stopPropagation(); openNoteDialog(lead) }}>
+                                          <div className="text-xs text-muted-foreground font-medium mb-1.5">Anotaciones</div>
+                                          <div className="text-sm not-italic text-foreground whitespace-pre-wrap">
+                                            {lead.Observaciones || lead.Obsevaciones}
+                                          </div>
+                                          <div className="mt-1">
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              className="h-8 mt-1.5"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                openNoteDialog(lead)
+                                              }}
+                                            >
+                                              Anotar
+                                            </Button>
+                                          </div>
                                         </div>
-                                        <div className="mt-1">
+                                      ) : (
+                                        <div className="mt-2">
                                           <Button
                                             variant="outline"
                                             size="sm"
@@ -2994,7 +3079,7 @@ export default function LeadsPage() {
                                             Anotar
                                           </Button>
                                         </div>
-                                      </div>
+                                      )}
                                     </div>
                                   </div>
 
@@ -3591,11 +3676,37 @@ export default function LeadsPage() {
                               <div style={{ flex: "2" }}></div>
                             </div>
                             <div style={{ display: "flex", gap: "1.5rem" }}>
-                              <div style={{ flex: "1", minWidth: 0 }}>
-                                <div className="text-xs text-muted-foreground font-medium mb-1.5">
-                                  Anotaciones
+                              {isEditingPersonalInfo || ((selectedLead as any).Observaciones || (selectedLead as any).Obsevaciones) ? (
+                                <div style={{ flex: "1", minWidth: 0 }} className="bg-muted/50 dark:bg-input/30 border rounded-md p-3">
+                                  <div className="text-xs text-muted-foreground font-medium mb-1.5">
+                                    Anotaciones
+                                  </div>
+                                  <div className="mt-0.5">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8 mt-1.5"
+                                      onClick={() => openNoteDialog(selectedLead)}
+                                    >
+                                      Anotar
+                                    </Button>
+                                  </div>
+                                  {isEditingPersonalInfo ? (
+                                    <Textarea
+                                      rows={3}
+                                      value={editFormData.Observaciones || ""}
+                                      onChange={(e) => setEditFormData({ ...editFormData, Observaciones: e.target.value })}
+                                      placeholder="Notas sobre el candidato..."
+                                      className="text-sm"
+                                    />
+                                  ) : (
+                                    <div className="text-sm not-italic text-foreground whitespace-pre-wrap">
+                                      {(selectedLead as any).Observaciones || (selectedLead as any).Obsevaciones}
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="mt-0.5">
+                              ) : (
+                                <div style={{ flex: "1", minWidth: 0 }}>
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -3605,20 +3716,7 @@ export default function LeadsPage() {
                                     Anotar
                                   </Button>
                                 </div>
-                                {isEditingPersonalInfo ? (
-                                  <Textarea
-                                    rows={3}
-                                    value={editFormData.Observaciones || ""}
-                                    onChange={(e) => setEditFormData({ ...editFormData, Observaciones: e.target.value })}
-                                    placeholder="Notas sobre el candidato..."
-                                    className="text-sm"
-                                  />
-                                ) : (
-                                  <div className={`text-sm ${((selectedLead as any).Observaciones || (selectedLead as any).Obsevaciones) ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
-                                    {(selectedLead as any).Observaciones || (selectedLead as any).Obsevaciones || "Sin anotaciones"}
-                                  </div>
-                                )}
-                              </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -5652,20 +5750,39 @@ export default function LeadsPage() {
               placeholder="Escribe las anotaciones..."
             />
             <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1 bg-transparent"
-                onClick={() => {
-                  console.log("[observ] dialog_cancel", noteDialog.leadId)
-                  setNoteDialog((prev) => ({ ...prev, open: false }))
-                }}
-              >
-                Cancelar
-              </Button>
+              <DialogClose asChild>
+                <Button variant="outline" className="flex-1 bg-transparent">
+                  Cancelar
+                </Button>
+              </DialogClose>
               <Button className="flex-1" onClick={saveNoteDialog}>
                 Guardar
               </Button>
             </div>
+            {splitNotes(noteDialog.existing).length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground font-medium">Anotaciones existentes</div>
+                <div className="space-y-2">
+                  {splitNotes(noteDialog.existing).map((n, idx) => (
+                    <div key={idx} className="border rounded-md p-2 bg-muted/50 dark:bg-input/30">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-muted-foreground">{n.header}</div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2"
+                          onClick={() => deleteNoteEntry(idx)}
+                        >
+                          <Trash className="h-3.5 w-3.5 mr-1" />
+                          Eliminar
+                        </Button>
+                      </div>
+                      {n.body && <div className="text-sm whitespace-pre-wrap mt-1">{n.body}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

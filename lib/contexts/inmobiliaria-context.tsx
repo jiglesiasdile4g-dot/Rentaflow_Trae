@@ -59,12 +59,20 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
         if (authError) throw authError
         user = data.user
       } catch (authError: any) {
-        console.error("[v0] Auth error:", authError)
-        if (authError.message?.includes("Failed to fetch") || authError.name === "TypeError") {
+        const isConnError = authError.message?.includes("Failed to fetch") || authError.name === "TypeError"
+        const isMissingSession = authError.name === "AuthSessionMissingError" || /Auth session missing/i.test(String(authError.message))
+        if (isConnError) {
           setError("No se puede conectar con Supabase. Verifica la configuración de red.")
           setLoading(false)
           return
         }
+        if (isMissingSession) {
+          setInmobiliariaId(null)
+          setInmobiliariaNombre(null)
+          setLoading(false)
+          return
+        }
+        console.error("[v0] Auth error:", authError)
         throw authError
       }
 
