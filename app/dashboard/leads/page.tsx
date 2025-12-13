@@ -16,14 +16,14 @@ import { useState, useEffect, useRef } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Tag, Trash } from 'lucide-react'
+import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Eye, Download, UploadCloud, IdCard, Image as ImageIcon, Tag, Trash } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
 import React from "react" // Imported React
 import { LeadApproveWrapper } from "@/components/lead-approve-wrapper"
@@ -1127,6 +1127,33 @@ export default function LeadsPage() {
     return comm.Tipo === "enviado" || (comm.source === "email" && comm.From?.includes(inmobiliariaNombre || ""))
   }
 
+  const cleanHtmlForPreview = (html?: string) => {
+    if (!html) return ""
+    let s = String(html)
+    s = s.replace(/<script[\s\S]*?<\/script>/gi, "")
+    s = s.replace(/<style[\s\S]*?<\/style>/gi, "")
+    s = s.replace(/<!--[\s\S]*?-->/g, "")
+    s = s.replace(/<head[\s\S]*?<\/head>/gi, "")
+    s = s.replace(/<br\s*\/?>/gi, "\n")
+    s = s.replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+    s = s.replace(/<(p|div|li|h[1-6])[^>]*>/gi, "")
+    s = s.replace(/<[^>]*>/g, "")
+    s = s.replace(/\r/g, "")
+    s = s.replace(/\n{2,}/g, "\n")
+    s = s.replace(/&nbsp;/g, " ")
+    s = s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    s = s.replace(/[ \t]{2,}/g, " ")
+    return s.trim()
+  }
+
+  const getWhatsAppTitleAndBody = (html?: string) => {
+    const text = cleanHtmlForPreview(html)
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean)
+    const title = lines[0] || "Mensaje de WhatsApp"
+    const body = lines.slice(1).join(" ")
+    return { title, body }
+  }
+
   const reactivateAdvertisement = async () => {
     if (!advertisementToReactivate) return
 
@@ -1166,6 +1193,7 @@ export default function LeadsPage() {
         (lead) =>
           toLowerStr(lead.Nombre).includes(term) ||
           toLowerStr(lead.Correo).includes(term) ||
+          toLowerStr(lead.Telefono).includes(term) ||
           toLowerStr(lead.Inmueble).includes(term) ||
           toLowerStr((lead as any).id).includes(term) ||
           toLowerStr((lead as any).idc).includes(term) ||
@@ -2194,7 +2222,7 @@ export default function LeadsPage() {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Buscar por nombre, email, inmueble o ID..."
+                    placeholder="Buscar por nombre, email, teléfono, inmueble o ID..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-10 pr-10"
@@ -4712,37 +4740,57 @@ export default function LeadsPage() {
                               const isSent = isCommunicationSent(comm)
                               const isWhatsApp = comm.source === "whatsapp"
                               return (
-                                <div
+                                <Card
                                   key={comm.id}
                                   onClick={() => { if (planInactive) return; openCommunicationDetail(comm) }}
-                                  className={`p-3 rounded-md border transition-all ${planInactive ? "pointer-events-none opacity-50 cursor-not-allowed" : "cursor-pointer"} ${isWhatsApp ? "bg-green-50/10 border-emerald-200 hover:bg-green-50/30 hover:border-emerald-300 dark:bg-emerald-900/10 dark:border-emerald-900/20 dark:hover:bg-emerald-900/20" : isSent ? "bg-blue-50/10 border-blue-200 hover:bg-blue-50/30 hover:border-blue-300 dark:bg-primary/10 dark:border-primary/20 dark:hover:bg-primary/15" : "bg-orange-50/10 border-amber-200 hover:bg-orange-50/30 hover:border-amber-300 dark:bg-amber-900/10 dark:border-amber-900/20 dark:hover:bg-amber-900/20"}`}
+                                  className={`p-0 transition-all ${planInactive ? "pointer-events-none opacity-50 cursor-not-allowed" : "cursor-pointer"} ${isWhatsApp ? "border-l-4 border-emerald-500" : isSent ? "border-l-4 border-blue-500" : "border-l-4 border-amber-500"} hover:bg-muted/30`}
                                 >
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <span className="text-sm">
-                                      {isWhatsApp ? (
-                                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                                          <path d="M13.333 2.66667C12.6663 2 11.9997 1.99999 11.333 1.99999H4.66634C3.33301 1.99999 2.66634 2.66666 2.66634 3.99999V11.3333C2.66634 12.6667 3.33301 13.3333 4.66634 13.3333H11.333C12.6663 13.3333 13.333 12.6667 13.333 11.3333V3.99999C13.333 3.33333 13.333 3.33333 13.333 2.66667Z" fill="#25D366"/>
-                                          <path d="M10.8867 9.67333C10.62 9.94 9.95333 10.2067 9.62 10.2067C9.28667 10.2067 8.68667 10.0733 7.75333 9.28667C6.88667 8.56667 6.35333 7.78 6.22 7.44667C6.15333 7.31333 6.02 7.11333 6.02 6.91333C6.02 6.78 6.08667 6.64667 6.15333 6.51333C6.35333 6.18 6.68667 5.91333 7.08667 5.78C7.28667 5.71333 7.42 5.78 7.48667 5.91333C7.62 6.18 7.82 6.58 7.88667 6.71333C7.95333 6.84667 8.02 6.91333 8.15333 6.91333C8.28667 6.91333 8.35333 6.91333 8.48667 6.78C8.75333 6.51333 9.08667 6.11333 9.35333 5.78C9.55333 5.51333 9.75333 5.58 9.88667 5.64667C10.02 5.71333 10.62 6.04667 10.62 6.04667C10.7533 6.11333 10.82 6.18 10.8867 6.31333C10.9533 6.38 10.9533 6.91333 10.62 7.58C10.3533 8.18 10.1533 8.31333 10.02 8.44667C9.88667 8.58 9.75333 8.64667 9.62 8.78C9.48667 8.91333 9.55333 9.01333 9.62 9.14667C9.68667 9.28 9.95333 9.67333 10.0867 9.80667C10.22 9.94 10.3533 10.0733 10.4867 10.14C10.62 10.2067 10.7533 10.2067 10.82 10.14C10.8867 10.0733 10.9533 9.94 11.02 9.80667C11.1533 9.54 11.3533 8.94 11.42 8.78C11.4867 8.62 11.62 8.58 11.7533 8.51333C11.8867 8.44667 12.3533 8.24667 12.5533 8.11333C12.82 7.91333 12.9533 7.84667 13.02 7.78C13.0867 7.71333 13.1533 7.58 13.02 7.38C12.8867 7.18 12.22 6.04667 12.02 5.71333C11.8867 5.51333 11.7533 5.51333 11.62 5.51333C11.4867 5.51333 11.3533 5.51333 11.22 5.51333C11.0867 5.51333 10.8867 5.58 10.7533 5.78C10.62 5.98 10.1533 6.58 10.02 6.78C9.88667 6.98 9.75333 7.04667 9.55333 6.91333C9.35333 6.78 8.75333 6.51333 8.08667 5.91333C7.55333 5.44667 7.15333 4.91333 7.02 4.71333C6.88667 4.51333 6.75333 4.58 6.62 4.58C6.48667 4.58 6.28667 4.58 6.08667 4.58C5.88667 4.58 5.62 4.64667 5.42 4.91333C5.22 5.18 4.55333 5.91333 4.55333 7.04667C4.55333 8.18 5.35333 9.24667 5.48667 9.44667C5.62 9.64667 6.88667 11.6733 9.02 12.54C9.55333 12.74 9.95333 12.74 10.2867 12.74C10.62 12.74 11.0867 12.6067 11.42 12.34C11.82 12.0067 12.02 11.54 12.0867 11.14C12.1533 10.8067 12.02 10.54 11.8867 10.34C11.7533 10.14 11.5533 9.94 11.42 9.80667C11.2867 9.67333 11.1533 9.80667 11.02 9.94C10.8867 10.0733 10.6867 10.34 10.5533 10.4733C10.42 10.6067 10.2867 10.6733 10.1533 10.54C10.02 10.4067 9.55333 9.94 9.42 9.80667C9.28667 9.67333 9.42 9.54 9.55333 9.40667C9.68667 9.27333 9.82 9.14 9.95333 9.00667C10.0867 8.87333 10.22 8.74 10.3533 8.87333C10.4867 9.00667 10.82 9.34 10.9533 9.47333C11.0867 9.60667 11.22 9.67333 11.3533 9.80667C11.4867 9.94 11.4867 10.0733 11.42 10.14C11.3533 10.2067 11.1533 10.4067 10.8867 10.54Z" fill="white"/>
-                                        </svg>
-                                      ) : isSent ? "📤" : "📥"}
-                                    </span>
-                                    <span className={`text-[0.65rem] font-semibold uppercase tracking-wide ${isWhatsApp ? "text-emerald-950! dark:text-emerald-300" : isSent ? "text-blue-950! dark:text-primary" : "text-amber-950! dark:text-amber-300"}`}>
-                                      {isWhatsApp ? "WhatsApp" : isSent ? "Enviado" : "Recibido"}
-                                    </span>
-                                  </div>
-                                  <div className="text-sm font-semibold mb-1">
-                                    {isWhatsApp ? "Mensaje de WhatsApp" : comm.From || "Sin remitente"}
-                                  </div>
-                                  <div className="text-xs text-foreground mb-2">
-                                    {isWhatsApp
-                                      ? (comm.Mensaje?.replace(/<[^>]*>/g, "") || "Sin mensaje").substring(0, 50) +
-                                        (comm.Mensaje && comm.Mensaje.replace(/<[^>]*>/g, "").length > 50 ? "..." : "")
-                                      : comm.Subject || "Sin asunto"}
-                                  </div>
-                                  <div className="text-[0.7rem] text-muted-foreground">
-                                    {new Date(comm.created_at).toLocaleDateString("es-ES")}
-                                  </div>
-                                </div>
+                                  <CardHeader className="pt-2 pb-2">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm">
+                                          {isWhatsApp ? (
+                                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                              <path d="M13.333 2.66667C12.6663 2 11.9997 1.99999 11.333 1.99999H4.66634C3.33301 1.99999 2.66634 2.66666 2.66634 3.99999V11.3333C2.66634 12.6667 3.33301 13.3333 4.66634 13.3333H11.333C12.6663 13.3333 13.333 12.6667 13.333 11.3333V3.99999C13.333 3.33333 13.333 3.33333 13.333 2.66667Z" fill="#25D366"/>
+                                              <path d="M10.8867 9.67333C10.62 9.94 9.95333 10.2067 9.62 10.2067C9.28667 10.2067 8.68667 10.0733 7.75333 9.28667C6.88667 8.56667 6.35333 7.78 6.22 7.44667C6.15333 7.31333 6.02 7.11333 6.02 6.91333C6.02 6.78 6.08667 6.64667 6.15333 6.51333C6.35333 6.18 6.68667 5.91333 7.08667 5.78C7.28667 5.71333 7.42 5.78 7.48667 5.91333C7.62 6.18 7.82 6.58 7.88667 6.71333C7.95333 6.84667 8.02 6.91333 8.15333 6.91333C8.28667 6.91333 8.35333 6.91333 8.48667 6.78C8.75333 6.51333 9.08667 6.11333 9.35333 5.78C9.55333 5.51333 9.75333 5.58 9.88667 5.64667C10.02 5.71333 10.62 6.04667 10.62 6.04667C10.7533 6.11333 10.82 6.18 10.8867 6.31333C10.9533 6.38 10.9533 6.91333 10.62 7.58C10.3533 8.18 10.1533 8.31333 10.02 8.44667C9.88667 8.58 9.75333 8.64667 9.62 8.78C9.48667 8.91333 9.55333 9.01333 9.62 9.14667C9.68667 9.28 9.95333 9.67333 10.0867 9.80667C10.22 9.94 10.3533 10.0733 10.4867 10.14C10.62 10.2067 10.7533 10.2067 10.82 10.14C10.8867 10.0733 10.9533 9.94 11.02 9.80667C11.1533 9.54 11.3533 8.94 11.42 8.78C11.4867 8.62 11.62 8.58 11.7533 8.51333C11.8867 8.44667 12.3533 8.24667 12.5533 8.11333C12.82 7.91333 12.9533 7.84667 13.02 7.78C13.0867 7.71333 13.1533 7.58 13.02 7.38C12.8867 7.18 12.22 6.04667 12.02 5.71333C11.8867 5.51333 11.7533 5.51333 11.62 5.51333C11.4867 5.51333 11.3533 5.51333 11.22 5.51333C11.0867 5.51333 10.8867 5.58 10.7533 5.78C10.62 5.98 10.1533 6.58 10.02 6.78C9.88667 6.98 9.75333 7.04667 9.55333 6.91333C9.35333 6.78 8.75333 6.51333 8.08667 5.91333C7.55333 5.44667 7.15333 4.91333 7.02 4.71333C6.88667 4.51333 6.75333 4.58 6.62 4.58C6.48667 4.58 6.28667 4.58 6.08667 4.58C5.88667 4.58 5.62 4.64667 5.42 4.91333C5.22 5.18 4.55333 5.91333 4.55333 7.04667C4.55333 8.18 5.35333 9.24667 5.48667 9.44667C5.62 9.64667 6.88667 11.6733 9.02 12.54C9.55333 12.74 9.95333 12.74 10.2867 12.74C10.62 12.74 11.0867 12.6067 11.42 12.34C11.82 12.0067 12.02 11.54 12.0867 11.14C12.1533 10.8067 12.02 10.54 11.8867 10.34C11.7533 10.14 11.5533 9.94 11.42 9.80667C11.2867 9.67333 11.1533 9.80667 11.02 9.94C10.8867 10.0733 10.6867 10.34 10.5533 10.4733C10.42 10.6067 10.2867 10.6733 10.1533 10.54C10.02 10.4067 9.55333 9.94 9.42 9.80667C9.28667 9.67333 9.42 9.54 9.55333 9.40667C9.68667 9.27333 9.82 9.14 9.95333 9.00667C10.0867 8.87333 10.22 8.74 10.3533 8.87333C10.4867 9.00667 10.82 9.34 10.9533 9.47333C11.0867 9.60667 11.22 9.67333 11.3533 9.80667C11.4867 9.94 11.4867 10.0733 11.42 10.14C11.3533 10.2067 11.1533 10.4067 10.8867 10.54Z" fill="white"/>
+                                            </svg>
+                                          ) : isSent ? "📤" : "📥"}
+                                        </span>
+                                        <Badge
+                                          variant={isWhatsApp ? "feature" : isSent ? "docs" : "refactor"}
+                                          className="text-[11px] px-2 py-0.5 rounded-full"
+                                        >
+                                          {isWhatsApp ? "WhatsApp" : isSent ? "Enviado" : "Recibido"}
+                                        </Badge>
+                                      </div>
+                                      <span className="text-[0.7rem] text-muted-foreground">
+                                        {new Date(comm.created_at).toLocaleDateString("es-ES")}
+                                      </span>
+                                    </div>
+                                    {(() => {
+                                      const title = isWhatsApp
+                                        ? getWhatsAppTitleAndBody(comm.Mensaje || "").title
+                                        : (comm.Subject || "Sin asunto")
+                                      return <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+                                    })()}
+                                  </CardHeader>
+                                  <CardContent className="pt-0 pb-4">
+                                    {(() => {
+                                      const body = isWhatsApp
+                                        ? getWhatsAppTitleAndBody(comm.Mensaje || "").body || "Sin mensaje"
+                                        : (comm.Mensaje || "")
+                                      return <div className="text-xs text-foreground truncate">{body}</div>
+                                    })()}
+                                  </CardContent>
+                                  <CardFooter className="pt-0">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                      {isWhatsApp ? <Phone className="h-3 w-3" /> : <Mail className="h-3 w-3" />}
+                                      <span className="truncate max-w-[200px]">
+                                        {isWhatsApp ? comm.to || comm.From || "" : comm.to || ""}
+                                      </span>
+                                    </div>
+                                  </CardFooter>
+                                </Card>
                               )
                             })}
                           </div>
@@ -5409,121 +5457,167 @@ export default function LeadsPage() {
       </AlertDialog>
 
       <Dialog open={isDocsDialogOpen} onOpenChange={setIsDocsDialogOpen}>
-        <DialogContent className="z-[350]">
+        <DialogContent className="sm:max-w-2xl z-[350]">
           <DialogHeader>
-            <DialogTitle>Gestionar documentos</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Gestionar documentos
+            </DialogTitle>
             <DialogDescription>
               Sube imágenes o PDF para este lead. Se guardarán en la carpeta del lead (ID {selectedLead?.id ?? "sin id"}).
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div style={{ display: "flex", gap: "1rem" }}>
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDropActiveDni(true) }}
-                onDragLeave={() => setDropActiveDni(false)}
-                onDrop={(e) => {
-                  e.preventDefault(); setDropActiveDni(false);
-                  const files = Array.from(e.dataTransfer.files || [])
-                  files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "dni" : `dni-${idx+1}`))
-                }}
-                onClick={() => { if (!docsUploadLoading) { dniInputRef.current?.click() } }}
-                className={`flex-[2] border-2 border-dashed rounded-lg p-4 transition cursor-pointer ${dropActiveDni ? "border-primary bg-primary/10 dark:bg-primary/20" : "border-input bg-muted/50 dark:bg-input/30"}`}
-              >
-                <input
-                  ref={dniInputRef}
-                  type="file"
-                  accept="image/*,application/pdf"
-                  multiple
-                  style={{ display: "none" }}
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files || [])
-                    files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "dni" : `dni-${idx+1}`))
-                    e.currentTarget.value = ""
-                  }}
-                />
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-semibold">DNI/NIE</span>
-                  <span className="text-xs px-1.5 py-0.5 rounded border font-semibold tracking-wide bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800">Haz clic o arrastra aquí</span>
-                </div>
-                <div className="text-sm text-muted-foreground">Admite imágenes y PDF</div>
-              </div>
+          <div className="space-y-6">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <IdCard className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-semibold">DNI/NIE</span>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">Haz clic o arrastra aquí</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setDropActiveDni(true) }}
+                    onDragLeave={() => setDropActiveDni(false)}
+                    onDrop={(e) => {
+                      e.preventDefault(); setDropActiveDni(false);
+                      const files = Array.from(e.dataTransfer.files || [])
+                      files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "dni" : `dni-${idx+1}`))
+                    }}
+                    onClick={() => { if (!docsUploadLoading) { dniInputRef.current?.click() } }}
+                    className={`relative rounded-md border-2 border-dashed p-6 transition-colors cursor-pointer ${dropActiveDni ? "border-primary bg-primary/10 dark:bg-primary/20" : "border-input bg-muted/50 dark:bg-input/30"}`}
+                  >
+                    <input
+                      ref={dniInputRef}
+                      type="file"
+                      accept="image/*,application/pdf"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || [])
+                        files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "dni" : `dni-${idx+1}`))
+                        e.currentTarget.value = ""
+                      }}
+                    />
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <UploadCloud className="h-4 w-4" />
+                      <span className="text-sm">Admite imágenes y PDF</span>
+                    </div>
+                    {docsUploadLoading && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-background/60">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
 
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDropActiveIncome(true) }}
-                onDragLeave={() => setDropActiveIncome(false)}
-                onDrop={(e) => {
-                  e.preventDefault(); setDropActiveIncome(false);
-                  const files = Array.from(e.dataTransfer.files || [])
-                  files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "ingresos" : `ingresos-${idx+1}`))
-                }}
-                onClick={() => { if (!docsUploadLoading) { incomeInputRef.current?.click() } }}
-                className={`flex-[2] border-2 border-dashed rounded-lg p-4 transition cursor-pointer ${dropActiveIncome ? "border-emerald-500 bg-emerald-500/10 dark:bg-emerald-900/40 dark:border-emerald-900/40" : "border-input bg-muted/50 dark:bg-input/30"}`}
-              >
-                <input
-                  ref={incomeInputRef}
-                  type="file"
-                  accept="image/*,application/pdf"
-                  multiple
-                  style={{ display: "none" }}
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files || [])
-                    files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "ingresos" : `ingresos-${idx+1}`))
-                    e.currentTarget.value = ""
-                  }}
-                />
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-semibold">Justificante de Ingresos</span>
-                  <span className="text-xs px-1.5 py-0.5 rounded border font-semibold tracking-wide bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800">Haz clic o arrastra aquí</span>
-                </div>
-                <div className="text-sm text-muted-foreground">Admite imágenes y PDF</div>
-              </div>
+              <Card>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Euro className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-semibold">Justificante de ingresos</span>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">Haz clic o arrastra aquí</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setDropActiveIncome(true) }}
+                    onDragLeave={() => setDropActiveIncome(false)}
+                    onDrop={(e) => {
+                      e.preventDefault(); setDropActiveIncome(false);
+                      const files = Array.from(e.dataTransfer.files || [])
+                      files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "ingresos" : `ingresos-${idx+1}`))
+                    }}
+                    onClick={() => { if (!docsUploadLoading) { incomeInputRef.current?.click() } }}
+                    className={`relative rounded-md border-2 border-dashed p-6 transition-colors cursor-pointer ${dropActiveIncome ? "border-emerald-500 bg-emerald-500/10 dark:bg-emerald-900/40 dark:border-emerald-900/40" : "border-input bg-muted/50 dark:bg-input/30"}`}
+                  >
+                    <input
+                      ref={incomeInputRef}
+                      type="file"
+                      accept="image/*,application/pdf"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || [])
+                        files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "ingresos" : `ingresos-${idx+1}`))
+                        e.currentTarget.value = ""
+                      }}
+                    />
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <UploadCloud className="h-4 w-4" />
+                      <span className="text-sm">Admite imágenes y PDF</span>
+                    </div>
+                    {docsUploadLoading && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-background/60">
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
 
-            
-
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                <span style={{ fontWeight: 600 }}>Archivos del lead</span>
-                {docsLoading && <span className="inline-flex items-center text-xs text-muted-foreground"><Loader2 className="mr-1 h-3 w-3 animate-spin" />Cargando...</span>}
-              </div>
-              {docsList.length === 0 && !docsLoading ? (
-                <div style={{ fontSize: "0.875rem", color: "#6b7280" }}>Sin archivos</div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", maxHeight: 240, overflowY: "auto" }}>
-                  {docsList.map((f) => {
-                    const isPdf = /pdf/i.test(String(f.contentType)) || /\.pdf$/i.test(String(f.name))
-                    const fileUrl = `/api/nextcloud/file?path=${encodeURIComponent(f.path)}`
-                    return (
-                      <div key={f.path} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #e5e7eb", borderRadius: 6, padding: "0.5rem" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                          <FileText className="h-4 w-4" />
-                          <div>
-                            <div style={{ fontSize: "0.875rem", fontWeight: 600 }}>{f.name}</div>
-                            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>{new Date(f.lastModified).toLocaleString("es-ES")}</div>
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">Archivos del lead</span>
+                  {docsLoading && <span className="inline-flex items-center text-xs text-muted-foreground"><Loader2 className="mr-1 h-3 w-3 animate-spin" />Cargando...</span>}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {docsList.length === 0 && !docsLoading ? (
+                  <div className="text-sm text-muted-foreground">Sin archivos</div>
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {docsList.map((f) => {
+                      const isPdf = /pdf/i.test(String(f.contentType)) || /\.pdf$/i.test(String(f.name))
+                      const fileUrl = `/api/nextcloud/file?path=${encodeURIComponent(f.path)}`
+                      return (
+                        <div key={f.path} className="group flex items-center justify-between border rounded-md p-2">
+                          <div className="flex items-center gap-2">
+                            {isPdf ? <FileText className="h-4 w-4" /> : <ImageIcon className="h-4 w-4" />}
+                            <div>
+                              <div className="text-sm font-semibold">{f.name}</div>
+                              <div className="text-xs text-muted-foreground">{new Date(f.lastModified).toLocaleString("es-ES")}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">{isPdf ? "PDF" : "Imagen"}</Badge>
+                            <Button variant="outline" size="sm" className="h-8" onClick={() => openAttachmentPreview(fileUrl, f.name)}>
+                              <Eye className="mr-1 h-3 w-3" />
+                              Visualizar
+                            </Button>
+                            <a href={fileUrl} target="_blank" rel="noreferrer" download>
+                              <Button variant="outline" size="sm" className="h-8">
+                                <Download className="mr-1 h-3 w-3" />
+                                Descargar
+                              </Button>
+                            </a>
+                            <Button variant="destructive" size="sm" className="h-8" onClick={() => deleteLeadDoc(f.path)} disabled={docsDeletingPath === f.path}>
+                              {docsDeletingPath === f.path ? <Loader2 className="h-4 w-4 animate-spin" /> : "Eliminar"}
+                            </Button>
                           </div>
                         </div>
-                        <div style={{ display: "flex", gap: "0.5rem" }}>
-                          <Button variant="outline" className="h-8" onClick={() => openAttachmentPreview(fileUrl, f.name)}>
-                            Visualizar
-                          </Button>
-                          <a href={fileUrl} target="_blank" rel="noreferrer" download>
-                            <Button variant="outline" className="h-8">Descargar</Button>
-                          </a>
-                          <Button variant="destructive" className="h-8" onClick={() => deleteLeadDoc(f.path)} disabled={docsDeletingPath === f.path}>
-                            {docsDeletingPath === f.path ? <Loader2 className="h-4 w-4 animate-spin" /> : "Eliminar"}
-                          </Button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsDocsDialogOpen(false)} disabled={docsUploadLoading}>
-                Cerrar
-              </Button>
+              <DialogClose asChild>
+                <Button variant="outline" disabled={docsUploadLoading}>
+                  Cerrar
+                </Button>
+              </DialogClose>
             </div>
           </div>
         </DialogContent>
