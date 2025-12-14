@@ -4700,30 +4700,35 @@ export default function LeadsPage() {
                       }}
                     >
                       {/* Documentos */}
-                      <div className="border border-border rounded-lg p-5">
-                        <div className="flex items-center justify-between mb-4">
-                          <h2 className="text-sm font-semibold m-0">Documentos</h2>
-                          <button className="px-3 py-1 text-xs bg-muted rounded hover:bg-muted/80" onClick={() => setIsDocsDialogOpen(true)}>
-                            Gestionar
-                          </button>
-                        </div>
-
-                        <div className="flex flex-col gap-3">
+                      <Card>
+                        <CardHeader className="pb-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-sm">DNI/NIE</span>
-                            <span className={`px-2 py-0.5 text-xs rounded border font-semibold tracking-wide ${documentStatus.dni === "verified" ? "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800" : "bg-amber-100 text-black! border-amber-300 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800"}`}>
-                              {documentStatus.dni === "verified" ? "Completado" : "Pendiente"}
-                            </span>
+                            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-muted-foreground" />
+                              Documentos
+                            </CardTitle>
+                            <Button variant="outline" size="sm" className="h-8" onClick={() => setIsDocsDialogOpen(true)}>
+                              Gestionar
+                            </Button>
                           </div>
-
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm">Just. Ingresos</span>
-                            <span className={`px-2 py-0.5 text-xs rounded border font-semibold tracking-wide ${documentStatus.income === "verified" ? "bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800" : "bg-amber-100 text-black! border-amber-300 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-800"}`}>
-                              {documentStatus.income === "verified" ? "Completado" : "Pendiente"}
-                            </span>
+                        </CardHeader>
+                        <CardContent className="pt-0">
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm">DNI/NIE</span>
+                              <Badge variant={documentStatus.dni === "verified" ? "feature" : "refactor"} className="rounded-full">
+                                {documentStatus.dni === "verified" ? "Completado" : "Pendiente"}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm">Just. Ingresos</span>
+                              <Badge variant={documentStatus.income === "verified" ? "feature" : "refactor"} className="rounded-full">
+                                {documentStatus.income === "verified" ? "Completado" : "Pendiente"}
+                              </Badge>
+                            </div>
                           </div>
-                        </div>
-                      </div>
+                        </CardContent>
+                      </Card>
 
                       {/* Comunicaciones */}
                       <div className="border border-border rounded-lg p-5 flex-1 min-h-[300px]">
@@ -4748,7 +4753,7 @@ export default function LeadsPage() {
                                   <CardHeader className="pt-2 pb-2">
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-2">
-                                        <span className="text-sm">
+                                        <span className="text-base leading-none scale-125">
                                           {isWhatsApp ? (
                                             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                                               <path d="M13.333 2.66667C12.6663 2 11.9997 1.99999 11.333 1.99999H4.66634C3.33301 1.99999 2.66634 2.66666 2.66634 3.99999V11.3333C2.66634 12.6667 3.33301 13.3333 4.66634 13.3333H11.333C12.6663 13.3333 13.333 12.6667 13.333 11.3333V3.99999C13.333 3.33333 13.333 3.33333 13.333 2.66667Z" fill="#25D366"/>
@@ -5741,11 +5746,11 @@ export default function LeadsPage() {
                 <div
                   className={`p-4 rounded-lg border ${
                     isCommunicationSent(selectedCommunication)
-                      ? "bg-blue-50 border-blue-200"
-                      : "bg-green-50 border-green-200"
+                      ? "bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800"
+                      : "bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800"
                   }`}
                 >
-                  <div className="space-y-2 text-sm">
+                  <div className="space-y-2 text-sm text-foreground">
                     {selectedCommunication.source === "whatsapp" ? (
                       <>
                         <div className="flex gap-2">
@@ -5799,7 +5804,7 @@ export default function LeadsPage() {
                 </div>
 
                 {/* Message Body */}
-                <div className="border rounded-lg p-4 bg-white">
+                <div className="border rounded-lg p-4 bg-white dark:bg-card dark:text-foreground">
                   <h3 className="text-sm font-semibold mb-3">Mensaje:</h3>
                   {selectedCommunication.source === "whatsapp" ? (
                     <div

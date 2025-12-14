@@ -1,3 +1,19 @@
+## [0.7.6](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.5...v0.7.6) (2025-12-14)
+
+
+### Features
+
+* **configuracion:** rediseño completo de gestión de usuarios (tabla compacta, acciones en menú, modal de creación)
+* **admin:** corrección de listado de usuarios (bypass RLS con service role) y optimización de espacio
+
+
+### Bug Fixes
+
+* **configuracion:** corrección de usuarios faltantes en inmobiliaria ID 1
+* **build:** limpieza de caché y reconstrucción para eliminar errores de chunks
+
+
+
 ## [0.7.5](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.4...v0.7.5) (2025-12-13)
 
 

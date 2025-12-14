@@ -41,8 +41,30 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(new URL("/login", request.url));
       }
     } else if (user) {
+      let perfil: any = null
+      let isInactive = false
+      try {
+        const { data } = await supabase
+          .from("Perfiles")
+          .select("usuario, activo")
+          .eq("usuario", user.email as any)
+          .limit(1)
+          .maybeSingle()
+        perfil = data
+        isInactive = perfil && typeof perfil?.activo === "boolean" ? (perfil?.activo === false) : false
+      } catch {}
+      if (request.nextUrl.pathname.startsWith("/dashboard")) {
+        if (isInactive) {
+          const response = NextResponse.redirect(new URL("/login", request.url))
+          response.cookies.delete('sb-access-token')
+          response.cookies.delete('sb-refresh-token')
+          return response
+        }
+      }
       if (request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/register") {
-        return NextResponse.redirect(new URL("/dashboard", request.url));
+        if (!isInactive) {
+          return NextResponse.redirect(new URL("/dashboard", request.url));
+        }
       }
     }
   } catch (error) {
