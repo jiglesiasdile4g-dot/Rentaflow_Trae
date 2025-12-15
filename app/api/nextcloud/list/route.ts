@@ -39,7 +39,12 @@ function stripTimestampName(s: string) {
 
 export async function GET(req: Request) {
   try {
-    const u = new URL(req.url)
+    let u: URL
+    try {
+      u = new URL(req.url)
+    } catch {
+      u = new URL(req.url, "http://localhost")
+    }
     const referencia = u.searchParams.get("referencia") || ""
     const inmobiliaria = u.searchParams.get("inmobiliaria") || ""
     const debug = u.searchParams.get("debug") === "1"
@@ -61,19 +66,41 @@ export async function GET(req: Request) {
     const userLowerEnc = encodeURIComponent(user.toLowerCase())
     let userUsed = userEnc
     let webdavUrl = `${base}${userEnc}/${encodedPath}/`
+    console.log("[Nextcloud List] Requesting:", webdavUrl)
+
     const body = `<?xml version="1.0" encoding="utf-8"?>\n<d:propfind xmlns:d="DAV:">\n  <d:prop>\n    <d:displayname/>\n    <d:getcontenttype/>\n    <d:getlastmodified/>\n    <d:getcontentlength/>\n    <d:resourcetype/>\n  </d:prop>\n</d:propfind>`
-    let res = await fetch(webdavUrl, {
-      method: "PROPFIND",
-      headers: {
-        Authorization: basicAuthHeader(user, pass),
-        Depth: "1",
-        "Content-Type": "text/xml",
-      },
-      body,
-    })
+    let res
+    try {
+      res = await fetch(webdavUrl, {
+        method: "PROPFIND",
+        headers: {
+          Authorization: basicAuthHeader(user, pass),
+          Depth: "1",
+          "Content-Type": "text/xml",
+        },
+        body,
+      })
+    } catch (fetchErr: any) {
+      console.error("[Nextcloud List] Fetch error:", fetchErr)
+      const isRefused = fetchErr?.cause?.code === "ECONNREFUSED"
+      const msg = isRefused 
+        ? `No se puede conectar a Nextcloud en ${baseUrl}. ¿Está encendido?` 
+        : `Error conectando a Nextcloud: ${fetchErr?.message || "Error desconocido"}`
+      
+      return NextResponse.json({ 
+        error: msg, 
+        details: fetchErr?.message,
+        cause: fetchErr?.cause,
+        url: webdavUrl,
+        baseUrl: baseUrl
+      }, { status: 500 })
+    }
+    console.log("[Nextcloud List] Primary response status:", res.status)
+
     if (!res.ok && res.status === 404 && userLowerEnc !== userEnc) {
       userUsed = userLowerEnc
       webdavUrl = `${base}${userLowerEnc}/${encodedPath}/`
+      console.log("[Nextcloud List] Retrying with lowercase user:", webdavUrl)
       res = await fetch(webdavUrl, {
         method: "PROPFIND",
         headers: {
@@ -89,6 +116,7 @@ export async function GET(req: Request) {
       const altEncoded = altSegments.map((s) => encodeURIComponent(s)).join("/")
       const altFolderPath = altSegments.join("/")
       let altUrl = `${base}${userUsed}/${altEncoded}/`
+      console.log("[Nextcloud List] Retrying with alt path:", altUrl)
       res = await fetch(altUrl, {
         method: "PROPFIND",
         headers: {
@@ -101,6 +129,7 @@ export async function GET(req: Request) {
       if (!res.ok && res.status === 404 && userLowerEnc !== userUsed) {
         userUsed = userLowerEnc
         altUrl = `${base}${userUsed}/${altEncoded}/`
+        console.log("[Nextcloud List] Retrying alt path with lowercase user:", altUrl)
         res = await fetch(altUrl, {
           method: "PROPFIND",
           headers: {
@@ -112,9 +141,11 @@ export async function GET(req: Request) {
         })
       }
       if (!res.ok) {
+        console.log("[Nextcloud List] All attempts failed. Status:", res.status)
         return NextResponse.json({ folder: altFolderPath, files: [], recent: [] })
       }
       const xml = await res.text()
+      console.log("[Nextcloud List] XML length:", xml.length)
       if (debug) {
         return NextResponse.json({ folder: altFolderPath, xml })
       }
@@ -225,6 +256,7 @@ export async function GET(req: Request) {
     const recent = dedup.filter((f) => now - (Date.parse(f.lastModified) || 0) <= recentWindowMs)
     return NextResponse.json({ folder: folderPath, files: dedup, recent })
   } catch (e: any) {
+    console.error("[Nextcloud List] Exception:", e)
     return NextResponse.json({ error: e?.message || "error" }, { status: 500 })
   }
 }

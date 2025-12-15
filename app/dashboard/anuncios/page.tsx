@@ -1,5 +1,6 @@
 "use client"
 
+import { createAnuncioAction } from "@/app/actions/anuncios"
 import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState, useRef } from "react"
 import { useRouter, usePathname } from 'next/navigation'
@@ -320,7 +321,7 @@ export default function AnunciosPage() {
     setAttachmentPreviewUrl(proxied)
   }
 
-  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading } = useInmobiliaria()
+  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading, role } = useInmobiliaria()
 
   const openNextcloudFiles = async (anuncio: AnuncioCard) => {
     const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
@@ -2130,53 +2131,36 @@ export default function AnunciosPage() {
 
       console.log("[v0] New anuncio object with agency IDI:", newAnuncio)
 
-      const { data, error } = await supabase.from("Anuncios").insert([newAnuncio]).select()
+      const { data, error } = await createAnuncioAction(newAnuncio)
 
       if (error) {
-        console.log("[v0] Error creating anuncio:", error)
-        const fallbackAnuncio = {
-          Referencia: newAnuncio.Referencia,
-          Direccion: newAnuncio.Direccion,
-          Portal: newAnuncio.Portal,
-          Descripcion: newAnuncio.Descripcion,
-          Precio: newAnuncio.Precio,
-          Activacion: newAnuncio.Activacion,
-          usuario: newAnuncio.usuario,
-          Foto_Url: newAnuncio.Foto_Url,
-        }
-        const { data: dataFallback, error: fallbackError } = await supabase
-          .from("Anuncios")
-          .insert([fallbackAnuncio])
-          .select()
-        if (fallbackError) {
-          toast({
-            title: "Error",
-            description: `No se pudo crear el anuncio: ${fallbackError.message}`,
-            variant: "destructive",
-          })
-          return
-        }
+        // Handle error string returned by server action
+        const errorMessage = typeof error === 'string' ? error : (error as any).message || 'Error desconocido';
+        console.log("[v0] Error creating anuncio:", errorMessage)
         
-        console.log("[v0] Anuncio created successfully with fallback:", dataFallback)
+        // If it's a permission error, show it and return
+        if (errorMessage.includes("No tienes permisos")) {
+             toast({
+                title: "Error",
+                description: errorMessage,
+                variant: "destructive",
+            })
+            return
+        }
+
+        // Fallback logic for other errors (keep existing fallback logic if desired, or remove if server action is robust)
+        // For now, I will assume the server action handles the main insertion. 
+        // If the server action fails, we probably shouldn't try a fallback on the client that might also fail or bypass checks.
+        // However, the original code had a fallback. 
+        // Given we want to RESTRICT agents, we should NOT have a client-side fallback that hits Supabase directly unless we are sure it respects RLS.
+        // But RLS might not be set up for this specific check, hence the server action.
+        // So, I will REMOVE the fallback to ensure security.
+        
         toast({
-          title: "Éxito",
-          description: `${creationStep.data.referencia} se ha creado correctamente`,
+            title: "Error",
+            description: `No se pudo crear el anuncio: ${errorMessage}`,
+            variant: "destructive",
         })
-        setShowCreationModal(false)
-        setCreationStep({
-          step: 1,
-          data: {
-            codPortal: "",
-            referencia: "",
-            direccion: "",
-            portal: "",
-            descripcion: "",
-            precio: "",
-            activacion: "Pausado",
-            
-          },
-        })
-        await fetchAnuncios()
         return
       }
 
@@ -3091,44 +3075,48 @@ export default function AnunciosPage() {
         ) : (
           <div className="space-y-6">
             <div className="flex gap-3">
-              <button
-                className="flex items-center gap-2 px-4 py-1.5 rounded-lg border-2 border-dashed border-primary/30 bg-gradient-to-r from-primary/5 to-primary/15 hover:from-primary/10 hover:to-primary/15 hover:border-primary/50 transition-all cursor-pointer group"
-                onClick={() => setShowCreationModal(true)}
-              >
-                <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors shrink-0">
-                  <Plus className="h-3 w-3 text-primary" />
-                </div>
-                <div className="flex items-baseline gap-1.5">
-                  <span className="font-medium text-sm">Crear Anuncio</span>
-                  <span className="text-[10px] text-muted-foreground">· 3 pasos</span>
-                </div>
-              </button>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="flex items-center gap-2 px-4 py-1.5 rounded-lg border-2 border-dashed border-primary/30 bg-gradient-to-r from-primary/5 to-primary/15 hover:from-primary/10 hover:to-primary/15 hover:border-primary/50 transition-all cursor-pointer group">
+              {role !== "agente" && (
+                <>
+                  <button
+                    className="flex items-center gap-2 px-4 py-1.5 rounded-lg border-2 border-dashed border-primary/30 bg-gradient-to-r from-primary/5 to-primary/15 hover:from-primary/10 hover:to-primary/15 hover:border-primary/50 transition-all cursor-pointer group"
+                    onClick={() => setShowCreationModal(true)}
+                  >
                     <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors shrink-0">
-                      <Copy className="h-3 w-3 text-primary" />
+                      <Plus className="h-3 w-3 text-primary" />
                     </div>
                     <div className="flex items-baseline gap-1.5">
-                      <span className="font-medium text-sm">Duplicar Anuncio</span>
-                      <span className="text-[10px] text-muted-foreground">· elegir base</span>
+                      <span className="font-medium text-sm">Crear Anuncio</span>
+                      <span className="text-[10px] text-muted-foreground">· 3 pasos</span>
                     </div>
                   </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="max-h-[300px] overflow-auto">
-                  {anunciosCards.length === 0 ? (
-                    <DropdownMenuItem disabled>No hay anuncios</DropdownMenuItem>
-                  ) : (
-                    anunciosCards.slice(0, 30).map((an) => (
-                      <DropdownMenuItem key={an.id} onClick={() => handleDuplicar(an)}>
-                        <FileText className="h-3.5 w-3.5 mr-2" />
-                        {an.referencia}
-                      </DropdownMenuItem>
-                    ))
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="flex items-center gap-2 px-4 py-1.5 rounded-lg border-2 border-dashed border-primary/30 bg-gradient-to-r from-primary/5 to-primary/15 hover:from-primary/10 hover:to-primary/15 hover:border-primary/50 transition-all cursor-pointer group">
+                        <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors shrink-0">
+                          <Copy className="h-3 w-3 text-primary" />
+                        </div>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="font-medium text-sm">Duplicar Anuncio</span>
+                          <span className="text-[10px] text-muted-foreground">· elegir base</span>
+                        </div>
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="max-h-[300px] overflow-auto">
+                      {anunciosCards.length === 0 ? (
+                        <DropdownMenuItem disabled>No hay anuncios</DropdownMenuItem>
+                      ) : (
+                        anunciosCards.slice(0, 30).map((an) => (
+                          <DropdownMenuItem key={an.id} onClick={() => handleDuplicar(an)}>
+                            <FileText className="h-3.5 w-3.5 mr-2" />
+                            {an.referencia}
+                          </DropdownMenuItem>
+                        ))
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
 
               <button
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-lg border-2 border-dashed transition-all cursor-pointer group ${
@@ -3548,10 +3536,12 @@ export default function AnunciosPage() {
                   <p className="text-muted-foreground mb-4">
                     Los anuncios aparecerán aquí una vez que estén configurados.
                   </p>
-                  <Button onClick={() => setShowCreationModal(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Crear primer anuncio
-                  </Button>
+                  {role !== "agente" && (
+                    <Button onClick={() => setShowCreationModal(true)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Crear primer anuncio
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             )}

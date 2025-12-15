@@ -18,6 +18,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { createLeadAction } from "@/app/actions/leads"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -98,6 +99,7 @@ type Lead = {
   Obsevaciones?: string
   Recordatorio?: string | boolean
   usuario?: number
+  correo_proxy?: string // Added for storing original proxy email
   visita_propuesta?: boolean
   aceptado?: boolean
   Fecha_Datos_Completos?: string
@@ -198,7 +200,7 @@ export default function LeadsPage() {
   const { toast } = useToast()
   const [copiedField, setCopiedField] = React.useState<string | null>(null)
 
-  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading, isAdmin } = useInmobiliaria() // Added isAdmin
+  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading, isAdmin, role, userEmail } = useInmobiliaria()
 
   const supabase = createClient()
   const searchParams = useSearchParams()
@@ -236,6 +238,22 @@ export default function LeadsPage() {
   const [deleteConfirmInput, setDeleteConfirmInput] = useState("")
   const [isDeletingLead, setIsDeletingLead] = useState(false)
   const [noteDialog, setNoteDialog] = useState<{ open: boolean; leadId: number; leadName: string; value: string; existing: string }>({ open: false, leadId: 0, leadName: "", value: "", existing: "" })
+  const [currentAgentId, setCurrentAgentId] = useState<number | null>(null)
+
+  useEffect(() => {
+    const fetchAgentId = async () => {
+      if (role === "agente" && userEmail) {
+        const { data } = await supabase.from("Agentes").select("idag").eq("Email", userEmail).maybeSingle()
+        if (data) {
+          setCurrentAgentId(data.idag)
+        } else {
+          console.log("[RBAC] No matching agent found for email:", userEmail)
+        }
+      }
+    }
+    fetchAgentId()
+  }, [role, userEmail])
+
   useEffect(() => {
     console.log("[router] leads_mount", { path: pathname })
     return () => {
@@ -661,7 +679,12 @@ export default function LeadsPage() {
 
   useEffect(() => {
     if (!selectedLead) return
-    if (String(selectedLead.Estado || "") === "Datos Completos") return
+    const s = String(selectedLead.Estado || "")
+    
+    // Only auto-correct if status is "Datos Incompletos" or empty/null
+    // Do NOT overwrite advanced statuses like "Visita Propuesta", "Aceptado", etc.
+    if (s !== "Datos Incompletos" && s !== "" && s !== "null") return
+
     if (isPersona1CompleteExceptCP(selectedLead)) {
       ;(async () => {
         console.log("[regla-cp] Auto-corrección en modal lead -> 'Datos Completos':", selectedLead.id)
@@ -714,7 +737,7 @@ export default function LeadsPage() {
       }
       run()
     }
-  }, [inmobiliariaId, inmobiliariaLoading])
+  }, [inmobiliariaId, inmobiliariaLoading, currentAgentId])
 
   useEffect(() => {
     const adId = searchParams.get("ad")
@@ -944,46 +967,26 @@ export default function LeadsPage() {
       setLoading(true)
       console.log("[leads] fetchLeads:start", {
         inmobiliariaId,
-        adsCount: advertisements?.length || 0,
-        planInactive,
+        role,
+        currentAgentId
       })
 
-      let activeReferences: string[] = []
-      if (advertisements && advertisements.length > 0) {
-        activeReferences = advertisements
-          .filter((ad) => ["Activo", "Pausado"].includes(String(ad.Activacion || "")))
-          .map((ad) => ad.Referencia)
-          .filter(Boolean) as string[]
-      } else {
-        const { data: activeAds, error: adsError } = await supabase
-          .from("Anuncios")
-          .select("Referencia")
-          .in("Activacion", ["Activo", "Pausado"])
-          .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
-        if (adsError) throw adsError
-        activeReferences = activeAds?.map((ad) => ad.Referencia).filter(Boolean) || []
-      }
-
-      console.log("[leads] activeReferences", {
-        count: activeReferences.length,
-        sample: activeReferences.slice(0, 5),
-      })
-
-      // If no active ads, return empty leads
-      if (activeReferences.length === 0) {
-        setLeads([])
-        setAvailableStatuses([])
-        setLoading(false)
-        return
-      }
-
-      // Now fetch leads that have an Inmueble matching one of the active referencias
-      const dataQuery = supabase
+      let dataQuery = supabase
         .from("Clientes")
         .select("*")
-        .in("Inmueble", activeReferences)
         .order("created_at", { ascending: false })
         .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
+
+      if (role === "agente") {
+        if (currentAgentId) {
+          // Agentes ven sus leads asignados o los que no tienen asignación
+          dataQuery = dataQuery.or(`idag.eq.${currentAgentId},idag.is.null`)
+        } else {
+          // Si no tiene ID de agente (configuración incompleta), mostrar solo unassigned como fallback
+          console.log("[RBAC] Agent has no ID, showing unassigned leads")
+          dataQuery = dataQuery.is("idag", null)
+        }
+      }
 
       // Get leads data
       const { data: leadsData, error: leadsError } = await dataQuery
@@ -996,7 +999,12 @@ export default function LeadsPage() {
         origen: lead?.origen ?? lead?.Origen ?? lead?.origin ?? null,
       }))
 
-      const toCorrect = baseRows.filter((lead: any) => String(lead?.Estado || "") !== "Datos Completos" && isPersona1CompleteExceptCP(lead))
+      const toCorrect = baseRows.filter((lead: any) => {
+        const s = String(lead?.Estado || "")
+        // Only auto-correct if status is "Datos Incompletos" or empty/null
+        // Do NOT overwrite advanced statuses like "Visita Propuesta", "Aceptado", etc.
+        return (s === "Datos Incompletos" || s === "" || s === "null") && isPersona1CompleteExceptCP(lead)
+      })
       console.log("[regla-cp] candidates_to_correct", toCorrect.length)
       if (toCorrect.length > 0) {
         try {
@@ -1047,22 +1055,48 @@ export default function LeadsPage() {
     }
   }
 
-  const fetchCommunications = async (leadEmail: string | undefined, leadPhone?: string) => {
+  const fetchCommunications = async (leadEmail: string | undefined, leadPhone: string | undefined, leadId?: number) => {
     try {
-      if (!leadEmail && !leadPhone) {
+      if (!leadEmail && !leadPhone && !leadId) {
         setCommunications([])
         return
       }
 
-      console.log("[v0] Fetching communications for Email:", leadEmail, "Phone:", leadPhone)
+      console.log("[v0] Fetching communications for Email:", leadEmail, "Phone:", leadPhone, "ID:", leadId)
 
-      const emailsPromise = leadEmail
-        ? supabase.from("Correos").select("*").eq("Email", leadEmail).in("Tipo", ["enviado", "recibido"])
-        : Promise.resolve({ data: [], error: null })
+      // Fetch emails
+      let emailsQuery = supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"])
+      let runEmails = false
 
-      const whatsappPromise = leadPhone
-        ? supabase.from("Whatsapp").select("*").eq("Telefono", leadPhone).in("Tipo", ["Enviado", "Recibido"])
-        : Promise.resolve({ data: [], error: null })
+      if (leadEmail && leadId) {
+        emailsQuery = emailsQuery.or(`Email.eq.${leadEmail},idc.eq.${leadId}`)
+        runEmails = true
+      } else if (leadEmail) {
+        emailsQuery = emailsQuery.eq("Email", leadEmail)
+        runEmails = true
+      } else if (leadId) {
+        emailsQuery = emailsQuery.eq("idc", leadId)
+        runEmails = true
+      }
+
+      const emailsPromise = runEmails ? emailsQuery : Promise.resolve({ data: [], error: null })
+
+      // Fetch WhatsApp
+      let whatsappQuery = supabase.from("Whatsapp").select("*").in("Tipo", ["Enviado", "Recibido"])
+      let runWhatsapp = false
+
+      if (leadPhone && leadId) {
+         whatsappQuery = whatsappQuery.or(`Telefono.eq.${leadPhone},IDC.eq.${leadId},idc.eq.${leadId}`)
+         runWhatsapp = true
+      } else if (leadPhone) {
+         whatsappQuery = whatsappQuery.eq("Telefono", leadPhone)
+         runWhatsapp = true
+      } else if (leadId) {
+         whatsappQuery = whatsappQuery.or(`IDC.eq.${leadId},idc.eq.${leadId}`)
+         runWhatsapp = true
+      }
+
+      const whatsappPromise = runWhatsapp ? whatsappQuery : Promise.resolve({ data: [], error: null })
 
       const [emailsResult, whatsappResult] = await Promise.all([emailsPromise, whatsappPromise])
 
@@ -1234,9 +1268,9 @@ export default function LeadsPage() {
     setIsEditingPersonalInfo(false)
     // Reset selected persona to 1 when opening a new lead
     setSelectedPersona(1)
-    if (lead.Correo || lead.Telefono) {
+    if (lead.Correo || lead.Telefono || lead.IDC || lead.idc) {
       // Changed from lead.idc to lead.Telefono
-      await fetchCommunications(lead.Correo, lead.Telefono) // Changed from lead.idc to lead.Telefono
+      await fetchCommunications(lead.Correo, lead.Telefono, lead.IDC || lead.idc) // Changed from lead.idc to lead.Telefono
     }
   }
 
@@ -1244,11 +1278,20 @@ export default function LeadsPage() {
     if (!selectedLead || !editFormData) return
 
     try {
+      // Logic to preserve old email in correo_proxy
+      let finalCorreoProxy = editFormData.correo_proxy;
+      if (selectedLead.Correo && editFormData.Correo && selectedLead.Correo !== editFormData.Correo) {
+        if (!finalCorreoProxy) {
+          finalCorreoProxy = selectedLead.Correo;
+        }
+      }
+
       const { error } = await supabase
         .from("Clientes")
         .update({
           Nombre: editFormData.Nombre,
           Correo: editFormData.Correo,
+          correo_proxy: finalCorreoProxy,
           Telefono: editFormData.Telefono,
           Ingresos: editFormData.Ingresos,
           Inmueble: editFormData.Inmueble,
@@ -1256,7 +1299,7 @@ export default function LeadsPage() {
           Codigo_Postal: editFormData.Codigo_Postal,
           Tipo_Documento: editFormData.Tipo_Documento,
           Documento: editFormData.Documento,
-          Observaciones: editFormData.Observaciones,
+          Obsevaciones: editFormData.Observaciones || editFormData.Obsevaciones, // Matches DB column name (typo in DB)
           // Update persona-specific fields based on selectedPersona
           ...(selectedPersona === 1 && {
             Persona_2: editFormData.Persona_2, // Only update if editing persona 1
@@ -1630,9 +1673,9 @@ export default function LeadsPage() {
           created_at: new Date().toISOString(),
         }
 
-        const { data, error } = await supabase.from("Clientes").insert([leadData]).select()
+        const { data, error } = await createLeadAction(leadData)
 
-        if (error) throw error
+        if (error) throw new Error(typeof error === 'string' ? error : JSON.stringify(error))
 
         console.log("[v0] New lead created successfully:", data)
 
@@ -1811,18 +1854,30 @@ export default function LeadsPage() {
         return
       }
 
+      console.log("[v0] handleReprogramVisit started. Lead:", selectedLeadForVisit)
+      console.log("[v0] Lead ID type:", typeof selectedLeadForVisit.id, "Value:", selectedLeadForVisit.id)
+
       try {
         const supabase = createClient()
-        const d = new Date(`${newVisitDateDate}T${newVisitDateTime}`)
+        
+        // Parse DD/MM/YYYY to ISO YYYY-MM-DD if needed
+        let isoDate = newVisitDateDate
+        if (newVisitDateDate.includes('/')) {
+            const [day, month, year] = newVisitDateDate.split('/')
+            isoDate = `${year}-${month}-${day}`
+        }
+
+        const d = new Date(`${isoDate}T${newVisitDateTime}`)
         const off = d.getTimezoneOffset()
         const sign = off <= 0 ? "+" : "-"
         const hh = String(Math.floor(Math.abs(off) / 60)).padStart(2, "0")
         const mm = String(Math.abs(off) % 60).padStart(2, "0")
         const offset = `${sign}${hh}:${mm}`
-        const valueWithOffset = `${newVisitDateDate}T${newVisitDateTime}:00${offset}`
+        const valueWithOffset = `${isoDate}T${newVisitDateTime}:00${offset}`
         const updateData: any = {
           fecha_de_visita: valueWithOffset,
           visita_completada: "visita propuesta",
+          Estado: "Visita Propuesta",
           idag: selectedAgenteId ? Number(selectedAgenteId) : null,
         }
         
@@ -1831,29 +1886,100 @@ export default function LeadsPage() {
           updateData.idag = selectedAgenteId
         }
 
-        const { error } = await supabase
+        console.log("[v0] Sending update to Supabase. Data:", updateData)
+
+        let updateSuccess = false
+        let data: any[] | null = null
+        let error: any = null
+
+        // Strategy 1: Update by 'id'
+        console.log("[v0] Attempt 1: Updating by 'id' =", selectedLeadForVisit.id)
+        const res1 = await supabase
           .from("Clientes")
           .update(updateData)
           .eq("id", selectedLeadForVisit.id)
+          .select()
+        
+        if (res1.data && res1.data.length > 0) {
+            updateSuccess = true
+            data = res1.data
+            console.log("[v0] Update successful by 'id'")
+        } else {
+            console.warn("[v0] Update by 'id' failed (0 rows). Error:", res1.error)
+            error = res1.error
+        }
 
-        if (error) throw error
+        // Strategy 2: Update by 'IDC' or 'idc' if 'id' failed
+        if (!updateSuccess) {
+            const idcValue = (selectedLeadForVisit as any).IDC || (selectedLeadForVisit as any).idc
+            if (idcValue) {
+                console.log("[v0] Attempt 2: Updating by 'IDC' =", idcValue)
+                const res2 = await supabase
+                    .from("Clientes")
+                    .update(updateData)
+                    .eq("IDC", idcValue)
+                    .select()
+                
+                if (res2.data && res2.data.length > 0) {
+                    updateSuccess = true
+                    data = res2.data
+                    console.log("[v0] Update successful by 'IDC'")
+                } else {
+                     console.warn("[v0] Update by 'IDC' failed. Error:", res2.error)
+                     
+                     // Strategy 3: Try lowercase 'idc' column
+                     console.log("[v0] Attempt 3: Updating by 'idc' (lowercase column) =", idcValue)
+                     const res3 = await supabase
+                        .from("Clientes")
+                        .update(updateData)
+                        .eq("idc", idcValue)
+                        .select()
+                     
+                     if (res3.data && res3.data.length > 0) {
+                         updateSuccess = true
+                         data = res3.data
+                         console.log("[v0] Update successful by 'idc'")
+                     } else {
+                         console.warn("[v0] Update by 'idc' failed. Error:", res3.error)
+                     }
+                }
+            }
+        }
+
+        if (!updateSuccess) {
+            console.error("[v0] All update attempts failed.")
+            throw new Error("No se pudo actualizar el lead (No se encontraron registros coincidentes para ID/IDC). Revisa la consola para más detalles.")
+        }
 
       toast({
         title: "Fecha de visita actualizada",
         description: "La fecha de visita se ha reprogramado correctamente.",
       })
 
-      // Refresh leads to show updated date
-        fetchLeads()
-        // Update selectedLead panel immediately
-        setSelectedLead((prev) => {
+      // Optimistically update local state to prevent reversion
+      const updatedLead = {
+        ...selectedLeadForVisit,
+        fecha_de_visita: valueWithOffset,
+        Estado: "Visita Propuesta",
+        idag: selectedAgenteId ? Number(selectedAgenteId) : (selectedLeadForVisit as any).idag,
+      } as any
+
+      setLeads((prev) => prev.map((l) => (l.id === selectedLeadForVisit.id ? { ...l, ...updatedLead } : l)))
+      
+      // Update selectedLead panel immediately
+      setSelectedLead((prev) => {
           if (!prev) return prev
           if (prev.id !== selectedLeadForVisit!.id) return prev
           return {
             ...prev,
             fecha_de_visita: valueWithOffset,
+            Estado: "Visita Propuesta",
           }
         })
+
+      // Fetch leads in background to confirm
+      // fetchLeads()
+      
       setVisitDateDialogOpen(false)
       setSelectedLeadForVisit(null)
       setNewVisitDateDate("")
@@ -1951,10 +2077,12 @@ export default function LeadsPage() {
                   <h2 className="text-3xl font-bold text-foreground">Leads</h2>
                   <p className="text-muted-foreground mt-2">Gestión de clientes potenciales</p>
                 </div>
-                <Button onClick={() => setIsNewLeadDialogOpen(true)}>
-                  <Users className="h-4 w-4 mr-2" />
-                  Nuevo Lead
-                </Button>
+                {role !== "agente" && (
+                  <Button onClick={() => setIsNewLeadDialogOpen(true)}>
+                    <Users className="h-4 w-4 mr-2" />
+                    Nuevo Lead
+                  </Button>
+                )}
               </div>
               {
                 (() => {
@@ -2479,7 +2607,6 @@ export default function LeadsPage() {
                                                         setNewVisitDateTime("12:00")
                                                       }
                                                       setVisitDateDialogOpen(true)
-                                                      await updateLeadStatus(Number(lead.id), "Visita Propuesta")
                                                     }
                                                   }}
                                                 >
@@ -2491,9 +2618,11 @@ export default function LeadsPage() {
                                                       {lead.Estado === "Visita Propuesta" && lead.fecha_de_visita ? (
                                                         <>
                                                           Visita Propuesta -{" "}
-                                                          {new Date(lead.fecha_de_visita).toLocaleString("es-ES", {
+                                                          {new Date(lead.fecha_de_visita).toLocaleDateString("es-ES", {
                                                             day: "2-digit",
-                                                            month: "short",
+                                                            month: "2-digit",
+                                                            year: "numeric"
+                                                          }) + " " + new Date(lead.fecha_de_visita).toLocaleTimeString("es-ES", {
                                                             hour: "2-digit",
                                                             minute: "2-digit"
                                                           })}
@@ -2538,7 +2667,6 @@ export default function LeadsPage() {
                                                         setNewVisitDateTime("12:00")
                                                       }
                                                       setVisitDateDialogOpen(true)
-                                                      await updateLeadStatus(Number(lead.id), "Visita Propuesta")
                                                     }}
                                                   >
                                                     <span className="text-xs font-semibold text-green-800">
@@ -2583,6 +2711,20 @@ export default function LeadsPage() {
                                           <div className="flex items-center gap-1">
                                             <Mail className="h-3 w-3" />
                                             <span className="truncate">{lead.Correo || "Sin email"}</span>
+                                            {lead.correo_proxy && (
+                                              <TooltipProvider>
+                                                <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                    <span className="ml-1 text-xs text-muted-foreground cursor-help border rounded-full px-1.5 py-0.5 bg-muted">
+                                                      Proxy
+                                                    </span>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>
+                                                    <p>Email original: {lead.correo_proxy}</p>
+                                                  </TooltipContent>
+                                                </Tooltip>
+                                              </TooltipProvider>
+                                            )}
                                           </div>
                                           <div className="flex items-center gap-1">
                                             <Phone className="h-3 w-3" />
@@ -2944,7 +3086,6 @@ export default function LeadsPage() {
                                                           setNewVisitDateTime("12:00")
                                                         }
                                                         setVisitDateDialogOpen(true)
-                                                        await updateLeadStatus(Number(lead.id), "Visita Propuesta")
                                                       } else {
                                                         console.log("[v0] Estado is not 'Visita Propuesta', dialog not opened")
                                                       }
@@ -2958,14 +3099,16 @@ export default function LeadsPage() {
                                                     {/* Show only the visit date without "Visita Propuesta" text */}
                                                     {lead.Estado === "Visita Propuesta" && lead.fecha_de_visita ? (
                                                       <>
-                                                        Visita Propuesta -{" "}
-                                                        {new Date(lead.fecha_de_visita).toLocaleString("es-ES", {
-                                                          day: "2-digit",
-                                                          month: "short",
-                                                          hour: "2-digit",
-                                                          minute: "2-digit"
-                                                        })}
-                                                      </>
+                                                          Visita Propuesta -{" "}
+                                                          {new Date(lead.fecha_de_visita).toLocaleDateString("es-ES", {
+                                                            day: "2-digit",
+                                                            month: "2-digit",
+                                                            year: "numeric"
+                                                          }) + " " + new Date(lead.fecha_de_visita).toLocaleTimeString("es-ES", {
+                                                            hour: "2-digit",
+                                                            minute: "2-digit"
+                                                          })}
+                                                        </>
                                                     ) : (
                                                       statusColors.label
                                                     )}
@@ -3006,7 +3149,6 @@ export default function LeadsPage() {
                                                       setNewVisitDateTime("12:00")
                                                     }
                                                     setVisitDateDialogOpen(true)
-                                                    await updateLeadStatus(Number(lead.id), "Visita Propuesta")
                                                   }}
                                                 >
                                                   <span className="text-xs font-semibold text-green-800">
@@ -3722,13 +3864,13 @@ export default function LeadsPage() {
                                   {isEditingPersonalInfo ? (
                                     <Textarea
                                       rows={3}
-                                      value={editFormData.Observaciones || ""}
+                                      value={editFormData.Observaciones || editFormData.Obsevaciones || ""}
                                       onChange={(e) => setEditFormData({ ...editFormData, Observaciones: e.target.value })}
                                       placeholder="Notas sobre el candidato..."
-                                      className="text-sm"
+                                      className="text-sm mt-2"
                                     />
                                   ) : (
-                                    <div className="text-sm not-italic text-foreground whitespace-pre-wrap">
+                                    <div className="text-sm not-italic text-foreground whitespace-pre-wrap mt-2">
                                       {(selectedLead as any).Observaciones || (selectedLead as any).Obsevaciones}
                                     </div>
                                   )}
@@ -4569,8 +4711,6 @@ export default function LeadsPage() {
                                       setNewVisitDateTime("12:00")
                                     }
                                     setVisitDateDialogOpen(true)
-                                    await updateLeadStatus(Number(selectedLead.id), "Visita Propuesta")
-                                    setSelectedLead({ ...selectedLead, Estado: "Visita Propuesta" })
                                   }
                                 }}
                                 onMouseEnter={(e) => {
@@ -4617,12 +4757,14 @@ export default function LeadsPage() {
                                 </div>
                                 {selectedLead.Estado === "Visita Propuesta" && selectedLead.fecha_de_visita && (
                                   <div style={{ fontSize: "0.875rem", color: statusColors.text, marginTop: "0.5rem", fontWeight: "500" }}>
-                                    {new Date(selectedLead.fecha_de_visita).toLocaleString("es-ES", {
-                                      day: "2-digit",
-                                      month: "short",
-                                      hour: "2-digit",
-                                      minute: "2-digit"
-                                    })}
+                                    {new Date(selectedLead.fecha_de_visita).toLocaleDateString("es-ES", {
+                                       day: "2-digit",
+                                       month: "2-digit",
+                                       year: "numeric"
+                                     }) + " " + new Date(selectedLead.fecha_de_visita).toLocaleTimeString("es-ES", {
+                                       hour: "2-digit",
+                                       minute: "2-digit"
+                                     })}
                                   </div>
                                 )}
                                 <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: "0.5rem" }}>
@@ -5381,13 +5523,17 @@ export default function LeadsPage() {
                   Nueva fecha y hora de visita
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <Input
-                    id="visit-date"
-                    type="date"
-                    value={newVisitDateDate}
-                    onChange={(e) => setNewVisitDateDate(e.target.value)}
-                    className="w-full"
-                  />
+                  <div className="flex flex-col gap-1">
+                    <Input
+                      id="visit-date"
+                      type="date"
+                      lang="es-ES"
+                      value={newVisitDateDate}
+                      onChange={(e) => setNewVisitDateDate(e.target.value)}
+                      className="w-full"
+                    />
+                    <span className="text-[10px] text-muted-foreground">Formato: DD/MM/AAAA</span>
+                  </div>
                   <Select
                     value={newVisitDateTime}
                     onValueChange={(value) => setNewVisitDateTime(value)}

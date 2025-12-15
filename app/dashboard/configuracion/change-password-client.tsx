@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 
 export function ChangePassword() {
   const [open, setOpen] = useState(false)
@@ -14,6 +15,20 @@ export function ChangePassword() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const { toast } = useToast()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+
+  useEffect(() => {
+    if (searchParams.get('action') === 'set_password') {
+      setOpen(true)
+      // Clean up URL
+      const params = new URLSearchParams(searchParams)
+      params.delete('action')
+      router.replace(`${pathname}?${params.toString()}`)
+    }
+  }, [searchParams, pathname, router])
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

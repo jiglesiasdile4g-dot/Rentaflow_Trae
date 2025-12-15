@@ -1,3 +1,13 @@
+## [0.7.7](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.6...v0.7.7) (2025-12-15)
+
+
+### Bug Fixes
+
+* **agentes:** solución al problema de desactivación de funciones del agente (eliminación por ID con permisos de administrador)
+* **nextcloud:** corrección de visibilidad de archivos en modal de anuncios (manejo de errores de conexión y actualización de URL)
+* **api:** mejora en el reporte de errores de conexión WebDAV
+
+
 ## [0.7.6](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.5...v0.7.6) (2025-12-14)
 
 

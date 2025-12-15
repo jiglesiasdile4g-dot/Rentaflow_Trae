@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -21,6 +21,35 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
   const configured = isSupabaseConfigured()
+
+  useEffect(() => {
+    // Check for error in hash (Supabase default)
+    const hash = window.location.hash
+    if (hash && hash.includes("error_description=")) {
+      const params = new URLSearchParams(hash.substring(1)) // remove #
+      const description = params.get("error_description")?.replace(/\+/g, " ")
+      if (description) setError(description)
+    }
+
+    // Check for access_token in hash (Supabase implicit flow)
+    // This happens if the user lands on /login instead of /auth/confirm
+    if (hash && hash.includes("access_token")) {
+       const params = new URLSearchParams(hash.substring(1))
+       const accessToken = params.get("access_token")
+       if (accessToken) {
+         // Redirect to confirm page to handle it properly
+         router.push(`/auth/confirm${hash}`)
+         return
+       }
+    }
+
+    // Check for error in search params (my callback redirect)
+    const searchParams = new URLSearchParams(window.location.search)
+    const errorParam = searchParams.get("error")
+    if (errorParam === "auth-code-error") {
+      setError("El enlace de invitación es inválido o ha expirado. Por favor solicita uno nuevo.")
+    }
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()

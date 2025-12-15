@@ -8,6 +8,8 @@ interface InmobiliariaContextType {
   inmobiliariaId: number | null
   inmobiliariaNombre: string | null
   isAdmin: boolean
+  role: string | null
+  userEmail: string | null
   loading: boolean
   error: string | null
   refreshProfile: () => Promise<void>
@@ -19,6 +21,8 @@ const InmobiliariaContext = createContext<InmobiliariaContextType>({
   inmobiliariaId: null,
   inmobiliariaNombre: null,
   isAdmin: false,
+  role: null,
+  userEmail: null,
   loading: true,
   error: null,
   refreshProfile: async () => {},
@@ -30,6 +34,8 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
   const [inmobiliariaId, setInmobiliariaId] = useState<number | null>(null)
   const [inmobiliariaNombre, setInmobiliariaNombre] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState<boolean>(false)
+  const [role, setRole] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
   const [ownInmobiliariaId, setOwnInmobiliariaId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -85,10 +91,11 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
       }
 
       console.log("[v0] User email:", user.email)
+      setUserEmail(user.email || null)
 
       const { data: perfil, error: perfilError } = await supabase
         .from("Perfiles")
-        .select("inmobiliaria, is_admin")
+        .select("inmobiliaria, is_admin, role")
         .eq("usuario", user.email)
         .maybeSingle()
 
@@ -99,6 +106,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
         setError(`Error al cargar perfil: ${perfilError.message}`)
         setInmobiliariaId(null)
         setInmobiliariaNombre(null)
+        setRole(null)
         setLoading(false)
         return
       }
@@ -115,6 +123,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
 
       const adminFlag = perfil?.is_admin === true
       setIsAdmin(adminFlag)
+      setRole(perfil.role || (adminFlag ? "administrador" : "agente"))
       const ownId = Number(perfil.inmobiliaria)
       setOwnInmobiliariaId(ownId)
       const savedRaw = adminFlag ? localStorage.getItem("rf_admin_selected_idi") : null
@@ -298,6 +307,8 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
         inmobiliariaId,
         inmobiliariaNombre,
         isAdmin,
+        role,
+        userEmail,
         loading,
         error,
         refreshProfile: fetchProfile,
