@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
+import { Suspense } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -476,7 +477,9 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>Contraseña</Label>
-              <ChangePassword />
+              <Suspense fallback={<Button variant="outline" disabled>Cargando...</Button>}>
+                <ChangePassword />
+              </Suspense>
               <p className="text-xs text-muted-foreground">Última actualización: {user.updated_at ? new Intl.DateTimeFormat("es-ES", { dateStyle: "long", timeStyle: "short" }).format(new Date(user.updated_at)) : "Nunca"}</p>
             </div>
             <Separator />

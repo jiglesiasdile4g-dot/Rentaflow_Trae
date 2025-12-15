@@ -1,13 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 
-export default function AuthConfirmPage() {
+function AuthConfirmContent() {
   const [status, setStatus] = useState("Iniciando verificación...")
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
@@ -110,7 +110,7 @@ export default function AuthConfirmPage() {
     }
 
     handleAuth()
-  }, [router, next])
+  }, [router, next, searchParams]) // Added searchParams to dependency array
 
   if (error) {
     return (
@@ -145,5 +145,24 @@ export default function AuthConfirmPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function AuthConfirmPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <Card className="w-[400px]">
+          <CardContent className="flex flex-col items-center justify-center py-10 space-y-4">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            <div className="text-center">
+               <p className="font-medium text-lg">Cargando...</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    }>
+      <AuthConfirmContent />
+    </Suspense>
   )
 }
