@@ -121,6 +121,7 @@ interface Advertisement {
   Activacion?: string // Changed from boolean to string to support "Activo", "Pausado", "Archivado"
   Portal?: string
   Descripcion?: string
+  fecha_activacion?: string
 }
 
 interface Communication {
@@ -742,9 +743,15 @@ export default function LeadsPage() {
   useEffect(() => {
     const adId = searchParams.get("ad")
     const ref = searchParams.get("filter")
+    const leadIdParam = searchParams.get("leadId")
     console.log("[nav] leads_filter_param", ref)
     const st = searchParams.get("status")
     console.log("[nav] leads_status_param", st)
+    
+    if (leadIdParam) {
+      setSearchTerm(leadIdParam)
+    }
+
     if (adId) {
       setSelectedAdvertisement(adId)
     } else if (ref && advertisements.length > 0) {
@@ -762,6 +769,17 @@ export default function LeadsPage() {
       }
     }
   }, [searchParams, advertisements])
+
+  // Effect to auto-open lead detail from URL param
+  useEffect(() => {
+    const leadIdParam = searchParams.get("leadId")
+    if (leadIdParam && leads.length > 0 && !selectedLead) {
+      const targetLead = leads.find((l) => String(l.id) === leadIdParam || String(l.IDC) === leadIdParam)
+      if (targetLead) {
+        openLeadDetail(targetLead)
+      }
+    }
+  }, [leads, searchParams, selectedLead])
 
   useEffect(() => {
     filterLeads()
@@ -792,6 +810,17 @@ export default function LeadsPage() {
       const selectedAd = advertisements.find((ad) => ad.ida === selectedAdvertisement)
       if (selectedAd && selectedAd.Referencia) {
         leadsToAnalyze = leads.filter((lead) => lead.Inmueble === selectedAd.Referencia)
+
+        // Filter by activation date if available
+        if (selectedAd.fecha_activacion) {
+          const activationDate = new Date(selectedAd.fecha_activacion)
+          if (!isNaN(activationDate.getTime())) {
+            leadsToAnalyze = leadsToAnalyze.filter((lead) => {
+              const leadDate = new Date(lead.created_at || Date.now())
+              return leadDate >= activationDate
+            })
+          }
+        }
       }
     }
 
@@ -1192,9 +1221,17 @@ export default function LeadsPage() {
     if (!advertisementToReactivate) return
 
     try {
+      // Fetch to check history
+      const { data: currentAd } = await supabase.from("Anuncios").select("fecha_activacion").eq("ida", advertisementToReactivate.ida).single()
+
+      const updates: any = { Activacion: "Activo" }
+      if (!currentAd?.fecha_activacion) {
+        updates.fecha_activacion = new Date().toISOString()
+      }
+
       const { error } = await supabase
         .from("Anuncios")
-        .update({ Activacion: "Activo" })
+        .update(updates)
         .eq("ida", advertisementToReactivate.ida)
 
       if (error) throw error
@@ -5305,7 +5342,7 @@ export default function LeadsPage() {
             {selectedLead && avalCalculation && (
               <div className="space-y-4 py-4">
                 {/* Lead Information */}
-                <div className="p-4 bg-gray-50 rounded-lg border space-y-2">
+                <div className="p-4 bg-gray-50 dark:bg-muted/50 rounded-lg border space-y-2">
                   <div className="flex justify-between">
                     <span className="text-sm font-medium text-muted-foreground">Nombre:</span>
                     <span className="text-sm font-semibold">{selectedLead.Nombre}</span>
@@ -5320,7 +5357,7 @@ export default function LeadsPage() {
                     {avalCalculation.persona1Income > 0 && (
                       <div className="flex justify-between pl-2">
                         <span className="text-xs text-muted-foreground">{selectedLead.Nombre || "Persona 1"}:</span>
-                        <span className="text-xs font-medium text-green-600">
+                        <span className="text-xs font-medium text-green-600 dark:text-green-400">
                           {formatCurrency(avalCalculation.persona1Income)}
                         </span>
                       </div>
@@ -5328,7 +5365,7 @@ export default function LeadsPage() {
                     {avalCalculation.persona2Income > 0 && (
                       <div className="flex justify-between pl-2">
                         <span className="text-xs text-muted-foreground">{selectedLead.Persona_2 || "Persona 2"}:</span>
-                        <span className="text-xs font-medium text-green-600">
+                        <span className="text-xs font-medium text-green-600 dark:text-green-400">
                           {formatCurrency(avalCalculation.persona2Income)}
                         </span>
                       </div>
@@ -5336,7 +5373,7 @@ export default function LeadsPage() {
                     {avalCalculation.persona3Income > 0 && (
                       <div className="flex justify-between pl-2">
                         <span className="text-xs text-muted-foreground">{selectedLead.Persona_3 || "Persona 3"}:</span>
-                        <span className="text-xs font-medium text-green-600">
+                        <span className="text-xs font-medium text-green-600 dark:text-green-400">
                           {formatCurrency(avalCalculation.persona3Income)}
                         </span>
                       </div>
@@ -5344,14 +5381,14 @@ export default function LeadsPage() {
                     {avalCalculation.persona4Income > 0 && (
                       <div className="flex justify-between pl-2">
                         <span className="text-xs text-muted-foreground">{selectedLead.Persona_4 || "Avalista"}:</span>
-                        <span className="text-xs font-medium text-green-600">
+                        <span className="text-xs font-medium text-green-600 dark:text-green-400">
                           {formatCurrency(avalCalculation.persona4Income)}
                         </span>
                       </div>
                     )}
                     <div className="flex justify-between pt-1.5 border-t">
                       <span className="text-sm font-medium text-muted-foreground">Total Ingresos:</span>
-                      <span className="text-sm font-bold text-green-600">{formatCurrency(avalCalculation.income)}</span>
+                      <span className="text-sm font-bold text-green-600 dark:text-green-400">{formatCurrency(avalCalculation.income)}</span>
                     </div>
                   </div>
 
@@ -5365,19 +5402,23 @@ export default function LeadsPage() {
 
                 <div
                   className={`p-4 rounded-lg border space-y-3 ${
-                    avalCalculation.needsAval ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"
+                    avalCalculation.needsAval
+                      ? "bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800"
+                      : "bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800"
                   }`}
                 >
                   <h3
-                    className={`text-sm font-semibold ${avalCalculation.needsAval ? "text-red-900" : "text-green-900"}`}
+                    className={`text-sm font-semibold ${
+                      avalCalculation.needsAval ? "text-red-900 dark:text-red-300" : "text-green-900 dark:text-green-300"
+                    }`}
                   >
                     Análisis de Requisito de Aval
                   </h3>
 
                   {(!avalCalculation.income || avalCalculation.income === 0) && (
-                    <div className="p-2 rounded-md bg-orange-100 border border-orange-300">
-                      <p className="text-xs font-semibold text-orange-800">⚠️ Datos de Ingresos No Disponibles</p>
-                      <p className="text-xs text-orange-700 mt-0.5">
+                    <div className="p-2 rounded-md bg-orange-100 border border-orange-300 dark:bg-orange-900/20 dark:border-orange-800">
+                      <p className="text-xs font-semibold text-orange-800 dark:text-orange-300">⚠️ Datos de Ingresos No Disponibles</p>
+                      <p className="text-xs text-orange-700 dark:text-orange-400 mt-0.5">
                         No se han proporcionado los ingresos del solicitante. El análisis de aval no puede ser preciso sin
                         esta información.
                       </p>
@@ -5389,17 +5430,19 @@ export default function LeadsPage() {
                       {avalCalculation.income > 0 && (
                         <div
                           className={`p-3 rounded-md border ${
-                            avalCalculation.needsAval ? "bg-red-100 border-red-300" : "bg-green-100 border-green-300"
+                            avalCalculation.needsAval
+                              ? "bg-red-100 border-red-300 dark:bg-red-900/30 dark:border-red-700"
+                              : "bg-green-100 border-green-300 dark:bg-green-900/30 dark:border-green-700"
                           }`}
                         >
                           <p
                             className={`text-sm font-bold mb-2 ${
-                              avalCalculation.needsAval ? "text-red-800" : "text-green-800"
+                              avalCalculation.needsAval ? "text-red-800 dark:text-red-200" : "text-green-800 dark:text-green-200"
                             }`}
                           >
                             {avalCalculation.needsAval ? "⚠️ REQUIERE AVAL" : "✓ NO REQUIERE AVAL"}
                           </p>
-                          <p className={`text-xs ${avalCalculation.needsAval ? "text-red-700" : "text-green-700"}`}>
+                          <p className={`text-xs ${avalCalculation.needsAval ? "text-red-700 dark:text-red-300" : "text-green-700 dark:text-green-300"}`}>
                             {avalCalculation.needsAval
                               ? "Los ingresos son insuficientes para cubrir el alquiler sin aval."
                               : "Los ingresos son suficientes para cubrir el alquiler sin necesidad de aval."}
@@ -5420,7 +5463,7 @@ export default function LeadsPage() {
                           <div className="flex justify-between items-center pt-2 border-t">
                             <span className="text-muted-foreground">Tasa de esfuerzo:</span>
                             <span
-                              className={`font-bold ${avalCalculation.incomeRatio <= 40 ? "text-green-600" : "text-red-600"}`}
+                              className={`font-bold ${avalCalculation.incomeRatio <= 40 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
                             >
                               {avalCalculation.incomeRatio.toFixed(1)}%
                             </span>
@@ -5436,8 +5479,8 @@ export default function LeadsPage() {
                       </div>
                     </>
                   ) : (
-                    <div className="p-3 rounded-md bg-yellow-100 border border-yellow-300">
-                      <p className="text-xs font-medium text-yellow-800">
+                    <div className="p-3 rounded-md bg-yellow-100 border border-yellow-300 dark:bg-yellow-900/20 dark:border-yellow-800">
+                      <p className="text-xs font-medium text-yellow-800 dark:text-yellow-300">
                         ⚠ No se encontró el precio del alquiler para este inmueble
                       </p>
                     </div>
@@ -5870,17 +5913,17 @@ export default function LeadsPage() {
               <DialogTitle className="text-lg font-semibold">
                 {selectedCommunication && selectedCommunication.source === "whatsapp" ? (
                   <>
-                    <span className={isCommunicationSent(selectedCommunication) ? "text-blue-600" : "text-green-600"}>
+                    <span className={isCommunicationSent(selectedCommunication) ? "text-blue-600 dark:text-blue-400" : "text-green-600 dark:text-green-400"}>
                       💬 WhatsApp {isCommunicationSent(selectedCommunication) ? "Enviado" : "Recibido"}
                     </span>
                   </>
                 ) : selectedCommunication && isCommunicationSent(selectedCommunication) ? (
                   <>
-                    <span className="text-blue-600">📤 Correo Enviado</span>
+                    <span className="text-blue-600 dark:text-blue-400">📤 Correo Enviado</span>
                   </>
                 ) : (
                   <>
-                    <span className="text-green-600">📥 Correo Recibido</span>
+                    <span className="text-green-600 dark:text-green-400">📥 Correo Recibido</span>
                   </>
                 )}
               </DialogTitle>
@@ -5950,22 +5993,22 @@ export default function LeadsPage() {
                 </div>
 
                 {/* Message Body */}
-                <div className="border rounded-lg p-4 bg-white dark:bg-card dark:text-foreground">
+                <div className="border rounded-lg p-4 bg-white dark:bg-muted/30 dark:text-foreground">
                   <h3 className="text-sm font-semibold mb-3">Mensaje:</h3>
                   {selectedCommunication.source === "whatsapp" ? (
                     <div
-                      className="prose prose-sm max-w-none"
+                      className="prose prose-sm max-w-none dark:prose-invert"
                       dangerouslySetInnerHTML={{ __html: selectedCommunication.Mensaje || "Sin contenido" }}
                     />
                   ) : selectedCommunication.Html ? (
                     <div
-                      className="prose prose-sm max-w-none"
+                      className="prose prose-sm max-w-none dark:prose-invert"
                       dangerouslySetInnerHTML={{ __html: selectedCommunication.Html }}
                     />
                   ) : selectedCommunication.Text ? (
                     <div className="whitespace-pre-wrap text-sm">{selectedCommunication.Text}</div>
                   ) : (
-                    <p className="text-sm text-gray-500 italic">Sin contenido</p>
+                    <p className="text-sm text-gray-500 italic dark:text-gray-400">Sin contenido</p>
                   )}
                 </div>
               </div>

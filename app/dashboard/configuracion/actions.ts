@@ -6,6 +6,39 @@ import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
 import { getPlanData } from "@/lib/plan-data"
 
+// Helper to find profile and correct column names
+async function findProfileAndColumns(admin: any, email: string, idi: number) {
+    const whereVariants = [
+        { u: 'usuario', i: 'inmobiliaria' },
+        { u: 'usuario', i: 'Inmobiliaria' },
+        { u: 'Usuario', i: 'inmobiliaria' },
+        { u: 'Usuario', i: 'Inmobiliaria' },
+    ]
+    
+    for (const v of whereVariants) {
+        // Try to find the record
+        try {
+            const { data, error } = await admin
+                .from("Perfiles")
+                .select("*")
+                .eq(v.u, email)
+                .eq(v.i, idi)
+                .limit(1)
+            
+            if (!error && data && data.length > 0) {
+                return { 
+                    profile: data[0], 
+                    whereUser: v.u, 
+                    whereInm: v.i 
+                }
+            }
+        } catch (e) {
+            // Ignore errors (like column not found) and try next variant
+        }
+    }
+    return null
+}
+
 // Helper function to ensure agent record exists or update it
 async function ensureAgentRecord(supabaseClient: any, email: string, idi: number, role: string, createIfMissing: boolean = true) {
     try {
@@ -138,6 +171,9 @@ export async function createAgentAction(formData: FormData) {
             redirect(`/dashboard/configuracion?createUser=error&msg=${encodeURIComponent(msg)}`)
         }
     } catch (e: any) {
+        if (e.message === 'NEXT_REDIRECT' || e.digest?.startsWith('NEXT_REDIRECT')) {
+            throw e
+        }
         msg = e?.message || "Error verificando límites de plan"
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?createUser=error&msg=${encodeURIComponent(msg)}`)
@@ -227,6 +263,9 @@ export async function createAgentAction(formData: FormData) {
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?createUser=success&msg=${encodeURIComponent(msg)}`)
     } catch (e: any) {
+        if (e.message === 'NEXT_REDIRECT' || e.digest?.startsWith('NEXT_REDIRECT')) {
+            throw e
+        }
         msg = e?.message || "No se pudo crear el usuario"
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?createUser=error&msg=${encodeURIComponent(msg)}`)
@@ -274,44 +313,61 @@ export async function updateRoleAction(formData: FormData) {
     }
 
     try {
-        let err: any = null
-        // We update both role and is_admin for backward compatibility
-        const { error: e1 } = await supa
-            .from("Perfiles")
-            .update({
-                role: newRole,
-                is_admin: isAdminRole
-            })
-            .eq("usuario", email)
-            .eq("inmobiliaria", idi as any)
-        err = e1
+        const admin = createAdminClient()
+        let success = false
+        let lastError: any = null
 
-        if (err) {
-            // Fallback for case sensitivity if needed, though usually covered by first query if correct
-            const { error: e2 } = await supa
-                .from("Perfiles")
-                .update({
-                    role: newRole,
-                    is_admin: isAdminRole
-                })
-                .eq("usuario", email)
-                .eq("Inmobiliaria", idi as any)
-            err = e2
+        const found = await findProfileAndColumns(admin, email, idi)
+
+        if (found) {
+            const { profile, whereUser, whereInm } = found
+            
+            // Determine column names from the found profile object
+            // Check for 'role' or 'Role'
+            const roleCol = 'role' in profile ? 'role' : ('Role' in profile ? 'Role' : null)
+            // Check for 'is_admin' or 'Is_admin' or 'isAdmin'
+            const adminCol = 'is_admin' in profile ? 'is_admin' : ('Is_admin' in profile ? 'Is_admin' : ('isAdmin' in profile ? 'isAdmin' : null))
+
+            if (roleCol && adminCol) {
+                const { data, error } = await admin
+                    .from("Perfiles")
+                    .update({
+                        [roleCol]: newRole,
+                        [adminCol]: isAdminRole
+                    })
+                    .eq(whereUser, email)
+                    .eq(whereInm, idi)
+                    .select()
+                
+                if (!error && data && data.length > 0) success = true
+                if (error) lastError = error
+            } else {
+                // If columns missing, we can try to update blindly with lowercase defaults as fallback?
+                // But usually if they are missing in select * result, they don't exist.
+                // However, maybe RLS hid them? But we are using admin client.
+                // So if missing, we probably can't update.
+                lastError = { message: `No se encontraron las columnas de rol/admin (role=${roleCol}, is_admin=${adminCol}). Columnas disponibles: ${Object.keys(profile).join(', ')}` }
+            }
+        } else {
+             lastError = { message: "No se encontró el perfil del usuario" }
         }
 
-        if (!err) {
+        if (success) {
             // Only create if role is 'agente'. For admin/supervisor, only update if exists.
             const shouldCreate = newRole === "agente"
             await ensureAgentRecord(supa, email, idi, newRole, shouldCreate)
         }
 
-        if (err) {
+        if (!success) {
             revalidatePath("/dashboard/configuracion")
-            redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent(err.message)}`)
+            redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent(lastError?.message || "No se pudo actualizar el rol (registro no encontrado)")}`)
         }
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?manageUser=success&mmsg=${encodeURIComponent("Rol actualizado correctamente")}`)
     } catch (e: any) {
+        if (e.message === 'NEXT_REDIRECT' || e.digest?.startsWith('NEXT_REDIRECT')) {
+            throw e
+        }
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent(e?.message || "No se pudo actualizar el rol")}`)
     }
@@ -342,44 +398,51 @@ export async function toggleActiveAction(formData: FormData) {
     const activeRaw = formData.get("active")
     const setActive = String(activeRaw || "").toLowerCase() === "true"
     try {
-        let err: any = null
-        const { error: e1 } = await supa
-            .from("Perfiles")
-            .update({ activo: setActive })
-            .eq("usuario", email)
-            .eq("inmobiliaria", idi as any)
-        err = e1
-        if (err) {
-            const { error: e2 } = await supa
-                .from("Perfiles")
-                .update({ activo: setActive })
-                .eq("usuario", email)
-                .eq("Inmobiliaria", idi as any)
-            err = e2
+        const admin = createAdminClient()
+        let success = false
+        let lastError: any = null
+
+        const found = await findProfileAndColumns(admin, email, idi)
+
+        if (found) {
+            const { profile, whereUser, whereInm } = found
+            
+            // Determine column name
+            const activeCol = 'activo' in profile ? 'activo' : 
+                              ('Activo' in profile ? 'Activo' : 
+                              ('active' in profile ? 'active' : 
+                              ('Active' in profile ? 'Active' : 
+                              ('is_active' in profile ? 'is_active' : 
+                              ('es_agente' in profile ? 'es_agente' : null)))))
+            
+            if (activeCol) {
+                const { data, error } = await admin
+                    .from("Perfiles")
+                    .update({ [activeCol]: setActive })
+                    .eq(whereUser, email)
+                    .eq(whereInm, idi)
+                    .select()
+                
+                if (!error && data && data.length > 0) success = true
+                if (error) lastError = error
+            } else {
+                lastError = { message: `No se encontró la columna de estado 'activo' o 'Activo'. Columnas disponibles: ${Object.keys(profile).join(', ')}` }
+            }
+        } else {
+             lastError = { message: "No se encontró el perfil del usuario para activar/desactivar" }
         }
-        if (err) {
-            const { error: e3 } = await supa
-                .from("Perfiles")
-                .update({ activo: setActive })
-                .eq("Usuario", email)
-                .eq("inmobiliaria", idi as any)
-            err = e3
-        }
-        if (err) {
-            const { error: e4 } = await supa
-                .from("Perfiles")
-                .update({ activo: setActive })
-                .eq("Usuario", email)
-                .eq("Inmobiliaria", idi as any)
-            err = e4
-        }
-        if (err) {
+
+        if (!success) {
+            console.error("Error updating active status:", lastError)
             revalidatePath("/dashboard/configuracion")
-            redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent(err.message)}`)
+            redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent(lastError?.message || "No se pudo actualizar el estado (registro no encontrado)")}`)
         }
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?manageUser=success&mmsg=${encodeURIComponent(setActive ? "Agente activado" : "Agente desactivado")}`)
     } catch (e: any) {
+        if (e.message === 'NEXT_REDIRECT' || e.digest?.startsWith('NEXT_REDIRECT')) {
+            throw e
+        }
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent(e?.message || "No se pudo actualizar el estado")}`)
     }
@@ -413,21 +476,33 @@ export async function deleteAgentAction(formData: FormData) {
         const admin = createAdminClient()
 
         // 1. Eliminar de Perfiles
-        let err: any = null
-        let deleteQuery = admin.from("Perfiles").delete()
+        let success = false
+        let lastError: any = null
 
         if (id) {
-            deleteQuery = deleteQuery.eq("id", id)
+             // If we have ID, just delete by ID
+             const { data, error } = await admin.from("Perfiles").delete().eq("id", id).select()
+             if (!error && data && data.length > 0) success = true
+             if (error) lastError = error
         } else {
-            // Fallback por email si no hay ID
-            deleteQuery = deleteQuery.eq("usuario", email).eq("inmobiliaria", idi as any)
+             const found = await findProfileAndColumns(admin, email, idi)
+             if (found) {
+                 const { whereUser, whereInm } = found
+                 const { data, error } = await admin
+                    .from("Perfiles")
+                    .delete()
+                    .eq(whereUser, email)
+                    .eq(whereInm, idi)
+                    .select()
+                 if (!error && data && data.length > 0) success = true
+                 if (error) lastError = error
+             } else {
+                  lastError = { message: "No se encontró el perfil para borrar" }
+             }
         }
 
-        const { error: e1 } = await deleteQuery
-        err = e1
-
-        if (err) {
-            throw new Error(err.message || "No se pudo borrar el perfil")
+        if (!success) {
+            throw new Error(lastError?.message || "No se pudo borrar el perfil (no encontrado)")
         }
 
         // 2. Eliminar de Agentes (si existe)
@@ -447,6 +522,9 @@ export async function deleteAgentAction(formData: FormData) {
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?manageUser=success&mmsg=${encodeURIComponent("Usuario borrado correctamente")}`)
     } catch (e: any) {
+        if (e.message === 'NEXT_REDIRECT' || e.digest?.startsWith('NEXT_REDIRECT')) {
+            throw e
+        }
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent(e?.message || "No se pudo borrar el usuario")}`)
     }
@@ -467,30 +545,37 @@ export async function toggleAgentFunctionsAction(formData: FormData) {
         .limit(1)
         .maybeSingle()
     const isAdmin = perfil?.is_admin === true
-    if (!isAdmin) {
+    const isSupervisor = perfil?.role === 'supervisor'
+    if (!isAdmin && !isSupervisor) {
         revalidatePath("/dashboard/configuracion")
-        redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent("Solo administradores pueden gestionar funciones de agente")}`)
+        redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent("Solo administradores y supervisores pueden gestionar funciones de agente")}`)
     }
 
     const email = String(formData.get("email") || "").trim()
     const idi = Number(formData.get("idi"))
     const enable = String(formData.get("enable") || "").toLowerCase() === "true"
 
+    // Fetch user role to ensure we don't disable functions for an 'agente'
+    const { data: targetProfile } = await supa
+        .from("Perfiles")
+        .select("role, is_admin")
+        .eq("usuario", email)
+        .eq("inmobiliaria", idi as any)
+        .maybeSingle()
+    
+    const targetRole = targetProfile?.role || (targetProfile?.is_admin ? "administrador" : "agente")
+    
+    if (!enable && targetRole === "agente") {
+        revalidatePath("/dashboard/configuracion")
+        redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent("No se pueden desactivar las funciones de agente para un usuario con rol Agente")}`)
+    }
+
     try {
         const admin = createAdminClient()
 
         if (enable) {
-            // Fetch user role to set Cargo correctly
-            const { data: targetProfile } = await supa
-                .from("Perfiles")
-                .select("role, is_admin")
-                .eq("usuario", email)
-                .eq("inmobiliaria", idi as any)
-                .maybeSingle()
-
-            const role = targetProfile?.role || (targetProfile?.is_admin ? "administrador" : "agente")
-
-            await ensureAgentRecord(admin, email, idi, role, true)
+            // ... fetch user role logic removed as we fetched it above ...
+            await ensureAgentRecord(admin, email, idi, targetRole, true)
         } else {
             console.log("[toggleAgentFunctions] Disabling agent for:", email, "IDI:", idi)
             
@@ -527,6 +612,9 @@ export async function toggleAgentFunctionsAction(formData: FormData) {
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?manageUser=success&mmsg=${encodeURIComponent(enable ? "Funciones de agente habilitadas" : "Funciones de agente deshabilitadas")}`)
     } catch (e: any) {
+        if (e.message === 'NEXT_REDIRECT' || e.digest?.startsWith('NEXT_REDIRECT')) {
+            throw e
+        }
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent(e?.message || "Error gestionando funciones de agente")}`)
     }
@@ -571,6 +659,9 @@ export async function resendUserConfirmationAction(formData: FormData) {
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?manageUser=success&mmsg=${encodeURIComponent("Enlace de invitación reenviado correctamente")}`)
     } catch (e: any) {
+        if (e.message === 'NEXT_REDIRECT' || e.digest?.startsWith('NEXT_REDIRECT')) {
+            throw e
+        }
         revalidatePath("/dashboard/configuracion")
         redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent(e?.message || "No se pudo reenviar la invitación")}`)
     }

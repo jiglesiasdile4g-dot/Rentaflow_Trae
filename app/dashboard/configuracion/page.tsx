@@ -59,6 +59,9 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
       const { data, error } = await client.from("Perfiles").select("*").eq("inmobiliaria", idi)
       if (!error && data) {
         if (log) log("fetch_result", `found ${data.length}`)
+        if (data.length > 0) {
+             console.log("[DEBUG] Perfiles keys:", Object.keys(data[0]))
+        }
         return data
       }
       if (error && log) log("err_fetch", error.message)
@@ -147,7 +150,9 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
             usuario: String(p?.usuario || p?.Usuario || ""),
             is_admin: p?.is_admin === true || p?.Is_admin === true,
             role: String(p?.role || p?.Role || "agente").toLowerCase(),
-            activo: typeof p?.activo === "boolean" ? !!p?.activo : (typeof p?.Activo === "boolean" ? !!p?.Activo : null),
+            activo: typeof p?.activo === "boolean" ? !!p?.activo : 
+                    (typeof p?.Activo === "boolean" ? !!p?.Activo : 
+                    (typeof p?.es_agente === "boolean" ? !!p?.es_agente : null)),
             has_agent_record: hasRecord
         }
       })
@@ -388,7 +393,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                                   {u.usuario}
                                   {u.usuario === user.email && " (Tú)"}
                                 </span>
-                                {u.is_admin && u.has_agent_record && (
+                                {(u.is_admin || u.role === "supervisor") && u.has_agent_record && (
                                     <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 border-blue-200 text-blue-700 bg-blue-50 flex items-center gap-1 w-fit">
                                       <UserPlus className="h-3 w-3" /> Agente Activo
                                     </Badge>

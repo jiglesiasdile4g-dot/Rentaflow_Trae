@@ -114,7 +114,7 @@ export function UserActions({
             </DropdownMenuSubContent>
           </DropdownMenuSub>
 
-          {user.is_admin && toggleAgentFunctionsAction && (
+          {toggleAgentFunctionsAction && user.role !== 'agente' && (
             <DropdownMenuItem
               onClick={(e) => {
                 e.preventDefault()

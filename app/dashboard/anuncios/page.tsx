@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
-import { TooltipProvider } from "@/components/ui/tooltip"
+import { TooltipProvider, Tooltip as UITooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
@@ -77,11 +77,13 @@ interface AnuncioCard {
   necesidadAval?: boolean
   Fecha_Activacion_Programada?: string | null // Added for scheduled activation
   fechaCreacion?: string // Added for activation date in stats
+  fecha_activacion?: string | null // Added for tracking activation date
   // Phase metrics from database
   phaseMetrics?: {
     aceptados: number
     visitaPropuesta: number
     visitaCompletada: number
+    datosCompletos: number
   }
   // Added descartados field
   descartados?: number
@@ -588,7 +590,7 @@ export default function AnunciosPage() {
 
   useEffect(() => {
     if (selectedAnuncioForStats && showStatsModal) {
-      fetchQualityMetrics(selectedAnuncioForStats.referencia, trendTimeframe).then((metrics) => {
+      fetchQualityMetrics(selectedAnuncioForStats.referencia, trendTimeframe, selectedAnuncioForStats.fecha_activacion).then((metrics) => {
         console.log("[v0] Quality metrics fetched:", metrics)
         setQualityMetrics(metrics)
       })
@@ -599,7 +601,7 @@ export default function AnunciosPage() {
     fetchAnuncios()
   }, [metricsPeriod])
 
-  const fetchQualityMetrics = async (anuncioReferencia: string, timeframe: "24h" | "7d" | "1m") => {
+  const fetchQualityMetrics = async (anuncioReferencia: string, timeframe: "24h" | "7d" | "1m", activationDateStr?: string | null) => {
     const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -615,6 +617,14 @@ export default function AnunciosPage() {
       startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
     } else {
       startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    }
+    
+    // Apply activation date filtering if it's more recent than the timeframe start
+    if (activationDateStr) {
+      const activationDate = new Date(activationDateStr)
+      if (!isNaN(activationDate.getTime()) && activationDate > startDate) {
+        startDate = activationDate
+      }
     }
 
     console.log("[v0] Fetching quality metrics for referencia:", anuncioReferencia, "timeframe:", timeframe)
@@ -668,18 +678,33 @@ export default function AnunciosPage() {
 
   const fetchLeadsByPhase = async (
     anuncioRef: string,
-    phase: "aceptado" | "visita_propuesta" | "visita_completada",
+    phase: string,
   ) => {
     const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
-    const { data, error } = await supabase
+
+    let status = ""
+    if (phase === "aceptado") status = "Aceptado"
+    else if (phase === "visita_propuesta") status = "Visita Propuesta"
+    else if (phase === "visita_completada") status = "Visita Completada"
+    else if (phase === "datos_completos") status = "Datos Completos"
+    else if (phase === "descartado") status = "Descartado"
+
+    let query = supabase
       .from("Clientes")
-      .select("*, Agentes(Nombre)")
-      .ilike("Inmueble", anuncioRef) // Use Inmueble field that contains anuncio.referencia
-      .eq(phase, true) // Query the boolean field
+      .select("*")
+      .ilike("Inmueble", anuncioRef)
       .order("created_at", { ascending: false })
+
+    if (status) {
+      query = query.eq("Estado", status)
+    } else {
+      return []
+    }
+
+    const { data, error } = await query
 
     if (error) {
       console.error(`[v0] Error fetching ${phase} leads:`, error)
@@ -710,20 +735,22 @@ export default function AnunciosPage() {
 
   
 
-  const handlePhaseMetricClick = async (phase: "aceptado" | "visita_propuesta" | "visita_completada") => {
+  const handlePhaseMetricClick = async (phase: string) => {
     if (!selectedAnuncioForStats) return
 
     const leads = await fetchLeadsByPhase(selectedAnuncioForStats.referencia, phase)
 
-    const statusLabels = {
+    const statusLabels: Record<string, string> = {
       aceptado: "Candidatos Aprobados",
       visita_propuesta: "Visita Propuesta",
       visita_completada: "Visita Completada",
+      datos_completos: "Datos Completos",
+      descartado: "Descartados",
     }
 
     setPhaseLeadsDialog({
       open: true,
-      status: statusLabels[phase],
+      status: statusLabels[phase] || phase,
       leads,
     })
   }
@@ -735,6 +762,35 @@ export default function AnunciosPage() {
     )
     const now = new Date()
 
+    // Helper to count metrics with activation date filtering
+    const countMetrics = (leads: any[]) => {
+      let total = 0
+      let completos = 0
+      let aceptados = 0
+      let visitaPropuesta = 0
+      let visitaCompletada = 0
+      let descartados = 0
+      
+      const activationDate = anuncio.fecha_activacion ? new Date(anuncio.fecha_activacion) : null
+
+      for (const lead of leads || []) {
+        // Filter by activation date
+        if (activationDate) {
+          const createdAt = new Date(lead.created_at)
+          if (createdAt < activationDate) continue
+        }
+
+        total++
+        const est = String(lead.Estado || "").toLowerCase()
+        if (est === "datos completos") completos++
+        if (est === "aceptado") aceptados++
+        if (est === "visita propuesta") visitaPropuesta++
+        if (est === "visita completada") visitaCompletada++
+        if (est === "descartado") descartados++
+      }
+      return { total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados }
+    }
+
     if (period === "hoy") {
       const hourlyData: { name: string; total: number; completos: number; aceptados: number; visitaPropuesta: number; visitaCompletada: number; descartados: number; isCurrent: boolean }[] = []
 
@@ -744,7 +800,7 @@ export default function AnunciosPage() {
 
         const { data, error } = await supabase
           .from("Clientes")
-          .select("IDC, Estado, aceptado, visita_propuesta, visita_completada")
+          .select("IDC, Estado, created_at")
           .ilike("Inmueble", anuncio.referencia)
           .gte("created_at", hourStart.toISOString())
           .lt("created_at", hourEnd.toISOString())
@@ -752,21 +808,8 @@ export default function AnunciosPage() {
         const hourLabel = hourStart.getHours().toString().padStart(2, "0") + ":00"
         const isCurrent = i === 0 // Last hour is current
 
-        const total = data?.length || 0
-        let completos = 0
-        let aceptados = 0
-        let visitaPropuesta = 0
-        let visitaCompletada = 0
-        let descartados = 0
-        for (const lead of data || []) {
-          const est = String((lead as any).Estado || "").toLowerCase()
-          if (est.includes("complet")) completos++
-          if (String((lead as any).aceptado) === "true") aceptados++
-          if (String((lead as any).visita_propuesta) === "true") visitaPropuesta++
-          if (String((lead as any).visita_completada) === "true") visitaCompletada++
-          if (est === "descartado") descartados++
-        }
-        hourlyData.push({ name: hourLabel, total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados, isCurrent })
+        const metrics = countMetrics(data || [])
+        hourlyData.push({ name: hourLabel, ...metrics, isCurrent })
       }
 
       // Filtrar horas con datos o al menos mostrar las últimas 6 horas para evitar muchas celdas vacías
@@ -808,28 +851,15 @@ export default function AnunciosPage() {
 
         const { data, error } = await supabase
           .from("Clientes")
-          .select("IDC, Estado, aceptado, visita_propuesta, visita_completada")
+          .select("IDC, Estado, created_at")
           .ilike("Inmueble", anuncio.referencia)
           .gte("created_at", dayStart.toISOString())
           .lte("created_at", dayEnd.toISOString())
 
         const dayLabel = dayStart.toLocaleDateString("es-ES", { day: "numeric", month: "short" })
 
-        const total = data?.length || 0
-        let completos = 0
-        let aceptados = 0
-        let visitaPropuesta = 0
-        let visitaCompletada = 0
-        let descartados = 0
-        for (const lead of data || []) {
-          const est = String((lead as any).Estado || "").toLowerCase()
-          if (est.includes("complet")) completos++
-          if (String((lead as any).aceptado) === "true") aceptados++
-          if (String((lead as any).visita_propuesta) === "true") visitaPropuesta++
-          if (String((lead as any).visita_completada) === "true") visitaCompletada++
-          if (est === "descartado") descartados++
-        }
-        dailyData.push({ name: dayLabel, total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados })
+        const metrics = countMetrics(data || [])
+        dailyData.push({ name: dayLabel, ...metrics })
       }
 
       return dailyData
@@ -848,28 +878,15 @@ export default function AnunciosPage() {
 
         const { data, error } = await supabase
           .from("Clientes")
-          .select("IDC, Estado, aceptado, visita_propuesta, visita_completada")
+          .select("IDC, Estado, created_at")
           .ilike("Inmueble", anuncio.referencia)
           .gte("created_at", monthStart.toISOString())
           .lte("created_at", monthEnd.toISOString())
 
         const monthLabel = monthStart.toLocaleDateString("es-ES", { month: "short" })
 
-        const total = data?.length || 0
-        let completos = 0
-        let aceptados = 0
-        let visitaPropuesta = 0
-        let visitaCompletada = 0
-        let descartados = 0
-        for (const lead of data || []) {
-          const est = String((lead as any).Estado || "").toLowerCase()
-          if (est.includes("complet")) completos++
-          if (String((lead as any).aceptado) === "true") aceptados++
-          if (String((lead as any).visita_propuesta) === "true") visitaPropuesta++
-          if (String((lead as any).visita_completada) === "true") visitaCompletada++
-          if (est === "descartado") descartados++
-        }
-        monthlyData.push({ name: monthLabel, total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados })
+        const metrics = countMetrics(data || [])
+        monthlyData.push({ name: monthLabel, ...metrics })
       }
 
       return monthlyData
@@ -887,28 +904,15 @@ export default function AnunciosPage() {
 
         const { data, error } = await supabase
           .from("Clientes")
-          .select("IDC, Estado, aceptado, visita_propuesta, visita_completada")
+          .select("IDC, Estado, created_at")
           .ilike("Inmueble", anuncio.referencia)
           .gte("created_at", currentWeekStart.toISOString())
           .lte("created_at", weekEnd.toISOString())
 
         const weekLabel = `Sem ${Math.ceil((currentWeekStart.getDate() + currentWeekStart.getDay()) / 7)}`
 
-        const total = data?.length || 0
-        let completos = 0
-        let aceptados = 0
-        let visitaPropuesta = 0
-        let visitaCompletada = 0
-        let descartados = 0
-        for (const lead of data || []) {
-          const est = String((lead as any).Estado || "").toLowerCase()
-          if (est.includes("complet")) completos++
-          if (String((lead as any).aceptado) === "true") aceptados++
-          if (String((lead as any).visita_propuesta) === "true") visitaPropuesta++
-          if (String((lead as any).visita_completada) === "true") visitaCompletada++
-          if (est === "descartado") descartados++
-        }
-        weeksData.push({ name: weekLabel, total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados })
+        const metrics = countMetrics(data || [])
+        weeksData.push({ name: weekLabel, ...metrics })
 
         currentWeekStart.setDate(currentWeekStart.getDate() + 7)
       }
@@ -927,28 +931,15 @@ export default function AnunciosPage() {
 
         const { data, error } = await supabase
           .from("Clientes")
-          .select("IDC, Estado, aceptado, visita_propuesta, visita_completada")
+          .select("IDC, Estado, created_at")
           .ilike("Inmueble", anuncio.referencia)
           .gte("created_at", dayStart.toISOString())
           .lte("created_at", dayEnd.toISOString())
 
         const dayLabel = dayStart.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })
 
-        const total = data?.length || 0
-        let completos = 0
-        let aceptados = 0
-        let visitaPropuesta = 0
-        let visitaCompletada = 0
-        let descartados = 0
-        for (const lead of data || []) {
-          const est = String((lead as any).Estado || "").toLowerCase()
-          if (est.includes("complet")) completos++
-          if (String((lead as any).aceptado) === "true") aceptados++
-          if (String((lead as any).visita_propuesta) === "true") visitaPropuesta++
-          if (String((lead as any).visita_completada) === "true") visitaCompletada++
-          if (est === "descartado") descartados++
-        }
-        dailyData.push({ name: dayLabel, total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados })
+        const metrics = countMetrics(data || [])
+        dailyData.push({ name: dayLabel, ...metrics })
       }
 
       return dailyData
@@ -966,7 +957,10 @@ export default function AnunciosPage() {
     try {
       const { error } = await supabase
         .from("Anuncios")
-        .update({ Activacion: "Archivado" })
+        .update({ 
+          Activacion: "Archivado",
+          fecha_activacion: null
+        })
         .eq("ida", archivingAnuncio.id)
 
       if (error) {
@@ -1246,7 +1240,7 @@ export default function AnunciosPage() {
 
       const query = supabase
         .from("Anuncios")
-        .select("ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos")
+        .select("ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion")
         .order("created_at", { ascending: false })
         .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
 
@@ -1259,7 +1253,7 @@ export default function AnunciosPage() {
         const fallbackQuery = supabase
           .from("Anuncios")
           .select(
-            "ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos",
+            "ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion",
           )
           .order("created_at", { ascending: false })
           .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
@@ -1318,7 +1312,7 @@ export default function AnunciosPage() {
         const referencia = anuncio.Referencia || `REF-${anuncio.ida}`
         console.log(`[v0] Processing anuncio: ${referencia}`)
 
-        const { data: allLeads, error: leadsError } = await supabase
+        const { data: rawLeads, error: leadsError } = await supabase
           .from("Clientes")
           .select(
             "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos",
@@ -1329,7 +1323,22 @@ export default function AnunciosPage() {
           console.log(`[v0] Error fetching leads for ${referencia}:`, leadsError)
         }
 
-        const leadsTotales = allLeads?.length || 0
+        let allLeads = rawLeads || []
+        
+        // Filter leads by activation date if available (User request: count from last activation)
+        if (anuncio.fecha_activacion) {
+           const activationDate = new Date(anuncio.fecha_activacion)
+           // Check if date is valid
+           if (!isNaN(activationDate.getTime())) {
+             allLeads = allLeads.filter((lead) => {
+               const createdAt = new Date(lead.created_at)
+               return createdAt >= activationDate
+             })
+           }
+        }
+
+        let leadsTotales = allLeads.length
+
         const leadsDesdeCorte = allLeads?.filter((lead) => {
           const createdAt = new Date(lead.created_at)
           return createdAt >= cutoffDate
@@ -1527,12 +1536,14 @@ export default function AnunciosPage() {
           ejecuciones,
           consumoMes: ejecuciones,
           fechaCreacion: fechaCreacion, // Add fechaCreacion
+          fecha_activacion: anuncio.fecha_activacion || null,
           descartados, // Added descartados
           Fecha_Activacion_Programada: anuncio.Fecha_Activacion_Programada || null, // Pass scheduled date
           phaseMetrics: {
-            aceptados: allLeads?.filter((lead) => lead.aceptado === true).length || 0,
-            visitaPropuesta: allLeads?.filter((lead) => lead.visita_propuesta === true).length || 0,
-            visitaCompletada: allLeads?.filter((lead) => lead.visita_completada === true).length || 0,
+            aceptados: allLeads?.filter((lead) => lead.Estado === "Aceptado").length || 0,
+            visitaPropuesta: allLeads?.filter((lead) => lead.Estado === "Visita Propuesta").length || 0,
+            visitaCompletada: allLeads?.filter((lead) => lead.Estado === "Visita Completada").length || 0,
+            datosCompletos: allLeads?.filter((lead) => lead.Estado?.toLowerCase() === "datos completos").length || 0,
           },
         })
 
@@ -1614,7 +1625,16 @@ export default function AnunciosPage() {
         }
       }
 
-      const { error } = await supabase.from("Anuncios").update({ Activacion: newActivacion }).eq("ida", anuncioId)
+      // Fetch current data to check fecha_activacion
+      const { data: currentAd } = await supabase.from("Anuncios").select("fecha_activacion").eq("ida", anuncioId).single()
+
+      const updates: any = { Activacion: newActivacion }
+      // Only set activation date if it's null (first activation or after unarchiving)
+      if (newActivacion === "Activo" && !currentAd?.fecha_activacion) {
+        updates.fecha_activacion = new Date().toISOString()
+      }
+
+      const { error } = await supabase.from("Anuncios").update(updates).eq("ida", anuncioId)
 
       if (error) {
         toast({
@@ -1739,7 +1759,16 @@ export default function AnunciosPage() {
     try {
       const newActivacion = currentActivacion === "Activo" ? "Pausado" : "Activo"
 
-      const { error } = await supabase.from("Anuncios").update({ Activacion: newActivacion }).eq("ida", anuncioId)
+      // Fetch current data to check fecha_activacion
+      const { data: currentAd } = await supabase.from("Anuncios").select("fecha_activacion").eq("ida", anuncioId).single()
+
+      const updates: any = { Activacion: newActivacion }
+      // Only set activation date if it's null (first activation or after unarchiving)
+      if (newActivacion === "Activo" && !currentAd?.fecha_activacion) {
+        updates.fecha_activacion = new Date().toISOString()
+      }
+
+      const { error } = await supabase.from("Anuncios").update(updates).eq("ida", anuncioId)
 
       if (error) {
         toast({
@@ -1982,16 +2011,30 @@ export default function AnunciosPage() {
       }
 
       // Calculate real metrics
+      let leads = allLeads || []
+      
+      // Filter by activation date to ensure consistency with other metrics
+      if (anuncio.fecha_activacion) {
+        const activationDate = new Date(anuncio.fecha_activacion)
+        if (!isNaN(activationDate.getTime())) {
+          leads = leads.filter((lead) => {
+            const createdAt = new Date(lead.created_at)
+            return createdAt >= activationDate
+          })
+        }
+      }
+
       const datosCompletosCount =
-        allLeads?.filter((lead) => {
+        leads.filter((lead) => {
           const estado = lead.Estado?.toLowerCase() || ""
-          return estado === "datos completos"
+          return ["datos completos", "aceptado", "visita propuesta", "pedir aval"].includes(estado)
         }).length || 0
 
-      const aceptados = allLeads?.filter((lead) => lead.aceptado === true).length || 0
-      const visitaPropuesta = allLeads?.filter((lead) => lead.visita_propuesta === true).length || 0
-      const visitaCompletada = allLeads?.filter((lead) => lead.visita_completada === true).length || 0
-      const descartados = allLeads?.filter((lead) => lead.Estado === "Descartado").length || 0
+      const aceptados = leads.filter((lead) => lead.aceptado === true).length || 0
+      const visitaPropuesta = leads.filter((lead) => lead.visita_propuesta === true).length || 0
+      const visitaCompletada = leads.filter((lead) => lead.visita_completada === true).length || 0 // Keeping this for now, will replace in UI if needed, but logic stays available
+      const datosCompletosStrict = leads.filter((lead) => lead.Estado === "Datos Completos").length || 0
+      const descartados = leads.filter((lead) => lead.Estado === "Descartado").length || 0
 
       console.log(
         "[v0] Stats fetched - Datos Completos:",
@@ -2010,7 +2053,15 @@ export default function AnunciosPage() {
       const now = new Date()
       
       // Usar la fecha de publicación del anuncio como fecha de inicio
-      const anuncioCreationDate = anuncio.created_at ? new Date(anuncio.created_at) : new Date(now.getTime() - 30 * dayMs)
+      // Si hay fecha de activación, usar esa preferentemente para no mostrar historial vacío irrelevante
+      let anuncioCreationDate = anuncio.created_at ? new Date(anuncio.created_at) : new Date(now.getTime() - 30 * dayMs)
+      
+      if (anuncio.fecha_activacion) {
+         const actDate = new Date(anuncio.fecha_activacion)
+         if (!isNaN(actDate.getTime())) {
+             anuncioCreationDate = actDate
+         }
+      }
       anuncioCreationDate.setHours(0, 0, 0, 0)
       
       // Calcular días desde la creación del anuncio hasta hoy
@@ -2027,7 +2078,7 @@ export default function AnunciosPage() {
         const nextDate = new Date(currentDate.getTime() + dayMs)
         
         const cnt =
-          allLeads?.filter((lead) => {
+          leads.filter((lead) => {
             const createdAt = lead?.created_at ? new Date(lead.created_at) : null
             return createdAt && createdAt >= currentDate && createdAt < nextDate
           }).length || 0
@@ -2047,6 +2098,7 @@ export default function AnunciosPage() {
           aceptados,
           visitaPropuesta,
           visitaCompletada,
+          datosCompletos: datosCompletosStrict,
         },
         statsPeriod: "esteMes", // Initialize with default period for this anuncio
         // These are placeholders, actual calculation might be needed or removed
@@ -4176,65 +4228,150 @@ export default function AnunciosPage() {
                 <>
                   {/* Métricas Principales */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="text-center p-4 bg-muted rounded-lg border">
-                      <div className="text-3xl font-bold text-foreground">{selectedAnuncioForStats.leadsTotales}</div>
-                        <div className="text-xs text-muted-foreground">Leads Totales</div>
-                    </div>
-                    <div className="text-center p-4 bg-muted rounded-lg border">
-                      <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{selectedAnuncioForStats.datosCompletos}</div>
-                        <div className="text-xs text-muted-foreground">Datos Completos</div>
-                    </div>
-                    <div className="text-center p-4 bg-muted rounded-lg border">
-                      <div className="text-3xl font-bold text-violet-600 dark:text-violet-400">
-                        {selectedAnuncioForStats.leadsTotales > 0
-                          ? (
-                              (selectedAnuncioForStats.datosCompletos / selectedAnuncioForStats.leadsTotales) *
-                              100
-                          ).toFixed(1)
-                          : "0.0"}
-                        %
-                      </div>
-                      <div className="text-xs text-muted-foreground">Tasa Conversión</div>
-                    </div>
-                    <div className="text-center p-4 bg-muted rounded-lg border">
-                      <div className="text-3xl font-bold text-red-600 dark:text-red-400">{selectedAnuncioForStats.descartados || 0}</div>
-                        <div className="text-xs text-muted-foreground">Descartados</div>
-                    </div>
+                    <TooltipProvider>
+                      <UITooltip delayDuration={0}>
+                        <TooltipTrigger asChild>
+                          <Button 
+                            variant="outline"
+                            className="w-full h-auto text-center p-4 bg-muted rounded-lg border hover:bg-muted/80 hover:border-primary/50 transition-colors flex flex-col items-center gap-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                            onClick={() => handlePhaseMetricClick("descartado")}
+                            tabIndex={-1}
+                          >
+                            <span className="text-3xl font-bold text-foreground">{selectedAnuncioForStats.leadsTotales}</span>
+                            <span className="text-xs text-muted-foreground font-normal">Leads Totales</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="z-[9999]">
+                          <p>Leads totales del periodo seleccionado o desde la última activación del anuncio</p>
+                        </TooltipContent>
+                      </UITooltip>
+                    </TooltipProvider>
+                    <TooltipProvider>
+                      <UITooltip delayDuration={0}>
+                        <TooltipTrigger asChild>
+                          <Button 
+                            variant="outline"
+                            className="w-full h-auto text-center p-4 bg-muted rounded-lg border hover:bg-muted/80 hover:border-primary/50 transition-colors flex flex-col items-center gap-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                            tabIndex={-1}
+                          >
+                            <span className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{selectedAnuncioForStats.datosCompletos}</span>
+                            <span className="text-xs text-muted-foreground font-normal">Datos Completos</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="z-[9999]">
+                          <p>Leads con datos completos (incluye Aprobados, Visita Programada y Pedir Aval)</p>
+                        </TooltipContent>
+                      </UITooltip>
+                    </TooltipProvider>
+                    <TooltipProvider>
+                      <UITooltip delayDuration={0}>
+                        <TooltipTrigger asChild>
+                          <Button 
+                            variant="outline"
+                            className="w-full h-auto text-center p-4 bg-muted rounded-lg border hover:bg-muted/80 hover:border-primary/50 transition-colors flex flex-col items-center gap-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                            tabIndex={-1}
+                          >
+                            <span className="text-3xl font-bold text-violet-600 dark:text-violet-400">
+                              {selectedAnuncioForStats.leadsTotales > 0
+                                ? (
+                                    (selectedAnuncioForStats.datosCompletos / selectedAnuncioForStats.leadsTotales) *
+                                    100
+                                ).toFixed(1)
+                                : "0.0"}
+                              %
+                            </span>
+                            <span className="text-xs text-muted-foreground font-normal">Tasa Conversión</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="z-[9999]">
+                          <p>Porcentaje de leads con datos completos respecto al total</p>
+                        </TooltipContent>
+                      </UITooltip>
+                    </TooltipProvider>
+                    <TooltipProvider>
+                      <UITooltip delayDuration={0}>
+                        <TooltipTrigger asChild>
+                          <Button 
+                            variant="outline"
+                            className="w-full h-auto text-center p-4 bg-muted rounded-lg border hover:bg-muted/80 hover:border-primary/50 transition-colors flex flex-col items-center gap-1 focus-visible:ring-0 focus-visible:ring-offset-0"
+                            tabIndex={-1}
+                          >
+                            <span className="text-3xl font-bold text-red-600 dark:text-red-400">{selectedAnuncioForStats.descartados || 0}</span>
+                            <span className="text-xs text-muted-foreground font-normal">Descartados</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="z-[9999]">
+                          <p>Leads con el estado Descartado</p>
+                        </TooltipContent>
+                      </UITooltip>
+                    </TooltipProvider>
                   </div>
 
                   <div className="space-y-3">
                     <h4 className="font-semibold">Preparados para la fase de visita</h4>
                     <div className="grid grid-cols-3 gap-3">
-                      <Button
-                        variant="outline"
-                        className="w-full justify-between hover:bg-green-50 dark:hover:bg-green-950/30 h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
-                        onClick={() => handlePhaseMetricClick("aceptado")}
-                      >
-                        <span className="text-xs text-muted-foreground">Candidatos Aprobados</span>
-                        <span className="text-lg font-bold text-green-600 dark:text-green-400">
-                          {selectedAnuncioForStats.phaseMetrics?.aceptados || 0}
-                        </span>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-between hover:bg-blue-50 dark:hover:bg-blue-950/30 h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
-                        onClick={() => handlePhaseMetricClick("visita_propuesta")}
-                      >
-                        <span className="text-xs text-muted-foreground">Visita Propuesta</span>
-                        <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                          {selectedAnuncioForStats.phaseMetrics?.visitaPropuesta || 0}
-                        </span>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-between hover:bg-purple-50 dark:hover:bg-purple-950/30 h-auto p-4 flex flex-col items-center gap-2 bg-transparent"
-                        onClick={() => handlePhaseMetricClick("visita_completada")}
-                      >
-                        <span className="text-xs text-muted-foreground">Visita Completada</span>
-                        <span className="text-lg font-bold text-purple-600 dark:text-purple-400">
-                          {selectedAnuncioForStats.phaseMetrics?.visitaCompletada || 0}
-                        </span>
-                      </Button>
+                      <TooltipProvider>
+                        <UITooltip delayDuration={0}>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="w-full justify-between hover:bg-emerald-50 dark:hover:bg-emerald-950/30 h-auto p-4 flex flex-col items-center gap-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                              onClick={() => handlePhaseMetricClick("datos_completos")}
+                              tabIndex={-1}
+                            >
+                              <span className="text-xs text-muted-foreground">Datos Completados</span>
+                              <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                                {selectedAnuncioForStats.phaseMetrics?.datosCompletos || 0}
+                              </span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="z-[9999]">
+                            <p>Leads con estado Datos Completos</p>
+                          </TooltipContent>
+                        </UITooltip>
+                      </TooltipProvider>
+
+                      <TooltipProvider>
+                        <UITooltip delayDuration={0}>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="w-full justify-between hover:bg-green-50 dark:hover:bg-green-950/30 h-auto p-4 flex flex-col items-center gap-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                              onClick={() => handlePhaseMetricClick("aceptado")}
+                              tabIndex={-1}
+                            >
+                              <span className="text-xs text-muted-foreground">Candidatos Aprobados</span>
+                              <span className="text-lg font-bold text-green-600 dark:text-green-400">
+                                {selectedAnuncioForStats.phaseMetrics?.aceptados || 0}
+                              </span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="z-[9999]">
+                            <p>Leads con estado Aprobado</p>
+                          </TooltipContent>
+                        </UITooltip>
+                      </TooltipProvider>
+
+                      <TooltipProvider>
+                        <UITooltip delayDuration={0}>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="w-full justify-between hover:bg-blue-50 dark:hover:bg-blue-950/30 h-auto p-4 flex flex-col items-center gap-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                              onClick={() => handlePhaseMetricClick("visita_propuesta")}
+                              tabIndex={-1}
+                            >
+                              <span className="text-xs text-muted-foreground">Visita Propuesta</span>
+                              <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                                {selectedAnuncioForStats.phaseMetrics?.visitaPropuesta || 0}
+                              </span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="z-[9999]">
+                            <p>Leads con estado Visita Propuesta</p>
+                          </TooltipContent>
+                        </UITooltip>
+                      </TooltipProvider>
                     </div>
                   </div>
 
@@ -4528,18 +4665,36 @@ export default function AnunciosPage() {
                 <p className="text-center text-muted-foreground py-8">No hay leads con este estado</p>
               ) : (
                 phaseLeadsDialog.leads.map((lead) => (
-                  <Card key={lead.IDC}>
+                  <Card key={lead.id || lead.IDC}>
                     <CardContent className="p-4">
                       <div className="space-y-2">
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-sm truncate text-foreground">{lead.Nombre || "Sin nombre"}</p>
+                            <div className="flex items-center gap-2 mt-0.5 mb-1">
+                                <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 text-muted-foreground font-normal">
+                                    ID: {lead.id}
+                                </Badge>
+                            </div>
                             <p className="text-xs text-muted-foreground truncate">{lead.Correo}</p>
                             {lead.Telefono && <p className="text-xs text-muted-foreground">{lead.Telefono}</p>}
                           </div>
-                          <Badge variant="secondary" className="ml-2 shrink-0">
-                            {phaseLeadsDialog.status}
-                          </Badge>
+                          <div className="flex flex-col items-end gap-2 ml-2 shrink-0">
+                              <Badge variant="secondary">
+                                {phaseLeadsDialog.status}
+                              </Badge>
+                              <Button 
+                                variant="default" 
+                                size="sm" 
+                                className="h-6 text-xs bg-black hover:bg-zinc-800 text-white"
+                                onClick={() => {
+                                    const url = `/dashboard/leads?leadId=${encodeURIComponent(lead.id)}`
+                                    router.push(url)
+                                }}
+                              >
+                                Detalle
+                              </Button>
+                          </div>
                         </div>
                         {lead.Ingresos && (
                           <p className="text-xs text-muted-foreground">Ingresos: {lead.Ingresos}€</p>
