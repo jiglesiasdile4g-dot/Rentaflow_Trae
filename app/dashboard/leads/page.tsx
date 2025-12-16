@@ -2800,30 +2800,28 @@ export default function LeadsPage() {
                                             </div>
                                             <div className="mt-1">
                                               <Button
-                                                variant="outline"
                                                 size="sm"
-                                                className="h-8 mt-1.5"
+                                                className="h-8 mt-1.5 bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 border-0 shadow-sm"
                                                 onClick={(e) => {
                                                   e.stopPropagation()
                                                   openNoteDialog(lead)
                                                 }}
                                               >
-                                                Anotar
+                                                Notas
                                               </Button>
                                             </div>
                                           </div>
                                         ) : (
                                           <div className="mt-2">
                                             <Button
-                                              variant="outline"
                                               size="sm"
-                                              className="h-8 mt-1.5"
+                                              className="h-8 mt-1.5 bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 border-0 shadow-sm"
                                               onClick={(e) => {
                                                 e.stopPropagation()
                                                 openNoteDialog(lead)
                                               }}
                                             >
-                                              Anotar
+                                              Notas
                                             </Button>
                                           </div>
                                         )}
@@ -3056,7 +3054,7 @@ export default function LeadsPage() {
                                         <Users className="h-4 w-4 text-primary" />
                                       )}
                                       {personaCount > 1 && (
-                                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                                        <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
                                           {personaCount}
                                         </div>
                                       )}
@@ -3260,30 +3258,28 @@ export default function LeadsPage() {
                                           </div>
                                           <div className="mt-1">
                                             <Button
-                                              variant="outline"
                                               size="sm"
-                                              className="h-8 mt-1.5"
+                                              className="h-8 mt-1.5 bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 border-0 shadow-sm"
                                               onClick={(e) => {
                                                 e.stopPropagation()
                                                 openNoteDialog(lead)
                                               }}
                                             >
-                                              Anotar
+                                              Notas
                                             </Button>
                                           </div>
                                         </div>
                                       ) : (
                                         <div className="mt-2">
                                           <Button
-                                            variant="outline"
                                             size="sm"
-                                            className="h-8 mt-1.5"
+                                            className="h-8 mt-1.5 bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 border-0 shadow-sm"
                                             onClick={(e) => {
                                               e.stopPropagation()
                                               openNoteDialog(lead)
                                             }}
                                           >
-                                            Anotar
+                                            Notas
                                           </Button>
                                         </div>
                                       )}
@@ -3929,12 +3925,11 @@ export default function LeadsPage() {
                                   </div>
                                   <div className="mt-0.5">
                                     <Button
-                                      variant="outline"
                                       size="sm"
-                                      className="h-8 mt-1.5"
+                                      className="h-8 mt-1.5 bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 border-0 shadow-sm"
                                       onClick={() => openNoteDialog(selectedLead)}
                                     >
-                                      Anotar
+                                      Notas
                                     </Button>
                                   </div>
                                   {isEditingPersonalInfo ? (
@@ -3954,12 +3949,11 @@ export default function LeadsPage() {
                               ) : (
                                 <div style={{ flex: "1", minWidth: 0 }}>
                                   <Button
-                                    variant="outline"
                                     size="sm"
-                                    className="h-8 mt-1.5"
+                                    className="h-8 mt-1.5 bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 border-0 shadow-sm"
                                     onClick={() => openNoteDialog(selectedLead)}
                                   >
-                                    Anotar
+                                    Notas
                                   </Button>
                                 </div>
                               )}
