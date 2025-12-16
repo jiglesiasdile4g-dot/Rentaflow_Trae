@@ -3717,6 +3717,45 @@ export default function LeadsPage() {
                                 ) : (
                                   <div className={`text-sm break-words ${selectedLead.Correo ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
                                     {selectedLead.Correo || "No especificado"}
+                                    {selectedLead.correo_proxy && (
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <TooltipProvider>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <div className="text-xs text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/50 max-w-full truncate">
+                                                Proxy: {selectedLead.correo_proxy.substring(0, 10)}...{selectedLead.correo_proxy.includes("@") ? selectedLead.correo_proxy.split("@")[1] : selectedLead.correo_proxy.slice(-10)}
+                                              </div>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="bottom" className="max-w-[300px] break-all">
+                                              <p>{selectedLead.correo_proxy}</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+
+                                        <TooltipProvider>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  copyToClipboard(selectedLead.correo_proxy!, "Proxy Email")
+                                                }}
+                                                className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                              >
+                                                {copiedField === "Proxy Email" ? (
+                                                  <Check size={12} className="text-emerald-500" />
+                                                ) : (
+                                                  <Copy size={12} />
+                                                )}
+                                              </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                              <p>Copiar proxy</p>
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </TooltipProvider>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>

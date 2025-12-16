@@ -32,10 +32,19 @@ export async function GET(request: NextRequest) {
         },
       }
     )
+    
+    // Exchange code for session
     const { error } = await supabase.auth.exchangeCodeForSession(code)
+    
     if (!error) {
+      // Success! Redirect to next page
       const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || origin
       return NextResponse.redirect(`${baseUrl}${next}`)
+    } else {
+        console.error("Auth callback error:", error)
+        // Redirect to login with error
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || origin
+        return NextResponse.redirect(`${baseUrl}/login?error=auth-code-error`)
     }
   }
 

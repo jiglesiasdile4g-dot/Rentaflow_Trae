@@ -182,7 +182,8 @@ export async function createAgentAction(formData: FormData) {
     try {
         const admin = createAdminClient()
         const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
-        const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent("/dashboard/configuracion?action=set_password")}`
+        // Point directly to update-password to ensure they land on the dedicated page
+        const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`
 
         console.log("[INVITE] Using siteUrl:", siteUrl)
         console.log("[INVITE] Sending redirectTo:", redirectUrl)
@@ -191,6 +192,7 @@ export async function createAgentAction(formData: FormData) {
             data: {
                 inmobiliaria_id: Number(idi),
                 role: "agente",
+                must_change_password: true, // Force password set on first login
             },
             redirectTo: redirectUrl,
         })

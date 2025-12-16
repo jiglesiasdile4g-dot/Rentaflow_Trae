@@ -1,3 +1,21 @@
+## [0.7.8](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.7...v0.7.8) (2025-12-16)
+
+
+### Features
+
+* **leads:** visualización mejorada de emails proxy (idealista) con tooltip y botón de copiar
+* **db:** trigger automático para preservar correos proxy de idealista al actualizar leads
+* **ui:** adaptaciones de modo oscuro para modales y mensajes de whatsapp
+* **admin:** habilitar funciones de agente para supervisores
+
+
+### Bug Fixes
+
+* **hydration:** corrección de error de hidratación en auth/confirm (browser extensions)
+* **user-mgmt:** fix en desactivación de cuentas y visualización de badges
+* **metrics:** unificación de lógica de conteo de leads
+
+
 ## [0.7.7](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.6...v0.7.7) (2025-12-15)
 
 

@@ -24,6 +24,11 @@ export default async function DashboardLayout({
     redirect("/login")
   }
 
+  // Force password update if required (e.g. new invited users)
+  if (user.user_metadata?.must_change_password) {
+    redirect("/update-password")
+  }
+
   return (
     <InmobiliariaProvider>
       <SidebarLayout user={user}>{children}</SidebarLayout>
