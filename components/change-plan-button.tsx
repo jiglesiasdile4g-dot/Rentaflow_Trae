@@ -22,7 +22,7 @@ export default function ChangePlanButton({ idi, planId, current, redirectPath = 
       const j = await res.json().catch(() => ({}))
       if (res.ok && j?.ok && j?.scheduled) {
         const d = j?.scheduledAt ? new Date(j.scheduledAt) : null
-        const when = d && !isNaN(d.getTime()) ? d.toLocaleDateString("es-ES") : "próximo periodo"
+        const when = d && !isNaN(d.getTime()) ? formatDate(d) : "próximo periodo"
         toast({ title: "Downgrade programado", description: `Se aplicará en el siguiente periodo: ${when}` })
         router.replace(`${redirectPath}?planUpdate=scheduled&planId=${planId}`)
         router.refresh()

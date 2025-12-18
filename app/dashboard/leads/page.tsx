@@ -27,6 +27,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Eye, Download, UploadCloud, IdCard, Image as ImageIcon, Tag, Trash } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
+import { formatDate, cn } from "@/lib/utils"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { CalendarIcon } from "lucide-react"
 import React from "react" // Imported React
 import { LeadApproveWrapper } from "@/components/lead-approve-wrapper"
 import { LeadDenyWrapper } from "@/components/lead-deny-wrapper"
@@ -1705,16 +1709,7 @@ export default function LeadsPage() {
       }).format(amount)
     }
 
-    const formatDate = (dateString?: string) => {
-      if (!dateString) return "No especificado"
-      return new Date(dateString).toLocaleDateString("es-ES", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    }
+
 
     const getDaysAgo = (dateString?: string) => {
       if (!dateString) return "N/A"
@@ -2236,10 +2231,10 @@ export default function LeadsPage() {
                           </div>
                           <div className="flex items-center gap-1.5">
                           <div className="hidden sm:flex items-center gap-2 text-[10px] text-muted-foreground mr-2">
-                            <span>Renovación: {nextRenewalDate.toLocaleDateString("es-ES")}</span>
+                            <span>Renovación: {formatDate(nextRenewalDate)}</span>
                             <span>• Plan: {currentPlanName || (() => { const pd = getPlanData(currentPlanId); return pd ? pd.Nombre : String(currentPlanId || "") })()}</span>
                             {scheduledPlanId > 0 && scheduledEffectiveAt && (
-                              <span>• Downgrade programado: {scheduledEffectiveAt.toLocaleDateString("es-ES")}</span>
+                              <span>• Downgrade programado: {formatDate(scheduledEffectiveAt)}</span>
                             )}
                           </div>
                             <Button
@@ -2723,11 +2718,7 @@ export default function LeadsPage() {
                                                       {lead.Estado === "Visita Propuesta" && lead.fecha_de_visita ? (
                                                         <>
                                                           Visita Propuesta -{" "}
-                                                          {new Date(lead.fecha_de_visita).toLocaleDateString("es-ES", {
-                                                            day: "2-digit",
-                                                            month: "2-digit",
-                                                            year: "numeric"
-                                                          }) + " " + new Date(lead.fecha_de_visita).toLocaleTimeString("es-ES", {
+                                                          {formatDate(lead.fecha_de_visita) + " " + new Date(lead.fecha_de_visita).toLocaleTimeString("es-ES", {
                                                             hour: "2-digit",
                                                             minute: "2-digit"
                                                           })}
@@ -3191,11 +3182,7 @@ export default function LeadsPage() {
                                                     {lead.Estado === "Visita Propuesta" && lead.fecha_de_visita ? (
                                                       <>
                                                           Visita Propuesta -{" "}
-                                                          {new Date(lead.fecha_de_visita).toLocaleDateString("es-ES", {
-                                                            day: "2-digit",
-                                                            month: "2-digit",
-                                                            year: "numeric"
-                                                          }) + " " + new Date(lead.fecha_de_visita).toLocaleTimeString("es-ES", {
+                                                          {formatDate(lead.fecha_de_visita) + " " + new Date(lead.fecha_de_visita).toLocaleTimeString("es-ES", {
                                                             hour: "2-digit",
                                                             minute: "2-digit"
                                                           })}
@@ -4873,11 +4860,7 @@ export default function LeadsPage() {
                                 </div>
                                 {selectedLead.Estado === "Visita Propuesta" && selectedLead.fecha_de_visita && (
                                   <div style={{ fontSize: "0.875rem", color: statusColors.text, marginTop: "0.5rem", fontWeight: "500" }}>
-                                    {new Date(selectedLead.fecha_de_visita).toLocaleDateString("es-ES", {
-                                       day: "2-digit",
-                                       month: "2-digit",
-                                       year: "numeric"
-                                     }) + " " + new Date(selectedLead.fecha_de_visita).toLocaleTimeString("es-ES", {
+                                    {formatDate(selectedLead.fecha_de_visita) + " " + new Date(selectedLead.fecha_de_visita).toLocaleTimeString("es-ES", {
                                        hour: "2-digit",
                                        minute: "2-digit"
                                      })}
@@ -5589,9 +5572,11 @@ export default function LeadsPage() {
         <Dialog open={visitDateDialogOpen} onOpenChange={setVisitDateDialogOpen}>
           <DialogContent className="z-[30000]">
             <DialogHeader>
-              <DialogTitle>Reprogramar Visita</DialogTitle>
+              <DialogTitle>{selectedLeadForVisit?.fecha_de_visita ? "Reprogramar Visita" : "Programar Visita"}</DialogTitle>
               <DialogDescription>
-                Selecciona una nueva fecha y hora para la visita del lead.
+                {selectedLeadForVisit?.fecha_de_visita
+                  ? "Selecciona una nueva fecha y hora para la visita del lead."
+                  : "Selecciona la fecha y hora para la visita del lead."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -5623,19 +5608,45 @@ export default function LeadsPage() {
               </div>
               <div className="space-y-2">
                 <label htmlFor="visit-date" className="text-sm font-medium">
-                  Nueva fecha y hora de visita
+                  {selectedLeadForVisit?.fecha_de_visita ? "Nueva fecha y hora de visita" : "Fecha y hora de visita"}
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="flex flex-col gap-1">
-                    <Input
-                      id="visit-date"
-                      type="date"
-                      lang="es-ES"
-                      value={newVisitDateDate}
-                      onChange={(e) => setNewVisitDateDate(e.target.value)}
-                      className="w-full"
-                    />
-                    <span className="text-[10px] text-muted-foreground">Formato: DD/MM/AAAA</span>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant={"outline"}
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !newVisitDateDate && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {newVisitDateDate ? (
+                            formatDate(newVisitDateDate)
+                          ) : (
+                            <span>Seleccionar fecha</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={newVisitDateDate ? new Date(newVisitDateDate) : undefined}
+                          onSelect={(date) => {
+                            if (date) {
+                              const yyyy = date.getFullYear()
+                              const mm = String(date.getMonth() + 1).padStart(2, "0")
+                              const dd = String(date.getDate()).padStart(2, "0")
+                              setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                            } else {
+                              setNewVisitDateDate("")
+                            }
+                          }}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <Select
                     value={newVisitDateTime}
@@ -5663,13 +5674,17 @@ export default function LeadsPage() {
               </div>
             </div>
             <div className="flex justify-between">
-              <Button 
-                variant="destructive" 
-                onClick={() => setIsCancelConfirmOpen(true)}
-                className="bg-red-600 hover:bg-red-700"
-              >
-                Cancelar Visita
-              </Button>
+              {selectedLeadForVisit?.fecha_de_visita ? (
+                <Button
+                  variant="destructive"
+                  onClick={() => setIsCancelConfirmOpen(true)}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  Cancelar Visita
+                </Button>
+              ) : (
+                <div />
+              )}
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => {
                   setVisitDateDialogOpen(false)
@@ -6009,10 +6024,7 @@ export default function LeadsPage() {
                         <div className="flex gap-2">
                           <span className="font-semibold min-w-[80px]">Fecha:</span>
                           <span>
-                            {new Date(selectedCommunication.created_at).toLocaleString("es-ES", {
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric",
+                            {formatDate(selectedCommunication.created_at) + " " + new Date(selectedCommunication.created_at).toLocaleTimeString("es-ES", {
                               hour: "2-digit",
                               minute: "2-digit",
                             })}

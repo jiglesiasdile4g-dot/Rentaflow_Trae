@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Database, User, Package, Sparkles, Mail, CalendarClock, Calendar, Building2 } from "lucide-react"
 import { getPlanData, formatPlanValue, PLAN_DATA } from "@/lib/plan-data"
+import { formatDate } from "@/lib/utils"
 import fs from "node:fs"
 import path from "node:path"
 
@@ -452,11 +453,11 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm font-medium">Periodo activo desde:</p>
-                        <p className="text-xs font-bold text-foreground">{(periodStart || new Date()).toLocaleDateString("es-ES", { day: "2-digit", month: "long", year: "numeric" })}</p>
+                        <p className="text-xs font-bold text-foreground">{formatDate(periodStart || new Date())}</p>
                       </div>
                       <div>
                         <p className="text-sm font-medium">Vence el periodo:</p>
-                        <p className="text-xs font-bold text-foreground">{(periodEnd || computeNextRenewal(new Date())).toLocaleDateString("es-ES", { day: "2-digit", month: "long", year: "numeric" })}</p>
+                        <p className="text-xs font-bold text-foreground">{formatDate(periodEnd || computeNextRenewal(new Date()))}</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">

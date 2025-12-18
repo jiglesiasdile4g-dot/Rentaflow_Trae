@@ -30,6 +30,7 @@ import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, E
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { loadStripe, type Stripe as StripeJS } from "@stripe/stripe-js"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
+import { formatDate } from "@/lib/utils"
 import ChangePlanButton from "@/components/change-plan-button"
 import { createBrowserClient } from "@/lib/supabase/client" // Added for createBrowserClient
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts"
@@ -451,7 +452,7 @@ export default function AnunciosPage() {
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
     const start = metricsPeriod === "hoy" ? dayStart : metricsPeriod === "ultimoMes" ? prevMonthStart : metricsPeriod === "esteMes" ? thisMonthStart : (planResetAt ? new Date(planResetAt) : thisMonthStart)
     const end = metricsPeriod === "hoy" ? now : metricsPeriod === "ultimoMes" ? prevMonthEnd : now
-    const fmt = (d: Date) => d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" })
+    const fmt = (d: Date) => formatDate(d)
     return metricsPeriod === "hoy" ? fmt(start) : `${fmt(start)} - ${fmt(end)}`
   }
   const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
@@ -5219,7 +5220,7 @@ export default function AnunciosPage() {
                   <div className="space-y-3">
                     <h4 className="font-semibold">Consumo y Rendimiento</h4>
                     <p className="text-xs text-muted-foreground -mt-2 mb-2">
-                       Ciclo actual: {planResetAt ? new Date(planResetAt).toLocaleDateString() : new Date(new Date().getFullYear(), new Date().getMonth(), 1).toLocaleDateString()} - {new Date().toLocaleDateString()}
+                       Ciclo actual: {planResetAt ? formatDate(planResetAt) : formatDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1))} - {formatDate(new Date())}
                     </p>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-4">
@@ -5556,13 +5557,41 @@ export default function AnunciosPage() {
                   Fecha y hora de visita
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input
-                    id="visit-date"
-                    type="date"
-                    value={visitDateDialog.selectedDate}
-                    onChange={(e) => setVisitDateDialog({ ...visitDateDialog, selectedDate: e.target.value })}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant={"outline"}
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !visitDateDialog.selectedDate && "text-muted-foreground"
+                        )}
+                      >
+                        <Calendar className="mr-2 h-4 w-4" />
+                        {visitDateDialog.selectedDate ? (
+                          formatDate(visitDateDialog.selectedDate)
+                        ) : (
+                          <span>Seleccionar fecha</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarComponent
+                        mode="single"
+                        selected={visitDateDialog.selectedDate ? new Date(visitDateDialog.selectedDate) : undefined}
+                        onSelect={(date) => {
+                          if (date) {
+                            const yyyy = date.getFullYear()
+                            const mm = String(date.getMonth() + 1).padStart(2, "0")
+                            const dd = String(date.getDate()).padStart(2, "0")
+                            setVisitDateDialog({ ...visitDateDialog, selectedDate: `${yyyy}-${mm}-${dd}` })
+                          } else {
+                            setVisitDateDialog({ ...visitDateDialog, selectedDate: "" })
+                          }
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                   <Select
                     value={visitDateDialog.selectedTime}
                     onValueChange={(value) => setVisitDateDialog({ ...visitDateDialog, selectedTime: value })}
