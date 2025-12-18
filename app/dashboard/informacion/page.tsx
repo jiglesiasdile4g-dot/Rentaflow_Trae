@@ -30,6 +30,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
   let inmobiliariaInfo: any = null
   let planInfo: any = null
   let availablePlans: any[] = []
+  let perfil: any = null
 
   try {
     const spRaw = searchParams ? await searchParams : undefined
@@ -37,7 +38,8 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
     const spIdiNum = Array.isArray(spIdiRaw) ? Number(spIdiRaw[0]) : Number(spIdiRaw as any)
     const spIdi = Number.isFinite(spIdiNum) ? spIdiNum : undefined
 
-    const { data: perfil } = await supabase.from("Perfiles").select("inmobiliaria, is_admin").eq("usuario", user.email).limit(1).maybeSingle()
+    const { data: perfilData } = await supabase.from("Perfiles").select("inmobiliaria, is_admin").eq("usuario", user.email).limit(1).maybeSingle()
+    perfil = perfilData
 
     const targetIdi = perfil?.is_admin === true && spIdi ? spIdi : perfil?.inmobiliaria
 
@@ -563,6 +565,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
             </Card>
           )}
 
+          {perfil?.is_admin === true && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -642,6 +645,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
               )}
             </CardContent>
           </Card>
+          )}
 
           <Card>
             <CardHeader>

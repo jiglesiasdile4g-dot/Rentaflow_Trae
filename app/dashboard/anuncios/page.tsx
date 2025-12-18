@@ -125,7 +125,7 @@ const DEFAULT_FAQ_QUESTIONS = [
 
 export default function AnunciosPage() {
   const [user, setUser] = useState<any>(null)
-  const [anunciosCards, setAnunciosCards] = useState<AnuncioCard[]>([])
+  const [anunciosCards, setAnunciosCards] = useState<(AnuncioCard & { localMetricsPeriod?: "hoy" | "esteMes" | "ultimoMes" | "periodoActual" })[]>([])
   const [anunciosError, setAnunciosError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [processingId, setProcessingId] = useState<string | null>(null)
@@ -179,6 +179,7 @@ export default function AnunciosPage() {
   const [showInfoFaqsModal, setShowInfoFaqsModal] = useState(false)
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [selectedAnuncioForStats, setSelectedAnuncioForStats] = useState<AnuncioCard & { statsPeriod?: string } | null>(null)
+  const [statsLeads, setStatsLeads] = useState<any[]>([]) // Leads for the currently selected stats anuncio
   const [showArchiveDialog, setShowArchiveDialog] = useState(false)
   const [archivingAnuncio, setArchivingAnuncio] = useState<AnuncioCard | null>(null)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -203,12 +204,166 @@ export default function AnunciosPage() {
     faqs: [{ pregunta: "", respuesta: "" }],
   })
 
+  const rawDataRef = useRef<{ leads: any[]; emails: any[]; whatsapp: any[] } | null>(null)
+
+  const calculateAnuncioMetrics = (
+    anuncio: AnuncioCard,
+    period: "hoy" | "esteMes" | "ultimoMes" | "periodoActual",
+    allLeads: any[],
+    allEmails: any[],
+    allWhatsapp: any[],
+  ) => {
+    const now = new Date()
+    const dayStart = new Date(now)
+    dayStart.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
+
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1)
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    // Determine cutoffDate for "periodoActual"
+    const cutoffDate = planResetAt ? planResetAt : thisMonthStart
+
+    const periodStart =
+      period === "hoy"
+        ? dayStart
+        : period === "ultimoMes"
+          ? prevMonthStart
+          : period === "esteMes"
+            ? thisMonthStart
+            : cutoffDate
+    const periodEnd =
+      period === "hoy"
+        ? dayEnd
+        : period === "ultimoMes"
+          ? prevMonthEnd
+          : now
+
+    // Leads filtering
+    let leads = allLeads
+    // if (anuncio.fecha_activacion) {
+    //   const activationDate = new Date(anuncio.fecha_activacion)
+    //   if (!isNaN(activationDate.getTime())) {
+    //     leads = leads.filter((l) => new Date(l.created_at) >= activationDate)
+    //   }
+    // }
+
+    const leadsTotales = leads.length
+
+    const nuevosHoy = leads.filter((l) => {
+      const d = new Date(l.created_at)
+      return d >= periodStart && d < periodEnd
+    }).length
+
+    const datosCompletosCount = leads.filter((l) => {
+      const estado = l.Estado?.toLowerCase() || ""
+      const fdc = l.Fecha_Datos_Completos ? new Date(l.Fecha_Datos_Completos) : null
+      return estado === "datos completos" && fdc && fdc >= periodStart && fdc < periodEnd
+    }).length
+
+    const aLaEspera = leadsTotales - datosCompletosCount
+
+    // Emails
+    const leadEmails = leads.map((l) => l.Correo).filter(Boolean)
+    const emailsMatch = allEmails.filter((c) => leadEmails.includes(c.to))
+    const emailsEnviados = emailsMatch.filter((c) => {
+      const d = new Date(c.created_at)
+      return d >= periodStart && d < periodEnd
+    }).length
+
+    // Whatsapp
+    const leadIDCs = leads.map((l) => l.IDC).filter((id: any) => Number.isFinite(id))
+    const whatsMatch = allWhatsapp.filter((w) => leadIDCs.includes(w.IDC) && w.Tipo === "Enviado")
+    const whatsappsPeriodo = whatsMatch.filter((w) => {
+      const d = new Date(w.created_at)
+      return d >= periodStart && d < periodEnd
+    }).length
+
+    const tiempoAhorrado = ((emailsEnviados + whatsappsPeriodo) * 1.27) / 60
+
+    // Health Score
+    let healthScore = 100
+    const porcentajeCompletos = leadsTotales > 0 ? (datosCompletosCount / leadsTotales) * 100 : 0
+
+    if (porcentajeCompletos < 20) healthScore -= 25
+    if (aLaEspera > leadsTotales * 0.7) healthScore -= 20
+    if (nuevosHoy === 0 && leadsTotales > 0) healthScore -= 15
+    if (leadsTotales === 0) healthScore -= 40
+
+    return {
+      nuevosHoy,
+      datosCompletos: datosCompletosCount,
+      emailsPeriodo: emailsEnviados,
+      emailsEnviados,
+      whatsappsPeriodo,
+      aLaEspera,
+      tiempoAhorrado,
+      healthScore: Math.max(0, healthScore),
+      porcentajeCompletos,
+    }
+  }
+
+  const handleLocalMetricsPeriodChange = (
+    anuncioId: string,
+    period: "hoy" | "esteMes" | "ultimoMes" | "periodoActual",
+  ) => {
+    setAnunciosCards((prev) =>
+      prev.map((card) => {
+        // Ensure strictly string comparison for IDs to avoid type mismatches
+        if (String(card.id) !== String(anuncioId)) return card
+
+        if (!rawDataRef.current) {
+            return { ...card, localMetricsPeriod: period }
+        }
+
+        const { leads, emails, whatsapp } = rawDataRef.current
+        const normalize = (s: string | null | undefined) => (s ? s.trim().toLowerCase() : "")
+        // Filter leads for this anuncio
+        const leadsForAnuncio = leads.filter((l) => {
+          if (!l.Inmueble) return false
+          const inmueble = normalize(l.Inmueble)
+          const refNorm = normalize(card.referencia)
+          const dirNorm = normalize(card.direccion)
+          return inmueble && (inmueble === refNorm || (dirNorm && inmueble === dirNorm))
+        })
+
+        const metrics = calculateAnuncioMetrics(card, period, leadsForAnuncio, emails, whatsapp)
+
+        return { ...card, ...metrics, localMetricsPeriod: period }
+      }),
+    )
+  }
   const startStripeCheckout = async (planId: number) => {
     try {
       const res = await fetch("/api/stripe/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ planId, email: user?.email || "" }),
+      })
+      if (!res.ok) {
+        toast({ title: "Error", description: "No se pudo iniciar el pago", variant: "destructive" })
+        return
+      }
+      const data = await res.json()
+      const publishable = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""
+      const stripeJs = (await loadStripe(publishable)) as StripeJS | null
+      if (!stripeJs) {
+        toast({ title: "Error", description: "Stripe no está configurado", variant: "destructive" })
+        return
+      }
+      await (stripeJs as any).redirectToCheckout({ sessionId: data.sessionId })
+    } catch {
+      toast({ title: "Error", description: "Fallo iniciando Checkout", variant: "destructive" })
+    }
+  }
+
+  const handleCheckout = async () => {
+    try {
+      const res = await fetch("/api/stripe/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId: currentPlanId, email: user?.email || "" }),
       })
       if (!res.ok) {
         toast({ title: "Error", description: "No se pudo iniciar el pago", variant: "destructive" })
@@ -247,6 +402,14 @@ export default function AnunciosPage() {
     datosIncompletos: 0,
     necesidadAval: 0,
   })
+
+  const [consumptionMetrics, setConsumptionMetrics] = useState({
+    leads: 0,
+    tiempoAhorrado: 0,
+    planUtilizado: 0,
+    whatsappsEnviados: 0,
+    emailsEnviados: 0,
+  })
   const [visitDateDialog, setVisitDateDialog] = useState<{
     open: boolean
     leadId: string
@@ -266,6 +429,8 @@ export default function AnunciosPage() {
 
   // Add isStatsModalOpen state to track the visibility of the stats modal
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false)
+  const [statsEmails, setStatsEmails] = useState<any[]>([])
+  const [statsWhatsapps, setStatsWhatsapps] = useState<any[]>([])
 
   
 
@@ -277,20 +442,18 @@ export default function AnunciosPage() {
   const [creatingAnuncio, setCreatingAnuncio] = useState(false)
   const [metricsPeriod, setMetricsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual">("hoy")
   const [statsPeriod, setStatsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual" | "esteAno">("esteMes")
-  const periodBadgeText = (() => {
+  const periodBadgeText = (metricsPeriod: "hoy" | "esteMes" | "ultimoMes" | "periodoActual") => {
     const now = new Date()
     const dayStart = new Date(now)
     dayStart.setHours(0, 0, 0, 0)
-    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const prevMonthEndDisplay = new Date(now.getFullYear(), now.getMonth(), 0) // last day of previous month
+    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
     const start = metricsPeriod === "hoy" ? dayStart : metricsPeriod === "ultimoMes" ? prevMonthStart : metricsPeriod === "esteMes" ? thisMonthStart : (planResetAt ? new Date(planResetAt) : thisMonthStart)
-    const end = metricsPeriod === "hoy" ? dayEnd : metricsPeriod === "ultimoMes" ? prevMonthEndDisplay : now
+    const end = metricsPeriod === "hoy" ? now : metricsPeriod === "ultimoMes" ? prevMonthEnd : now
     const fmt = (d: Date) => d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" })
-    const label = metricsPeriod === "hoy" ? "Hoy" : metricsPeriod === "ultimoMes" ? "Último mes" : metricsPeriod === "esteMes" ? "Este mes" : "Periodo actual"
-    return metricsPeriod === "hoy" ? `${label}: ${fmt(start)}` : `${label}: ${fmt(start)} – ${fmt(end)}`
-  })()
+    return metricsPeriod === "hoy" ? fmt(start) : `${fmt(start)} - ${fmt(end)}`
+  }
   const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
   const [attachmentPreviewKind, setAttachmentPreviewKind] = useState<"pdf" | "image" | "unknown">("unknown")
   const [attachmentPreviewName, setAttachmentPreviewName] = useState<string>("")
@@ -504,7 +667,7 @@ export default function AnunciosPage() {
 
   const [agentes, setAgentes] = useState<any[]>([]);
 
-  const fetchAgentes = async (inmobiliariaId: number) => {
+  const fetchAgentes = async (inmobiliariaId: number, signal?: AbortSignal) => {
     try {
       const supabase = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -512,19 +675,30 @@ export default function AnunciosPage() {
       );
       
       // Filtramos agentes por la inmobiliaria (idi se almacena como string)
-      const { data, error } = await supabase
+      let query = supabase
         .from("Agentes")
         .select("idag, \"Nombre\", idi")
         .eq("idi", inmobiliariaId.toString()); // Convertir a string para coincidir con la BD
       
+      if (signal) query = query.abortSignal(signal)
+
+      const { data, error } = await query
+      
       if (error) {
+        if (signal?.aborted || error.message.includes("Abort")) return
         console.error("[v0] Error fetching agentes:", error.message);
         throw error;
       }
       
-      setAgentes(data || []);
+      if (!signal?.aborted) {
+        setAgentes(data || []);
+      }
       
-    } catch (error) {
+    } catch (error: any) {
+      if (signal?.aborted || error?.name === 'AbortError' || error?.message?.includes('Abort')) {
+        console.log("[v0] Agentes request aborted")
+        return
+      }
       console.error("[v0] Failed to fetch agentes:", error);
       setAgentes([]);
     }
@@ -546,15 +720,21 @@ export default function AnunciosPage() {
     console.log("[DEBUG] useEffect triggered - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
     if (!inmobiliariaLoading && inmobiliariaId !== null) {
       console.log("[DEBUG] Calling ordered fetch with inmobiliariaId:", inmobiliariaId);
+      const controller = new AbortController()
       const run = async () => {
         const u = await checkUser()
         if (!u) return
-        await fetchPlanLimit()
-        await fetchAvailablePlans()
-        await fetchAnuncios()
-        await fetchAgentes(inmobiliariaId)
+        if (controller.signal.aborted) return
+        await fetchPlanLimit(controller.signal)
+        if (controller.signal.aborted) return
+        await fetchAvailablePlans(controller.signal)
+        if (controller.signal.aborted) return
+        await fetchAnuncios(controller.signal)
+        if (controller.signal.aborted) return
+        await fetchAgentes(inmobiliariaId, controller.signal)
       }
       run()
+      return () => controller.abort()
     } else {
       console.log("[DEBUG] Skipping fetch calls - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
     }
@@ -581,60 +761,166 @@ export default function AnunciosPage() {
       setLoadingTrendData(true)
       
       // Use the specific period directly instead of mapping to generic timeframes
-      calculateTrendData(selectedAnuncioForStats, statsPeriod).then((data) => {
+      calculateTrendData(selectedAnuncioForStats, statsPeriod, statsLeads).then((data) => {
+        console.log(`[v0] Trend data result:`, data)
         setTrendData(data)
         setLoadingTrendData(false)
       })
     }
-  }, [selectedAnuncioForStats, statsPeriod, showStatsModal]) // Added statsPeriod to dependencies
+  }, [selectedAnuncioForStats, statsPeriod, showStatsModal, statsLeads]) // Added statsPeriod to dependencies
 
   useEffect(() => {
     if (selectedAnuncioForStats && showStatsModal) {
-      fetchQualityMetrics(selectedAnuncioForStats.referencia, trendTimeframe, selectedAnuncioForStats.fecha_activacion).then((metrics) => {
+      fetchQualityMetrics(selectedAnuncioForStats.referencia, statsPeriod, selectedAnuncioForStats.fecha_activacion).then((metrics) => {
         console.log("[v0] Quality metrics fetched:", metrics)
         setQualityMetrics(metrics)
       })
     }
-  }, [selectedAnuncioForStats, trendTimeframe, showStatsModal])
+  }, [selectedAnuncioForStats, statsPeriod, showStatsModal])
+
+  useEffect(() => {
+    if (selectedAnuncioForStats && showStatsModal && statsLeads) {
+      const now = new Date()
+      let startDate: Date
+      let endDate: Date = new Date()
+
+      // Calculate dates based on statsPeriod
+      if (statsPeriod === "hoy") {
+        startDate = new Date(now)
+        startDate.setHours(0, 0, 0, 0)
+        endDate.setHours(23, 59, 59, 999)
+      } else if (statsPeriod === "esteMes") {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+      } else if (statsPeriod === "ultimoMes") {
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+      } else if (statsPeriod === "esteAno") {
+        startDate = new Date(now.getFullYear(), 0, 1)
+      } else { // periodoActual
+        startDate = planResetAt ? new Date(planResetAt) : new Date(now.getFullYear(), now.getMonth(), 1)
+        if (planResetAt) {
+           const resetDate = new Date(planResetAt)
+           if (!isNaN(resetDate.getTime()) && (now.getTime() - resetDate.getTime() > 60000)) {
+               startDate = resetDate
+           } else {
+               startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+           }
+        }
+      }
+
+      const periodLeads = statsLeads.filter((l) => {
+        const d = new Date(l.created_at)
+        return d >= startDate && d <= endDate
+      })
+
+      // Calculate sent messages (emails + whatsapp) in the period
+      let sentMessagesCount = 0
+      let whatsappsEnviados = 0
+      let emailsEnviadosCount = 0
+      
+      // Filter emails/whatsapp for leads of this anuncio
+      const leadEmails = statsLeads.map((l) => l.Correo).filter(Boolean)
+      const leadIDCs = statsLeads.map((l) => l.IDC).filter((id: any) => Number.isFinite(id))
+      
+      let emailsEnviados = 0
+      if (leadEmails.length > 0 && statsEmails.length > 0) {
+         const matchingEmails = statsEmails.filter((e) => leadEmails.includes(e.to))
+         
+         emailsEnviados = matchingEmails.filter((e) => 
+           e.Tipo?.toLowerCase() === "enviado" &&
+           new Date(e.created_at) >= startDate && 
+           new Date(e.created_at) <= endDate
+         ).length
+
+         console.log("[v0] Debug Consumption: Email counts", {
+           statsPeriod,
+           totalMatchingLeads: matchingEmails.length,
+           finalEnviados: emailsEnviados,
+           startDate,
+           endDate
+         })
+      }
+      emailsEnviadosCount = emailsEnviados
+      
+      if (leadIDCs.length > 0 && statsWhatsapps.length > 0) {
+         whatsappsEnviados = statsWhatsapps.filter((w) => 
+           leadIDCs.includes(w.IDC) && 
+           w.Tipo === "Enviado" &&
+           new Date(w.created_at) >= startDate && 
+           new Date(w.created_at) <= endDate
+         ).length
+      }
+      
+      sentMessagesCount = emailsEnviados + whatsappsEnviados
+
+      const count = periodLeads.length
+      const tiempo = (sentMessagesCount * 1.27) / 60 // hours
+      const planUsed = planLimit > 0 ? (count / planLimit) * 100 : 0
+
+      setConsumptionMetrics({
+        leads: count,
+        tiempoAhorrado: tiempo,
+        planUtilizado: planUsed,
+        whatsappsEnviados,
+        emailsEnviados: emailsEnviadosCount,
+      })
+    }
+  }, [selectedAnuncioForStats, statsPeriod, showStatsModal, statsLeads, planLimit, planResetAt, statsEmails, statsWhatsapps])
 
   useEffect(() => {
     fetchAnuncios()
   }, [metricsPeriod])
 
-  const fetchQualityMetrics = async (anuncioReferencia: string, timeframe: "24h" | "7d" | "1m", activationDateStr?: string | null) => {
+  const fetchQualityMetrics = async (anuncioReferencia: string, period: string, activationDateStr?: string | null) => {
     const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
 
-    // Calculate date range based on timeframe
+    // Calculate date range based on period
     const now = new Date()
     let startDate: Date
+    let endDate: Date = new Date()
 
-    if (timeframe === "24h") {
-      startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-    } else if (timeframe === "7d") {
-      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    if (period === "hoy") {
+      startDate = new Date(now)
+      startDate.setHours(0, 0, 0, 0)
+      endDate = new Date(now)
+      endDate.setHours(23, 59, 59, 999)
+    } else if (period === "esteMes") {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+      endDate = new Date(now)
+    } else if (period === "ultimoMes") {
+      startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+    } else if (period === "esteAno") {
+      startDate = new Date(now.getFullYear(), 0, 1)
+      endDate = new Date(now)
     } else {
+      // Default to last 30 days or similar if unknown
       startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
     }
     
     // Apply activation date filtering if it's more recent than the timeframe start
+    // Note: We're keeping this commented out or relaxed as per previous fix request
+    /*
     if (activationDateStr) {
       const activationDate = new Date(activationDateStr)
       if (!isNaN(activationDate.getTime()) && activationDate > startDate) {
         startDate = activationDate
       }
     }
+    */
 
-    console.log("[v0] Fetching quality metrics for referencia:", anuncioReferencia, "timeframe:", timeframe)
+    console.log("[v0] Fetching quality metrics for referencia:", anuncioReferencia, "period:", period)
 
     // Get all leads for this anuncio in the timeframe
     const { data: leads, error: leadsError } = await supabase
       .from("Clientes")
-      .select('IDC, Estado, "Pedir Aval", created_at')
+      .select('IDC, Estado, "Pedir Aval", created_at, Correo, Fecha_Datos_Completos')
       .ilike("Inmueble", anuncioReferencia)
       .gte("created_at", startDate.toISOString())
+      .lte("created_at", endDate.toISOString())
 
     console.log("[v0] Leads found for quality metrics:", leads?.length || 0, "Error:", leadsError)
 
@@ -644,29 +930,60 @@ export default function AnunciosPage() {
     }
 
     // Count "Datos Incompletos" status
+    // Se consideran "Datos Incompletos" los leads que tienen explícitamente ese estado,
+    // o que están en estado "Pendiente" (el estado inicial por defecto).
     const datosIncompletos =
       leads?.filter((lead) => {
         const estado = lead.Estado?.toLowerCase() || ""
-        return estado === "datos completos"
+        return ["datos incompletos", "pendiente", "incompleto"].includes(estado)
       }).length || 0
-    console.log("[v0] Datos Incompletos count:", datosIncompletos)
+    
+    // DEBUG: Log all unique statuses found to help identify any missing mappings
+    const uniqueStatuses = Array.from(new Set(leads?.map(l => l.Estado))).filter(Boolean)
+    console.log("[v0] Unique lead statuses found:", uniqueStatuses)
+    console.log("[v0] Datos Incompletos count (including Pendiente):", datosIncompletos)
 
-    const necesidadAval = leads?.filter((l) => l.Estado === "Pedir Aval").length || 0
+    const necesidadAval = leads?.filter((l) => l.Estado === "Pedir Aval" || l.Estado === "Aval Pedido").length || 0
     console.log("[v0] Necesidad Aval count:", necesidadAval)
     // </CHANGE>
 
     // Calculate "Leads Rebotados" - leads with no communications (emails or whatsapp)
+    // Leads que no tengan mensajes recibidos, excepto el primero, pero despues ningun mensaje recibido.
+    // Ignota para esta cuenta los enviados.
+    // EXCEPCIÓN: Si el lead tiene Fecha_Datos_Completos, NO es rebotado.
     let leadsRebotados = 0
     if (leads && leads.length > 0) {
       for (const lead of leads) {
-        // Check if this lead has any emails
-        const { data: emails } = await supabase.from("Correos").select("id").eq("IDC", lead.IDC).limit(1)
+        // If lead has reached "Datos Completos", it is NOT a bounce, regardless of messages
+        if (lead.Fecha_Datos_Completos) {
+            continue
+        }
 
-        // Check if this lead has any whatsapp messages
-        const { data: whatsapp } = await supabase.from("Whatsapp").select("id").eq("IDC", lead.IDC).limit(1)
+        // Count received emails
+        // We fetch emails for this lead and check if From matches lead's email
+        // Or we just count all emails since we assume they are communication threads
+        // But user said "ignore sent".
+        // Strategy: Fetch all emails for lead. If From == lead.Correo -> Received.
+        const { data: emails } = await supabase
+          .from("Correos")
+          .select("id, \"From\"") // Escape From if it's a keyword, though usually it's fine in string
+          .eq("IDC", lead.IDC)
+        
+        const receivedEmailsCount = emails?.filter(e => e.From === lead.Correo).length || 0
 
-        // If no communications at all, count as rebotado
-        if ((!emails || emails.length === 0) && (!whatsapp || whatsapp.length === 0)) {
+        // Count received whatsapps
+        const { data: whatsapp } = await supabase
+          .from("Whatsapp")
+          .select("id")
+          .eq("IDC", lead.IDC)
+          .eq("Tipo", "Recibido")
+        
+        const receivedWhatsappCount = whatsapp?.length || 0
+        
+        const totalReceived = receivedEmailsCount + receivedWhatsappCount
+
+        // If total received messages <= 1 (only the initial inquiry or none), count as rebotado
+        if (totalReceived <= 1) {
           leadsRebotados++
         }
       }
@@ -735,6 +1052,60 @@ export default function AnunciosPage() {
 
   
 
+  const calculateMetricsForPeriod = (leads: any[], period: "hoy" | "esteMes" | "ultimoMes" | "periodoActual", planResetAt: Date | string | null, anuncioFechaActivacion?: string) => {
+    const now = new Date()
+    const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0)
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    
+    // Determine start/end dates
+    let start: Date
+    let end: Date = now // Default end is now
+
+    if (period === "hoy") {
+      start = dayStart
+    } else if (period === "ultimoMes") {
+      start = prevMonthStart
+      end = prevMonthEnd
+    } else if (period === "esteMes") {
+      start = thisMonthStart
+    } else { // periodoActual
+      start = planResetAt ? new Date(planResetAt) : thisMonthStart
+    }
+    
+    // Ensure end of day for range comparisons if needed, but simple comparison works
+    // Filter leads
+    let filteredLeads = leads.filter(l => {
+      const d = new Date(l.created_at)
+      return d >= start && d <= end
+    })
+
+    // Also filter by activation date if provided (metrics logic often does this)
+    // DISABLED: Showing full history
+    // if (anuncioFechaActivacion) {
+    //     const activationDate = new Date(anuncioFechaActivacion)
+    //     filteredLeads = filteredLeads.filter(l => new Date(l.created_at) >= activationDate)
+    // }
+
+    // Calculate aggregations
+    const total = filteredLeads.length
+    const completos = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "datos completos").length
+    const aceptados = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "aceptado").length
+    const visitaPropuesta = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "visita propuesta").length
+    const visitaCompletada = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "visita completada").length
+    const descartados = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "descartado").length
+    
+    return {
+        leadsTotales: total,
+        datosCompletos: completos,
+        candidatosAceptados: aceptados,
+        visitaPropuesta: visitaPropuesta,
+        visitaCompletada: visitaCompletada,
+        descartados: descartados,
+    }
+  }
+
   const handlePhaseMetricClick = async (phase: string) => {
     if (!selectedAnuncioForStats) return
 
@@ -755,7 +1126,8 @@ export default function AnunciosPage() {
     })
   }
 
-  const calculateTrendData = async (anuncio: any, period: string) => {
+  const calculateTrendData = async (anuncio: any, period: string, leadsOverride?: any[]) => {
+    console.log(`[v0] calculateTrendData for ${anuncio.referencia}, period: ${period}, leadsOverride: ${leadsOverride?.length}`)
     const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -771,24 +1143,43 @@ export default function AnunciosPage() {
       let visitaCompletada = 0
       let descartados = 0
       
-      const activationDate = anuncio.fecha_activacion ? new Date(anuncio.fecha_activacion) : null
+      // const activationDate = anuncio.fecha_activacion ? new Date(anuncio.fecha_activacion) : null
 
       for (const lead of leads || []) {
         // Filter by activation date
-        if (activationDate) {
-          const createdAt = new Date(lead.created_at)
-          if (createdAt < activationDate) continue
-        }
+        // if (activationDate) {
+        //   const createdAt = new Date(lead.created_at)
+        //   if (createdAt < activationDate) continue
+        // }
 
         total++
         const est = String(lead.Estado || "").toLowerCase()
-        if (est === "datos completos") completos++
+        if (["datos completos", "aceptado", "visita propuesta", "pedir aval"].includes(est)) completos++
         if (est === "aceptado") aceptados++
         if (est === "visita propuesta") visitaPropuesta++
         if (est === "visita completada") visitaCompletada++
         if (est === "descartado") descartados++
       }
       return { total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados }
+    }
+
+    // Helper to fetch leads for a time range
+    const fetchLeadsForRange = async (start: Date, end: Date) => {
+      if (leadsOverride) {
+        return leadsOverride.filter(l => {
+          const d = new Date(l.created_at)
+          return d >= start && d < end
+        })
+      }
+
+      const { data, error } = await supabase
+        .from("Clientes")
+        .select("IDC, Estado, created_at")
+        .ilike("Inmueble", anuncio.referencia)
+        .gte("created_at", start.toISOString())
+        .lt("created_at", end.toISOString())
+      
+      return data || []
     }
 
     if (period === "hoy") {
@@ -798,12 +1189,7 @@ export default function AnunciosPage() {
         const hourStart = new Date(now.getTime() - i * 60 * 60 * 1000)
         const hourEnd = new Date(hourStart.getTime() + 60 * 60 * 1000)
 
-        const { data, error } = await supabase
-          .from("Clientes")
-          .select("IDC, Estado, created_at")
-          .ilike("Inmueble", anuncio.referencia)
-          .gte("created_at", hourStart.toISOString())
-          .lt("created_at", hourEnd.toISOString())
+        const data = await fetchLeadsForRange(hourStart, hourEnd)
 
         const hourLabel = hourStart.getHours().toString().padStart(2, "0") + ":00"
         const isCurrent = i === 0 // Last hour is current
@@ -849,12 +1235,7 @@ export default function AnunciosPage() {
           break
         }
 
-        const { data, error } = await supabase
-          .from("Clientes")
-          .select("IDC, Estado, created_at")
-          .ilike("Inmueble", anuncio.referencia)
-          .gte("created_at", dayStart.toISOString())
-          .lte("created_at", dayEnd.toISOString())
+        const data = await fetchLeadsForRange(dayStart, new Date(dayEnd.getTime() + 1)) // Add 1ms to include end time in < comparison
 
         const dayLabel = dayStart.toLocaleDateString("es-ES", { day: "numeric", month: "short" })
 
@@ -876,12 +1257,7 @@ export default function AnunciosPage() {
           break
         }
 
-        const { data, error } = await supabase
-          .from("Clientes")
-          .select("IDC, Estado, created_at")
-          .ilike("Inmueble", anuncio.referencia)
-          .gte("created_at", monthStart.toISOString())
-          .lte("created_at", monthEnd.toISOString())
+        const data = await fetchLeadsForRange(monthStart, new Date(monthEnd.getTime() + 1))
 
         const monthLabel = monthStart.toLocaleDateString("es-ES", { month: "short" })
 
@@ -902,12 +1278,7 @@ export default function AnunciosPage() {
         weekEnd.setDate(currentWeekStart.getDate() + 6)
         weekEnd.setHours(23, 59, 59, 999)
 
-        const { data, error } = await supabase
-          .from("Clientes")
-          .select("IDC, Estado, created_at")
-          .ilike("Inmueble", anuncio.referencia)
-          .gte("created_at", currentWeekStart.toISOString())
-          .lte("created_at", weekEnd.toISOString())
+        const data = await fetchLeadsForRange(currentWeekStart, new Date(weekEnd.getTime() + 1))
 
         const weekLabel = `Sem ${Math.ceil((currentWeekStart.getDate() + currentWeekStart.getDay()) / 7)}`
 
@@ -929,12 +1300,7 @@ export default function AnunciosPage() {
         const dayEnd = new Date(dayStart)
         dayEnd.setHours(23, 59, 59, 999)
 
-        const { data, error } = await supabase
-          .from("Clientes")
-          .select("IDC, Estado, created_at")
-          .ilike("Inmueble", anuncio.referencia)
-          .gte("created_at", dayStart.toISOString())
-          .lte("created_at", dayEnd.toISOString())
+        const data = await fetchLeadsForRange(dayStart, new Date(dayEnd.getTime() + 1))
 
         const dayLabel = dayStart.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })
 
@@ -1055,19 +1421,26 @@ export default function AnunciosPage() {
     }
   }
 
-  const fetchAvailablePlans = async () => {
+  const fetchAvailablePlans = async (signal?: AbortSignal) => {
     try {
       console.log("[v0] Fetching all available plans from Planes table...")
 
-      const { data: planesData, error: planesError } = await supabase
+      let query = supabase
         .from("Planes")
         .select("*")
         .order("idp", { ascending: true })
 
+      if (signal) query = query.abortSignal(signal)
+
+      const { data: planesData, error: planesError } = await query
+
       if (planesError) {
+        if (signal?.aborted || planesError.message.includes("Abort")) return
         console.log("[v0] Error fetching plans:", planesError)
         return
       }
+      
+      if (signal?.aborted) return
 
       if (planesData && planesData.length > 0) {
         const normalize = (p: any) => ({
@@ -1080,12 +1453,13 @@ export default function AnunciosPage() {
         console.log("[v0] Available plans loaded:", normalized)
         setAvailablePlans(normalized)
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (signal?.aborted || err?.name === 'AbortError' || err?.message?.includes('Abort')) return
       console.log("[v0] Error in fetchAvailablePlans:", err)
     }
   }
 
-  const fetchPlanLimit = async () => {
+  const fetchPlanLimit = async (signal?: AbortSignal) => {
     try {
       console.log("[v0] Fetching plan limit from Planes table...")
 
@@ -1095,16 +1469,22 @@ export default function AnunciosPage() {
         return
       }
 
-      const { data: inmobiliariaData, error: inmobiliariaError } = await supabase
+      let q1 = supabase
         .from("Inmobiliarias")
         .select("Plan, PlanResetAt, PlanNext, PlanNextEffectiveAt")
         .eq("idi", inmobiliariaId)
-        .single()
+      
+      if (signal) q1 = q1.abortSignal(signal)
+
+      const { data: inmobiliariaData, error: inmobiliariaError } = await q1.single()
+      
+      if (signal?.aborted) return
 
       console.log("[v0] Inmobiliaria data:", inmobiliariaData)
       console.log("[v0] Inmobiliaria error:", inmobiliariaError)
 
       if (inmobiliariaError || !inmobiliariaData?.Plan) {
+        if (inmobiliariaError?.message?.includes('Abort')) return
         console.log("[v0] Error fetching inmobiliaria plan:", inmobiliariaError)
         console.log("[v0] Using default limit: 1000000")
         setPlanLimit(1000000)
@@ -1144,9 +1524,14 @@ export default function AnunciosPage() {
         }
       } catch {}
 
-      const { data: planesData, error: planesError } = await supabase.from("Planes").select("*")
+      let q2 = supabase.from("Planes").select("*")
+      if (signal) q2 = q2.abortSignal(signal)
+      const { data: planesData, error: planesError } = await q2
+      
+      if (signal?.aborted) return
 
       if (planesError || !planesData || planesData.length === 0) {
+        if (planesError?.message?.includes('Abort')) return
         console.log("[v0] Could not load plans from database, using fallback data for plan ID:", planId)
         const fallbackPlan = getPlanData(planId)
 
@@ -1191,7 +1576,8 @@ export default function AnunciosPage() {
           setAnunciosLimit(1000000)
         }
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (signal?.aborted || err?.name === 'AbortError' || err?.message?.includes('Abort')) return
       console.log("[v0] Error fetching plan limit:", err)
       setPlanLimit(1000000)
       setAnunciosLimit(1000000)
@@ -1209,7 +1595,7 @@ export default function AnunciosPage() {
     return null
   }
 
-  const fetchAnuncios = async () => {
+  const fetchAnuncios = async (signal?: AbortSignal) => {
     try {
       console.log("[v0] Fetching anuncios from database with proper schema mapping...")
       setLoading(true)
@@ -1219,13 +1605,19 @@ export default function AnunciosPage() {
         data: { user },
       } = await supabase.auth.getUser()
 
+      if (signal?.aborted) return
+
       let isAdmin = false
       if (user?.email) {
-        const { data: perfil } = await supabase.from("Perfiles").select("is_admin").eq("usuario", user.email).single()
+        let qProfile = supabase.from("Perfiles").select("is_admin").eq("usuario", user.email)
+        if (signal) qProfile = qProfile.abortSignal(signal)
+        const { data: perfil } = await qProfile.single()
 
         isAdmin = perfil?.is_admin === true
         console.log("[v0] User is admin:", isAdmin)
       }
+
+      if (signal?.aborted) return
 
       if (!inmobiliariaId && !isAdmin) {
         console.log("[v0] No inmobiliariaId available, cannot fetch anuncios")
@@ -1238,27 +1630,39 @@ export default function AnunciosPage() {
 
       console.log("[v0] Filtering anuncios by agency IDI (inmobiliariaId):", inmobiliariaId)
 
-      const query = supabase
+      let query = supabase
         .from("Anuncios")
         .select("ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion")
         .order("created_at", { ascending: false })
         .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
+      
+      if (signal) query = query.abortSignal(signal)
 
       // All users can now see their own archived anuncios
       // The client-side filtering (filterEstado) handles showing/hiding them
 
       let { data: anuncios, error: anunciosErr } = await query
+      
+      if (signal?.aborted) return
 
       if (anunciosErr) {
-        const fallbackQuery = supabase
+        if (anunciosErr.message.includes('Abort')) return
+        let fallbackQuery = supabase
           .from("Anuncios")
           .select(
             "ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion",
           )
           .order("created_at", { ascending: false })
           .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
+        
+        if (signal) fallbackQuery = fallbackQuery.abortSignal(signal)
+
         const { data: anunciosFallback, error: fallbackErr } = await fallbackQuery
+        
+        if (signal?.aborted) return
+
         if (fallbackErr) {
+          if (fallbackErr.message.includes('Abort')) return
           console.log("[v0] Error fetching anuncios (fallback):", fallbackErr)
           setAnunciosError("Error al cargar anuncios")
           return
@@ -1294,48 +1698,167 @@ export default function AnunciosPage() {
       let cutoffDate = planResetAt ? planResetAt : monthStart
       if (inmobiliariaId) {
         try {
-          const { data: inmRow } = await supabase
+          let qInmo = supabase
             .from("Inmobiliarias")
             .select("PlanResetAt")
             .eq("idi", inmobiliariaId)
-            .maybeSingle()
+          
+          if (signal) qInmo = qInmo.abortSignal(signal)
+
+          const { data: inmRow } = await qInmo.maybeSingle()
+
+          if (signal?.aborted) return
+
           if (inmRow?.PlanResetAt) {
             const dbReset = new Date(inmRow.PlanResetAt)
             if (!isNaN(dbReset.getTime())) {
               cutoffDate = dbReset
+              setPlanResetAt(dbReset)
             }
           }
         } catch {}
       }
 
+      // Pre-fetch all leads, emails, and whatsapps to avoid N+1 queries
+      console.log("[v0] Pre-fetching leads and communications...")
+      
+      const references = anuncios.map((a) => a.Referencia).filter(Boolean)
+      const addresses = anuncios.map((a) => a.Direccion).filter(Boolean)
+      // Combine and deduplicate
+      const propertyIdentifiers = [...new Set([...references, ...addresses])]
+
+      let allLeadsRaw: any[] = []
+
+      // Fetch leads in parallel (by IDI and by Property Name) to ensure we catch everything
+      let qIdi = inmobiliariaId 
+        ? supabase
+            .from("Clientes")
+            .select(
+              "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos, Inmueble",
+            )
+            .eq("usuario", inmobiliariaId)
+        : null
+      
+      if (qIdi && signal) qIdi = qIdi.abortSignal(signal)
+
+      // Also fetch by property name (exact match) as a backup for leads missing the agency ID
+      // or for cases where we rely on string matching
+      let qProp = propertyIdentifiers.length > 0
+        ? supabase
+            .from("Clientes")
+            .select(
+              "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos, Inmueble",
+            )
+            .in("Inmueble", propertyIdentifiers)
+        : null
+      
+      if (qProp && signal) qProp = qProp.abortSignal(signal)
+
+      const pIdi = qIdi ? qIdi : Promise.resolve({ data: [], error: null })
+      const pProp = qProp ? qProp : Promise.resolve({ data: [], error: null })
+
+      const [resIdi, resProp] = await Promise.all([pIdi, pProp])
+      
+      if (signal?.aborted) return
+
+      const leadsIdi = resIdi.data || []
+      const leadsProp = resProp.data || []
+      
+      // Merge and deduplicate by IDC
+      const leadsMap = new Map()
+      leadsIdi.forEach((l) => leadsMap.set(l.IDC, l))
+      leadsProp.forEach((l) => leadsMap.set(l.IDC, l))
+      
+      allLeadsRaw = Array.from(leadsMap.values())
+      console.log(`[v0] Leads fetched: ${leadsIdi.length} by IDI, ${leadsProp.length} by Property. Total unique: ${allLeadsRaw.length}`)
+
+      // Collect IDs and Emails for bulk fetching
+      const allEmails = [...new Set(allLeadsRaw.map((l) => l.Correo).filter(Boolean))]
+      const allIDCs = [...new Set(allLeadsRaw.map((l) => l.IDC).filter((id: any) => Number.isFinite(id)))]
+
+      let allCorreosRaw: any[] = []
+      if (allEmails.length > 0) {
+        // Fetch in chunks to avoid URL limits
+        const chunks = []
+        // Reduced chunk size from 500 to 50 to prevent "URI too long" errors
+        for (let i = 0; i < allEmails.length; i += 50) {
+          chunks.push(allEmails.slice(i, i + 50))
+        }
+        for (const chunk of chunks) {
+          if (signal?.aborted) break
+          let q = supabase.from("Correos").select("id, created_at, to, Tipo").in("to", chunk)
+          if (signal) q = q.abortSignal(signal)
+          const { data, error } = await q
+          if (error) {
+             console.log("[v0] Error fetching emails chunk:", error)
+          }
+          if (data) allCorreosRaw.push(...data)
+        }
+      }
+      
+      if (signal?.aborted) return
+
+      let allWhatsappRaw: any[] = []
+      if (allIDCs.length > 0) {
+        const chunks = []
+        // Reduced chunk size from 500 to 50
+        for (let i = 0; i < allIDCs.length; i += 50) {
+          chunks.push(allIDCs.slice(i, i + 50))
+        }
+        for (const chunk of chunks) {
+          if (signal?.aborted) break
+          let q = supabase.from("Whatsapp").select("id, created_at, IDC, Tipo").in("IDC", chunk)
+          if (signal) q = q.abortSignal(signal)
+          const { data, error } = await q
+          if (error) {
+             console.log("[v0] Error fetching whatsapp chunk:", error)
+          }
+          if (data) allWhatsappRaw.push(...data)
+        }
+      }
+
+      if (signal?.aborted) return
+
+      console.log(
+        `[v0] Pre-fetch complete: ${allLeadsRaw.length} leads, ${allCorreosRaw.length} emails, ${allWhatsappRaw.length} whatsapps`,
+      )
+
+      // Save raw data for local period recalculation
+      rawDataRef.current = {
+        leads: allLeadsRaw,
+        emails: allCorreosRaw,
+        whatsapp: allWhatsappRaw,
+      }
+
+      const normalize = (s: string | null | undefined) => (s ? s.trim().toLowerCase() : "")
+
       for (const anuncio of anuncios) {
         const referencia = anuncio.Referencia || `REF-${anuncio.ida}`
+        const refNorm = normalize(referencia)
+        const dirNorm = normalize(anuncio.Direccion)
+        
         console.log(`[v0] Processing anuncio: ${referencia}`)
 
-        const { data: rawLeads, error: leadsError } = await supabase
-          .from("Clientes")
-          .select(
-            "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos",
-          ) // Added fields for lead details, fecha_de_visita and Fecha_Datos_Completos
-          .ilike("Inmueble", referencia)
-
-        if (leadsError) {
-          console.log(`[v0] Error fetching leads for ${referencia}:`, leadsError)
-        }
+        // Filter leads from memory
+        const rawLeads = allLeadsRaw.filter((l) => {
+          if (!l.Inmueble) return false
+          const inmueble = normalize(l.Inmueble)
+          return inmueble && (inmueble === refNorm || (dirNorm && inmueble === dirNorm))
+        })
 
         let allLeads = rawLeads || []
         
         // Filter leads by activation date if available (User request: count from last activation)
-        if (anuncio.fecha_activacion) {
-           const activationDate = new Date(anuncio.fecha_activacion)
-           // Check if date is valid
-           if (!isNaN(activationDate.getTime())) {
-             allLeads = allLeads.filter((lead) => {
-               const createdAt = new Date(lead.created_at)
-               return createdAt >= activationDate
-             })
-           }
-        }
+        // if (anuncio.fecha_activacion) {
+        //    const activationDate = new Date(anuncio.fecha_activacion)
+        //    // Check if date is valid
+        //    if (!isNaN(activationDate.getTime())) {
+        //      allLeads = allLeads.filter((lead) => {
+        //        const createdAt = new Date(lead.created_at)
+        //        return createdAt >= activationDate
+        //      })
+        //    }
+        // }
 
         let leadsTotales = allLeads.length
 
@@ -1383,44 +1906,29 @@ export default function AnunciosPage() {
         let whatsappsPeriodo = 0
         let whatsappsTotal = 0
 
+        // Conteo optimizado usando datos en memoria
         if (leadEmails.length > 0) {
-          // Conteo por periodo seleccionado
-          const { data: correosPeriodo, error: correosPeriodoError } = await supabase
-            .from("Correos")
-            .select("id, created_at")
-            .in("to", leadEmails)
-            .gte("created_at", periodStart.toISOString())
-            .lt("created_at", periodEnd.toISOString())
+          const correosMatch = allCorreosRaw.filter((c) => 
+            leadEmails.includes(c.to) && c.Tipo?.toLowerCase() === "enviado"
+          )
+          emailsTotal = correosMatch.length
 
-          if (!correosPeriodoError && correosPeriodo) {
-            emailsEnviadosMes = correosPeriodo.length
-          }
+          const correosPeriodo = correosMatch.filter((c) => {
+            const d = new Date(c.created_at)
+            return d >= periodStart && d < periodEnd
+          })
+          emailsEnviadosMes = correosPeriodo.length
         }
 
         if (leadIDCs.length > 0) {
-          const { data: whats, error: whatsError } = await supabase
-            .from("Whatsapp")
-            .select("id")
-            .in("IDC", leadIDCs)
-            .eq("Tipo", "Enviado")
+          const whatsMatch = allWhatsappRaw.filter((w) => leadIDCs.includes(w.IDC) && w.Tipo === "Enviado")
+          whatsappsTotal = whatsMatch.length
 
-          if (!whatsError && whats) {
-            whatsappsTotal = whats.length
-          }
-        }
-
-        if (leadIDCs.length > 0) {
-          const { data: whatsPeriodo, error: whatsPeriodoError } = await supabase
-            .from("Whatsapp")
-            .select("id, created_at")
-            .in("IDC", leadIDCs)
-            .gte("created_at", periodStart.toISOString())
-            .lt("created_at", periodEnd.toISOString())
-            .eq("Tipo", "Enviado")
-
-          if (!whatsPeriodoError && whatsPeriodo) {
-            whatsappsPeriodo = whatsPeriodo.length
-          }
+          const whatsPeriodo = whatsMatch.filter((w) => {
+            const d = new Date(w.created_at)
+            return d >= periodStart && d < periodEnd
+          })
+          whatsappsPeriodo = whatsPeriodo.length
         }
 
         const sparklineData: number[] = []
@@ -1475,8 +1983,8 @@ export default function AnunciosPage() {
         }
 
         const porcentajeCompletos = leadsTotales > 0 ? (datosCompletosCount / leadsTotales) * 100 : 0
-        const tiempoAhorrado = ((emailsEnviadosMes + whatsappsPeriodo) * 2.27) / 60
-        const tiempoAhorradoTotal = ((emailsTotal + whatsappsTotal) * 2.27) / 60
+        const tiempoAhorrado = ((emailsEnviadosMes + whatsappsPeriodo) * 1.27) / 60
+        const tiempoAhorradoTotal = ((emailsTotal + whatsappsTotal) * 1.27) / 60
 
         const estado: "activo" | "pausado" | "error" | "archivado" =
           anuncio.Activacion === "Activo"
@@ -1536,6 +2044,7 @@ export default function AnunciosPage() {
           ejecuciones,
           consumoMes: ejecuciones,
           fechaCreacion: fechaCreacion, // Add fechaCreacion
+          created_at: anuncio.created_at,
           fecha_activacion: anuncio.fecha_activacion || null,
           descartados, // Added descartados
           Fecha_Activacion_Programada: anuncio.Fecha_Activacion_Programada || null, // Pass scheduled date
@@ -1557,10 +2066,16 @@ export default function AnunciosPage() {
       cards.sort((a, b) => {
         if (a.estado === "archivado" && b.estado !== "archivado") return 1
         if (a.estado !== "archivado" && b.estado === "archivado") return -1
-        if (!a.fechaUltimaActividad && !b.fechaUltimaActividad) return 0
-        if (!a.fechaUltimaActividad) return 1
-        if (!b.fechaUltimaActividad) return -1
-        return b.fechaUltimaActividad.getTime() - a.fechaUltimaActividad.getTime()
+        
+        const dateA = a.fechaUltimaActividad 
+          ? a.fechaUltimaActividad.getTime() 
+          : (a.created_at ? new Date(a.created_at).getTime() : 0)
+        
+        const dateB = b.fechaUltimaActividad 
+          ? b.fechaUltimaActividad.getTime() 
+          : (b.created_at ? new Date(b.created_at).getTime() : 0)
+          
+        return dateB - dateA
       })
 
       setAnunciosCards(cards)
@@ -1572,11 +2087,16 @@ export default function AnunciosPage() {
         const prIso = cutoffDate.toISOString()
         const dateFields = ["created_at", "fecha_creacion", "fecha_registro"]
         for (const field of dateFields) {
-          const { count, error } = await supabase
+          if (signal?.aborted) break
+          let q = supabase
             .from("Clientes")
             .select("*", { count: "exact", head: true })
             .gte(field, prIso)
             .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
+          
+          if (signal) q = q.abortSignal(signal)
+
+          const { count, error } = await q
           if (!error) {
             consumo = count || 0
             break
@@ -1586,12 +2106,18 @@ export default function AnunciosPage() {
       } catch {}
       setTotalEjecuciones(consumo)
       console.log("[v0] Anuncios processing complete. Total cards:", cards.length)
-    } catch (err) {
+    } catch (err: any) {
+      if (signal?.aborted || err?.name === 'AbortError' || err?.message?.includes('Abort')) {
+        console.log("[v0] Anuncios request aborted")
+        return
+      }
       setAnunciosError("Error al conectar con la base de datos")
       console.log("[v0] Anuncios fetch error:", err)
     } finally {
-      setLoading(false)
-      setCardsLoading(false)
+      if (!signal?.aborted) {
+        setLoading(false)
+        setCardsLoading(false)
+      }
     }
   }
 
@@ -1997,32 +2523,112 @@ export default function AnunciosPage() {
 
   // New handler for Statistics modal
   const handleShowStats = async (anuncio: AnuncioCard) => {
-    console.log(`[v0] Loading statistics for anuncio ${anuncio.id}`)
+    // console.log(`[v0] Loading statistics for anuncio ${anuncio.id}`, anuncio)
 
     try {
-      // Fetch real metrics from database
-      const { data: allLeads, error: leadsError } = await supabase
-        .from("Clientes")
-        .select("Estado,aceptado,visita_propuesta,visita_completada,IDC,Nombre,Correo,Telefono,created_at") // Include created_at for activity heatmap
-        .ilike("Inmueble", anuncio.referencia)
-
-      if (leadsError) {
-        console.error("[v0] Error fetching leads for stats:", leadsError)
-      }
-
-      // Calculate real metrics
-      let leads = allLeads || []
+      let leads: any[] = []
       
+      // Use in-memory raw data if available for consistency
+      if (rawDataRef.current) {
+        // console.log("[v0] Using in-memory raw data")
+        const normalize = (s: string | null | undefined) => (s ? s.trim().toLowerCase() : "")
+        const refNorm = normalize(anuncio.referencia)
+        const dirNorm = normalize(anuncio.direccion)
+        
+        leads = rawDataRef.current.leads.filter((l) => {
+          if (!l.Inmueble) return false
+          const inmueble = normalize(l.Inmueble)
+          return inmueble && (inmueble === refNorm || (dirNorm && inmueble === dirNorm))
+        })
+      } else {
+        console.log("[v0] Fetching leads from DB")
+        // Fallback to DB fetch if raw data not available
+        const fetchByRef = supabase
+          .from("Clientes")
+          .select("Estado,aceptado,visita_propuesta,visita_completada,IDC,Nombre,Correo,Telefono,created_at,Inmueble")
+          .ilike("Inmueble", anuncio.referencia.trim())
+  
+        let fetchByAddr = null
+        if (anuncio.direccion) {
+          fetchByAddr = supabase
+            .from("Clientes")
+            .select("Estado,aceptado,visita_propuesta,visita_completada,IDC,Nombre,Correo,Telefono,created_at,Inmueble")
+            .ilike("Inmueble", anuncio.direccion.trim())
+        }
+  
+        const [resRef, resAddr] = await Promise.all([fetchByRef, fetchByAddr ? fetchByAddr : Promise.resolve({ data: [], error: null })])
+        
+        const leadsRef = resRef.data || []
+        const leadsAddr = resAddr?.data || []
+        
+        // Merge and deduplicate by IDC
+        const allLeadsMap = new Map()
+        leadsRef.forEach(l => allLeadsMap.set(l.IDC, l))
+        leadsAddr.forEach(l => allLeadsMap.set(l.IDC, l))
+        
+        leads = Array.from(allLeadsMap.values())
+      }
+      console.log(`[v0] Found ${leads.length} leads for stats`)
+
       // Filter by activation date to ensure consistency with other metrics
-      if (anuncio.fecha_activacion) {
-        const activationDate = new Date(anuncio.fecha_activacion)
-        if (!isNaN(activationDate.getTime())) {
-          leads = leads.filter((lead) => {
-            const createdAt = new Date(lead.created_at)
-            return createdAt >= activationDate
-          })
+      // if (anuncio.fecha_activacion) {
+      //   const activationDate = new Date(anuncio.fecha_activacion)
+      //   if (!isNaN(activationDate.getTime())) {
+      //     leads = leads.filter((lead) => {
+      //       const createdAt = new Date(lead.created_at)
+      //       return createdAt >= activationDate
+      //     })
+      //   }
+      // }
+
+      setStatsLeads(leads) // Store leads for reuse in calculateTrendData
+
+      // Prepare emails and whatsapps
+      let currentEmails: any[] = []
+      let currentWhatsapps: any[] = []
+
+      if (rawDataRef.current) {
+        // Use raw data
+        currentEmails = rawDataRef.current.emails || []
+        currentWhatsapps = rawDataRef.current.whatsapp || []
+      } else {
+        // Fetch from DB
+        const leadEmails = leads.map((l) => l.Correo).filter(Boolean)
+        const leadIDCs = leads.map((l) => l.IDC).filter((id: any) => Number.isFinite(id))
+
+        if (leadEmails.length > 0) {
+           const chunkSize = 50
+           const emailChunks = []
+           for (let i = 0; i < leadEmails.length; i += chunkSize) {
+             emailChunks.push(leadEmails.slice(i, i + chunkSize))
+           }
+           
+           const emailPromises = emailChunks.map((chunk) => 
+             supabase.from('Correos').select('to, Tipo, created_at').in('to', chunk)
+           )
+           
+           const emailResults = await Promise.all(emailPromises)
+           currentEmails = emailResults.flatMap((r) => r.data || [])
+        }
+
+        if (leadIDCs.length > 0) {
+           const chunkSize = 50
+           const idcChunks = []
+           for (let i = 0; i < leadIDCs.length; i += chunkSize) {
+             idcChunks.push(leadIDCs.slice(i, i + chunkSize))
+           }
+           
+           const waPromises = idcChunks.map((chunk) => 
+             supabase.from('Whatsapp').select('IDC, Tipo, created_at').in('IDC', chunk)
+           )
+           
+           const waResults = await Promise.all(waPromises)
+           currentWhatsapps = waResults.flatMap((r) => r.data || [])
         }
       }
+
+      setStatsEmails(currentEmails)
+      setStatsWhatsapps(currentWhatsapps)
 
       const datosCompletosCount =
         leads.filter((lead) => {
@@ -2030,24 +2636,24 @@ export default function AnunciosPage() {
           return ["datos completos", "aceptado", "visita propuesta", "pedir aval"].includes(estado)
         }).length || 0
 
-      const aceptados = leads.filter((lead) => lead.aceptado === true).length || 0
-      const visitaPropuesta = leads.filter((lead) => lead.visita_propuesta === true).length || 0
-      const visitaCompletada = leads.filter((lead) => lead.visita_completada === true).length || 0 // Keeping this for now, will replace in UI if needed, but logic stays available
+      const aceptados = leads.filter((lead) => lead.Estado === "Aceptado" || lead.aceptado === true).length || 0
+      const visitaPropuesta = leads.filter((lead) => lead.Estado === "Visita Propuesta" || lead.visita_propuesta === true).length || 0
+      const visitaCompletada = leads.filter((lead) => lead.Estado === "Visita Completada" || lead.visita_completada === true).length || 0 // Keeping this for now, will replace in UI if needed, but logic stays available
       const datosCompletosStrict = leads.filter((lead) => lead.Estado === "Datos Completos").length || 0
       const descartados = leads.filter((lead) => lead.Estado === "Descartado").length || 0
 
-      console.log(
-        "[v0] Stats fetched - Datos Completos:",
-        datosCompletosCount,
-        "Aceptados:",
-        aceptados,
-        "Visita Propuesta:",
-        visitaPropuesta,
-        "Visita Completada:",
-        visitaCompletada,
-        "Descartados:",
-        descartados,
-      )
+      // console.log(
+      //   "[v0] Stats fetched - Datos Completos:",
+      //   datosCompletosCount,
+      //   "Aceptados:",
+      //   aceptados,
+      //   "Visita Propuesta:",
+      //   visitaPropuesta,
+      //   "Visita Completada:",
+      //   visitaCompletada,
+      //   "Descartados:",
+      //   descartados,
+      // )
 
       const dayMs = 24 * 60 * 60 * 1000
       const now = new Date()
@@ -2056,12 +2662,13 @@ export default function AnunciosPage() {
       // Si hay fecha de activación, usar esa preferentemente para no mostrar historial vacío irrelevante
       let anuncioCreationDate = anuncio.created_at ? new Date(anuncio.created_at) : new Date(now.getTime() - 30 * dayMs)
       
-      if (anuncio.fecha_activacion) {
-         const actDate = new Date(anuncio.fecha_activacion)
-         if (!isNaN(actDate.getTime())) {
-             anuncioCreationDate = actDate
-         }
-      }
+      // DISABLED: This causes empty graphs if activation date is recent. We want to see full history.
+      // if (anuncio.fecha_activacion) {
+      //    const actDate = new Date(anuncio.fecha_activacion)
+      //    if (!isNaN(actDate.getTime())) {
+      //        anuncioCreationDate = actDate
+      //    }
+      // }
       anuncioCreationDate.setHours(0, 0, 0, 0)
       
       // Calcular días desde la creación del anuncio hasta hoy
@@ -2106,6 +2713,7 @@ export default function AnunciosPage() {
         incompletosAlto: Math.random() > 0.7,
         necesidadAval: Math.random() > 0.3,
       }
+      console.log("[v0] statsWithRealData:", statsWithRealData)
 
       setSelectedAnuncioForStats(statsWithRealData)
       setShowStatsModal(true)
@@ -2916,7 +3524,7 @@ export default function AnunciosPage() {
   return (
     <TooltipProvider>
       <div className="p-4 md:p-8 space-y-6">
-        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pb-4 border-b">
+        <div className="bg-background pb-4 border-b">
           <div className="space-y-2">
             {/* Header */}
             <div className="flex items-center justify-between">
@@ -3212,6 +3820,9 @@ export default function AnunciosPage() {
                 </div>
               )}
               {filteredAnuncios.map((anuncio) => {
+                const localPeriod = anuncio.localMetricsPeriod || metricsPeriod
+                const periodText = periodBadgeText(localPeriod)
+
                 const isExpanded = expandedCard === anuncio.id
 
                 const cardClassName =
@@ -3224,36 +3835,48 @@ export default function AnunciosPage() {
                 return (
                   <div key={anuncio.id} className="space-y-2">
                     <Card className={cardClassName}>
-                      <CardHeader className="pb-0 pt-3">
+                      <CardHeader className="pb-0 pt-2">
                         <div className="space-y-1">
                           {/* Title row */}
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <h3 className="font-semibold text-base truncate">{anuncio.referencia}</h3>
-                                <Badge
-                                  variant={
-                                    anuncio.estado === "activo"
-                                      ? "default"
-                                      : anuncio.estado === "pausado"
-                                        ? "secondary"
-                                        : "outline"
-                                  }
-                                  className={`text-[10px] px-1.5 py-0 ${
-                                    anuncio.estado === "pausado"
-                                      ? "bg-yellow-100 text-yellow-800 border-yellow-300"
-                                      : anuncio.estado === "archivado"
-                                        ? "bg-gray-100 text-gray-600"
-                                        : ""
-                                  }`}
-                                >
-                                  {anuncio.activacion}
-                                </Badge>
+                                <UITooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="flex items-center gap-2">
+                                      <Switch
+                                        checked={anuncio.estado === "activo"}
+                                        onCheckedChange={() => handleToggleEstado(anuncio.id, anuncio.activacion)}
+                                        disabled={
+                                          processingId === anuncio.id ||
+                                          (anuncio.estado !== "activo" && anunciosLimit > 0 && anunciosLimit < 1000000 && activeAnuncios >= anunciosLimit)
+                                        }
+                                        className="scale-90 origin-left"
+                                      />
+                                      <span
+                                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                          anuncio.estado === "pausado"
+                                            ? "bg-red-600 text-white border-red-600 dark:bg-red-900 dark:text-white dark:border-red-900"
+                                            : anuncio.estado === "archivado"
+                                              ? "bg-black text-white border-black dark:bg-white dark:text-black dark:border-white"
+                                              : "bg-white text-black border-black dark:bg-black dark:text-white dark:border-white"
+                                        }`}
+                                      >
+                                        {processingId === anuncio.id ? "..." : anuncio.activacion}
+                                      </span>
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Activar o pausar anuncio</p>
+                                  </TooltipContent>
+                                </UITooltip>
                               </div>
                               <p className="text-xs text-muted-foreground truncate mt-0.5">{anuncio.direccion}</p>
                             </div>
 
                             <div className="flex items-center gap-1">
+                              
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -3329,75 +3952,64 @@ export default function AnunciosPage() {
                             </div>
                           </div>
 
-                          <div className="flex justify-center mt-1">
-                            <Button asChild size="sm" className="bg-primary hover:bg-primary/90 h-7 text-xs">
-                              <Link
-                                href={`/dashboard/leads?filter=${encodeURIComponent(anuncio.referencia)}`}
-                                prefetch={false}
-                                onClick={() => console.log("[nav] anuncios_to_leads_filter_click", anuncio.referencia)}
-                              >
-                                <Eye className="h-3 w-3 mr-1.5" />
-                                Ver leads filtrados ({anuncio.leadsTotales})
-                              </Link>
-                            </Button>
-                          </div>
 
-                          <div className="flex items-center justify-center gap-3 py-0.5">
-                            <span className="text-sm font-medium">
-                              {processingId === anuncio.id ? "Procesando..." : anuncio.activacion}
-                            </span>
-                            <Switch
-                              checked={anuncio.estado === "activo"}
-                              onCheckedChange={() => handleToggleEstado(anuncio.id, anuncio.activacion)}
-                              disabled={
-                                processingId === anuncio.id ||
-                                (anuncio.estado !== "activo" && anunciosLimit > 0 && anunciosLimit < 1000000 && activeAnuncios >= anunciosLimit)
-                              }
-                              className="scale-125"
-                            />
-                          </div>
+
+
                         </div>
                       </CardHeader>
 
-                      <CardContent className="space-y-1.5 pt-2 pb-3">
+                      <CardContent className="space-y-1 pt-1 pb-2">
                         <div>
                           <div className="flex items-center justify-between mb-0.5">
                             <h4 className="text-xs font-semibold text-muted-foreground">Rendimiento y actividad</h4>
                             <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="h-7 text-[10px]">{periodBadgeText}</Badge>
-                              <Select value={metricsPeriod} onValueChange={(v) => setMetricsPeriod(v as any)}>
-                                <SelectTrigger className="h-7 w-[140px] text-xs">
-                                  <SelectValue placeholder="Periodo" />
-                                </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="hoy">Hoy</SelectItem>
-                                <SelectItem value="esteMes">Este mes</SelectItem>
-                                <SelectItem value="ultimoMes">Último mes</SelectItem>
-                                <SelectItem value="periodoActual">Periodo actual</SelectItem>
-                              </SelectContent>
-                              </Select>
+                              <span className="text-xs font-medium text-foreground/80 tabular-nums">
+                                {periodText}
+                              </span>
+                              <div className="flex items-center bg-muted/50 rounded-md p-0.5">
+                                <Button
+                                  variant={localPeriod === "hoy" ? "secondary" : "ghost"}
+                                  size="sm"
+                                  className={`h-6 text-[10px] px-2 font-medium ${localPeriod === "hoy" ? "bg-background text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground"}`}
+                                  onClick={() => handleLocalMetricsPeriodChange(anuncio.id, "hoy")}
+                                >
+                                  Hoy
+                                </Button>
+                                <Button
+                                  variant={localPeriod === "esteMes" ? "secondary" : "ghost"}
+                                  size="sm"
+                                  className={`h-6 text-[10px] px-2 font-medium ${localPeriod === "esteMes" ? "bg-background text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground"}`}
+                                  onClick={() => handleLocalMetricsPeriodChange(anuncio.id, "esteMes")}
+                                >
+                                  Mes
+                                </Button>
+                                <Button
+                                  variant={localPeriod === "ultimoMes" ? "secondary" : "ghost"}
+                                  size="sm"
+                                  className={`h-6 text-[10px] px-2 font-medium ${localPeriod === "ultimoMes" ? "bg-background text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground"}`}
+                                  onClick={() => handleLocalMetricsPeriodChange(anuncio.id, "ultimoMes")}
+                                >
+                                  Mes ant.
+                                </Button>
+                                <Button
+                                  variant={localPeriod === "periodoActual" ? "secondary" : "ghost"}
+                                  size="sm"
+                                  className={`h-6 text-[10px] px-2 font-medium ${localPeriod === "periodoActual" ? "bg-background text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground"}`}
+                                  onClick={() => handleLocalMetricsPeriodChange(anuncio.id, "periodoActual")}
+                                >
+                                  Ciclo
+                                </Button>
+                              </div>
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 lg:grid-cols-6 gap-1">
+                          <div className="grid grid-cols-3 gap-1">
                             <div className="text-center">
                               <div className="text-lg font-bold text-blue-600">{anuncio.nuevosHoy}</div>
                               <div className="text-[10px] text-muted-foreground">Nuevos</div>
                             </div>
                             <div className="text-center">
-                              <div className="text-lg font-bold text-green-600">{anuncio.emailsEnviados}</div>
-                              <div className="text-[10px] text-muted-foreground">Emails enviados</div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-lg font-bold text-teal-600">{anuncio.whatsappsPeriodo}</div>
-                              <div className="text-[10px] text-muted-foreground">Whatsapps enviados</div>
-                            </div>
-                            <div className="text-center">
                               <div className="text-lg font-bold text-purple-600">{anuncio.datosCompletos}</div>
                               <div className="text-[10px] text-muted-foreground">Nº Completos</div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-lg font-bold text-orange-600">{anuncio.aLaEspera}</div>
-                              <div className="text-[10px] text-muted-foreground">A la espera</div>
                             </div>
                             <div className="text-center">
                               <div className="text-lg font-bold text-indigo-600">
@@ -3435,6 +4047,16 @@ export default function AnunciosPage() {
 
                         {/* Quick Actions */}
                         <div className="flex gap-1 pt-0.5 border-t">
+                          <Button asChild size="sm" className="flex-1 bg-primary hover:bg-primary/90 h-7 text-xs px-1">
+                            <Link
+                              href={`/dashboard/leads?filter=${encodeURIComponent(anuncio.referencia)}`}
+                              prefetch={false}
+                              onClick={() => console.log("[nav] anuncios_to_leads_filter_click", anuncio.referencia)}
+                            >
+                              <Eye className="h-3 w-3 mr-1.5" />
+                              Ver leads ({anuncio.leadsTotales})
+                            </Link>
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
@@ -3444,15 +4066,7 @@ export default function AnunciosPage() {
                             <Edit className="h-3 w-3 mr-1" />
                             Editar
                           </Button>
-                          <Button
-                            size="sm"
-                            variant={expandedLeadsAnuncio === anuncio.id ? "default" : "outline"}
-                            className="flex-1 bg-transparent text-xs h-7"
-                            onClick={() => handleToggleCompletosExpanded(anuncio)}
-                          >
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            Completos ({anuncio.datosCompletos})
-                          </Button>
+
                           <Button
                             size="sm"
                             variant="outline"
@@ -4213,10 +4827,10 @@ export default function AnunciosPage() {
           open={showStatsModal}
           onOpenChange={(open) => {
             setShowStatsModal(open)
-            setIsStatsModalOpen(open) // Update state when modal opens/closes
+            setIsStatsModalOpen(open)
           }}
         >
-          <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto z-[100]">
             <DialogHeader>
               <DialogTitle>Estadísticas - {selectedAnuncioForStats?.referencia}</DialogTitle>
               <DialogDescription>
@@ -4591,36 +5205,59 @@ export default function AnunciosPage() {
                       </div>
                     </div>
                     <p className="text-xs text-muted-foreground text-center">
-                      Métricas calculadas para el período: {trendTimeframe === "24h" && "últimas 24 horas"}
-                      {trendTimeframe === "7d" && "últimos 7 días"}
-                      {trendTimeframe === "1m" && "último mes"}
+                      Métricas calculadas para el período: {
+                        statsPeriod === "hoy" ? "Hoy" :
+                        statsPeriod === "esteMes" ? "Este mes" :
+                        statsPeriod === "ultimoMes" ? "Último mes" :
+                        statsPeriod === "esteAno" ? "Este año" :
+                        "Periodo actual"
+                      }
                     </p>
                   </div>
 
                   {/* Consumo y Rendimiento */}
                   <div className="space-y-3">
                     <h4 className="font-semibold">Consumo y Rendimiento</h4>
+                    <p className="text-xs text-muted-foreground -mt-2 mb-2">
+                       Ciclo actual: {planResetAt ? new Date(planResetAt).toLocaleDateString() : new Date(new Date().getFullYear(), new Date().getMonth(), 1).toLocaleDateString()} - {new Date().toLocaleDateString()}
+                    </p>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-xs text-muted-foreground">Leads del mes</span>
-                          <span className="text-sm font-semibold text-foreground">{selectedAnuncioForStats.ejecuciones}</span>
+                      <div className="space-y-4">
+                        {/* Leads */}
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-xs text-muted-foreground">
+                              Leads
+                            </span>
+                            <span className="text-sm font-semibold text-foreground">{consumptionMetrics.leads}</span>
+                          </div>
+                          <Progress value={consumptionMetrics.planUtilizado} className="h-2" />
+                          <div className="text-xs text-muted-foreground">
+                            {consumptionMetrics.planUtilizado.toFixed(1)}% del plan utilizado
+                          </div>
                         </div>
-                        <Progress
-                          value={planLimit > 0 ? (selectedAnuncioForStats.ejecuciones / planLimit) * 100 : 0}
-                          className="h-2"
-                        />
-                        <div className="text-xs text-muted-foreground">
-                          {planLimit > 0 ? ((selectedAnuncioForStats.ejecuciones / planLimit) * 100).toFixed(1) : "N/A"}
-                          % del plan utilizado
+
+                        {/* WhatsApps */}
+                        <div className="flex justify-between text-sm items-center pt-2 border-t">
+                             <span className="text-xs text-muted-foreground">Whatsapps enviados</span>
+                             <span className="text-sm font-semibold text-foreground">{consumptionMetrics.whatsappsEnviados}</span>
+                        </div>
+
+                        {/* Emails */}
+                        <div className="flex justify-between text-sm items-center pt-2 border-t">
+                             <span className="text-xs text-muted-foreground">Emails enviados</span>
+                             <span className="text-sm font-semibold text-foreground">{consumptionMetrics.emailsEnviados}</span>
                         </div>
                       </div>
+
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
                           <span className="text-xs text-muted-foreground">Tiempo ahorrado</span>
-                          <span className="text-sm font-semibold text-foreground">{formatTime(selectedAnuncioForStats.tiempoAhorrado)}</span>
+                          <span className="text-sm font-semibold text-foreground">
+                            {formatTime(consumptionMetrics.tiempoAhorrado)}
+                          </span>
                         </div>
-                        <div className="text-xs text-muted-foreground">Basado en 1.27 min/email procesado</div>
+                        <div className="text-xs text-muted-foreground">Basado en 1.27 min/mensaje procesado</div>
                       </div>
                     </div>
                   </div>
@@ -4642,7 +5279,10 @@ export default function AnunciosPage() {
               )}
             </div>
             <div className="flex justify-end">
-              <Button variant="outline" onClick={() => setShowStatsModal(false)}>
+              <Button variant="outline" onClick={() => {
+                setShowStatsModal(false)
+                setIsStatsModalOpen(false)
+              }}>
                 Cerrar
               </Button>
             </div>
@@ -4653,7 +5293,7 @@ export default function AnunciosPage() {
           open={phaseLeadsDialog.open}
           onOpenChange={(open) => setPhaseLeadsDialog({ ...phaseLeadsDialog, open })}
         >
-          <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto z-[200]">
             <DialogHeader>
               <DialogTitle>Leads con estado: {phaseLeadsDialog.status}</DialogTitle>
               <DialogDescription>

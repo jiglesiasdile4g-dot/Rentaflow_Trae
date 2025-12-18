@@ -21,7 +21,7 @@ export function LeadApproveWrapper({ lead, updateLeadStatus, onLeadUpdated }: Le
       <ApproveCandidateButton lead={lead} onApproved={() => setOpen(true)} />
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md" style={{ zIndex: 9999 }}>
+        <DialogContent className="sm:max-w-md" style={{ zIndex: 30000 }}>
           <DialogHeader>
             <DialogTitle>Confirmar aprobación del candidato</DialogTitle>
           </DialogHeader>

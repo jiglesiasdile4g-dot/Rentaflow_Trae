@@ -216,9 +216,16 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
             )}
             <div className="space-y-2">
               <Label htmlFor="role">Rol</Label>
-              <Badge variant={userRoleLabel === "Administrador" ? "feature" : "secondary"} className="rounded-full">
-                {userRoleLabel}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant={userRoleLabel === "Administrador" ? "feature" : "secondary"} className="rounded-full">
+                  {userRoleLabel}
+                </Badge>
+                {userRoleLabel === "Administrador" && (
+                  <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
+                    Superusuario
+                  </span>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>

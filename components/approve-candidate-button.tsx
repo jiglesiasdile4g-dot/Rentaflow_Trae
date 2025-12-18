@@ -75,7 +75,7 @@ export function ApproveCandidateButton({ lead, onApproved }: ApproveButtonProps)
       </button>
 
       <AlertDialog open={showMissingFieldsAlert} onOpenChange={setShowMissingFieldsAlert}>
-        <AlertDialogContent style={{ zIndex: 9999 }}>
+        <AlertDialogContent style={{ zIndex: 30000 }}>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-red-600">
               <AlertCircle className="h-5 w-5" />

@@ -46,7 +46,7 @@ const menuItems = [
 
 export default function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname()
-  const { inmobiliariaId, inmobiliariaNombre, loading, isAdmin, setAdminSelectedInmobiliaria } = useInmobiliaria()
+  const { inmobiliariaId, inmobiliariaNombre, loading, isAdmin, role, setAdminSelectedInmobiliaria } = useInmobiliaria()
   const supabase = createClient()
   const [inmos, setInmos] = useState<{ idi: number; Nombre: string }[]>([])
   const router = useRouter()
@@ -138,9 +138,19 @@ export default function Sidebar({ user }: SidebarProps) {
             <span className="text-sm font-medium text-foreground truncate">{inmobiliariaNombre}</span>
           </div>
         )}
-        <div className="flex items-center gap-3 mb-3">
-          <User className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground truncate">{user.email}</span>
+        <div className="flex items-start gap-3 mb-3">
+          <User className="h-4 w-4 text-muted-foreground mt-0.5" />
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm text-muted-foreground truncate" title={user.email}>{user.email}</span>
+            <div className="flex items-center gap-1.5 text-xs mt-0.5">
+               {role && <span className="font-medium text-foreground capitalize">{role}</span>}
+               {isAdmin && (
+                  <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
+                    Superusuario
+                  </span>
+               )}
+            </div>
+          </div>
         </div>
         <LogoutButton />
       </div>

@@ -1,3 +1,18 @@
+## [0.7.9](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.8...v0.7.9) (2025-12-18)
+
+
+### Features
+
+* **leads:** mejora de visibilidad en estado "Pedir Aval" (fondo blanco, texto oscuro)
+* **ui:** ajuste de colores en badges de comunicaciones (fondo sólido para mejor legibilidad)
+* **docs:** corrección de z-index en modal "Gestionar documentos" para asegurar visibilidad
+
+
+### Bug Fixes
+
+* **sidebar:** corrección de visualización de rol y contador de emails
+
+
 ## [0.7.8](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.7...v0.7.8) (2025-12-16)
 
 

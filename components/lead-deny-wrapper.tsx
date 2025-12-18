@@ -39,7 +39,7 @@ export function LeadDenyWrapper({ lead, updateLeadStatus, onLeadUpdated }: LeadD
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md" style={{ zIndex: 9999 }}>
+        <DialogContent className="sm:max-w-md" style={{ zIndex: 30000 }}>
           <DialogHeader>
             <DialogTitle>Confirmar denegación del candidato</DialogTitle>
           </DialogHeader>

@@ -23,7 +23,7 @@ export async function createLeadAction(leadData: any) {
   const { data: profile, error: profileError } = await supabase
     .from("Perfiles")
     .select("role")
-    .eq("user_id", user.id)
+    .eq("usuario", user.email)
     .single()
 
   if (profileError) {

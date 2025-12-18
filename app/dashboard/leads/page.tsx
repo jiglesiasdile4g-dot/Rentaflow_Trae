@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Checkbox } from "@/components/ui/checkbox"
 
 import { useState, useEffect, useRef } from "react"
+import { createPortal } from "react-dom"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
@@ -57,7 +58,7 @@ type Lead = {
     | "Descartado"
     | "Pedir Aval"
     | "Visita Propuesta" // Added for new status
-  Pedir_Aval?: boolean
+  "Pedir Aval"?: boolean
   Apellidos?: string
   Nombre?: string
   Correo?: string
@@ -96,8 +97,8 @@ type Lead = {
   "Telefono 4"?: string
   "Codigo_Postal 4"?: string
   tipo4?: string
-  Obsevaciones?: string
-  Recordatorio?: string | boolean
+  Observaciones?: string
+  Obsevaciones?: string // Typo in DB
   usuario?: number
   correo_proxy?: string // Added for storing original proxy email
   visita_propuesta?: boolean
@@ -106,7 +107,6 @@ type Lead = {
   fecha_de_visita?: string
   visita_completada?: string | boolean
   idag?: number | string
-  Observaciones?: string
   origen?: string
 }
 
@@ -141,6 +141,11 @@ interface Communication {
 }
 
 export default function LeadsPage() {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+    return () => setMounted(false)
+  }, [])
   const [leads, setLeads] = useState<Lead[]>([])
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([])
   const [advertisements, setAdvertisements] = useState<Advertisement[]>([])
@@ -173,7 +178,7 @@ export default function LeadsPage() {
   const [isNewLeadDialogOpen, setIsNewLeadDialogOpen] = useState(false)
   const [newLeadFormData, setNewLeadFormData] = useState<Partial<Lead>>({
     Estado: "Pendiente",
-    Pedir_Aval: false,
+    "Pedir Aval": false,
   })
   const [isSubmittingNewLead, setIsSubmittingNewLead] = useState(false)
 
@@ -316,7 +321,7 @@ export default function LeadsPage() {
   const [attachmentPreviewName, setAttachmentPreviewName] = useState<string>("")
 
   const openNoteDialog = (lead: Lead) => {
-    const v = (lead.Observaciones ?? lead.Obsevaciones ?? "")
+    const v = (lead.Observaciones ?? "")
     console.log("[observ] dialog_open", { id: lead.id, len: String(v).length })
     setNoteDialog({
       open: true,
@@ -354,19 +359,13 @@ export default function LeadsPage() {
       const idVal = Number.isFinite(Number(noteDialog.leadId)) ? Number(noteDialog.leadId) : idStr
       const entries = splitNotes(noteDialog.existing)
       const remaining = entries.filter((_, i) => i !== idx).map((e) => e.raw).join(entries.length > 1 ? "\n" : "")
-      let ok = false
-      {
-        const { error } = await supabase.from("Clientes").update({ Observaciones: remaining }).eq("id", idVal)
-        if (!error) ok = true
-      }
-      if (!ok) {
-        const { error } = await supabase.from("Clientes").update({ Obsevaciones: remaining }).eq("id", idVal)
-        if (error) throw error
-        ok = true
-      }
-      setLeads((prev) => prev.map((l) => (String(l.id) === idStr ? { ...l, Observaciones: remaining, Obsevaciones: remaining } : l)))
-      setFilteredLeads((prev) => prev.map((l) => (String(l.id) === idStr ? { ...l, Observaciones: remaining, Obsevaciones: remaining } : l)))
-      setSelectedLead((prev) => (prev && String(prev.id) === idStr ? { ...prev, Observaciones: remaining, Obsevaciones: remaining } : prev))
+      
+      const { error } = await supabase.from("Clientes").update({ Observaciones: remaining }).eq("id", idVal)
+      if (error) throw error
+      
+      setLeads((prev) => prev.map((l) => (String(l.id) === idStr ? { ...l, Observaciones: remaining } : l)))
+      setFilteredLeads((prev) => prev.map((l) => (String(l.id) === idStr ? { ...l, Observaciones: remaining } : l)))
+      setSelectedLead((prev) => (prev && String(prev.id) === idStr ? { ...prev, Observaciones: remaining } : prev))
       setNoteDialog((prev) => ({ ...prev, existing: remaining }))
       toast({ title: "Anotación eliminada", description: "Se eliminó de Observaciones", duration: 2000 })
     } catch (err) {
@@ -384,43 +383,29 @@ export default function LeadsPage() {
       const now = new Date()
       const two = (n: number) => String(n).padStart(2, "0")
       const ts = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())} ${two(now.getHours())}:${two(now.getMinutes())}`
-      const existingText = String((target as any)?.Observaciones ?? (target as any)?.Obsevaciones ?? "")
+      const existingText = String((target as any)?.Observaciones ?? "")
       const entry = `[${ts}${userEmail ? ` • ${userEmail}` : ""}] ${noteDialog.value}`
       const joined = existingText ? `${entry}\n${existingText}` : entry
-      let updatedOk = false
-      {
-        const { error } = await supabase
-          .from("Clientes")
-          .update({ Observaciones: joined })
-          .eq("id", idVal)
-        if (!error) {
-          updatedOk = true
-        } else {
-          console.log("[observ] update Observaciones error, will try fallback", error)
-        }
-      }
-      if (!updatedOk) {
-        const { error } = await supabase
-          .from("Clientes")
-          .update({ Obsevaciones: joined })
-          .eq("id", idVal)
-        if (error) {
-          throw error
-        }
-        updatedOk = true
-      }
+      
+      const { error } = await supabase
+        .from("Clientes")
+        .update({ Observaciones: joined })
+        .eq("id", idVal)
+      
+      if (error) throw error
+
       setLeads((prev) =>
         prev.map((l) =>
-          String(l.id) === idStr ? { ...l, Observaciones: joined, Obsevaciones: joined } : l,
+          String(l.id) === idStr ? { ...l, Observaciones: joined } : l,
         ),
       )
       setFilteredLeads((prev) =>
         prev.map((l) =>
-          String(l.id) === idStr ? { ...l, Observaciones: joined, Obsevaciones: joined } : l,
+          String(l.id) === idStr ? { ...l, Observaciones: joined } : l,
         ),
       )
       setSelectedLead((prev) =>
-        prev && String(prev.id) === idStr ? { ...prev, Observaciones: joined, Obsevaciones: joined } : prev,
+        prev && String(prev.id) === idStr ? { ...prev, Observaciones: joined } : prev,
       )
       setNoteDialog((prev) => ({ ...prev, open: false }))
       toast({ title: "Anotación guardada", description: "Se guardó en Observaciones", duration: 2000 })
@@ -696,15 +681,19 @@ export default function LeadsPage() {
     }
   }, [selectedLead])
 
-  const fetchAgentes = async (inmobiliariaId: number) => {
+  const fetchAgentes = async (inmobiliariaId: number, signal?: AbortSignal) => {
     try {
       const supabase = createClient()
       
       // Filtramos agentes por la inmobiliaria (idi se almacena como string)
-      const { data, error } = await supabase
+      let query = supabase
         .from("Agentes")
         .select("idag, \"Nombre\", idi")
-        .eq("idi", inmobiliariaId.toString()); // Convertir a string para coincidir con la BD
+        .eq("idi", inmobiliariaId.toString())
+
+      if (signal) query = query.abortSignal(signal)
+
+      const { data, error } = await query
       
       if (error) {
         console.error("[v0] Error fetching agentes:", error.message)
@@ -713,9 +702,11 @@ export default function LeadsPage() {
       
       setAgentes(data || [])
       
-    } catch (error) {
-      console.error("[v0] Failed to fetch agentes:", error)
-      setAgentes([])
+    } catch (error: any) {
+      if (error?.name !== 'AbortError' && !error?.message?.includes('Abort')) {
+        console.error("[v0] Failed to fetch agentes:", error)
+        setAgentes([])
+      }
     }
   }
 
@@ -726,17 +717,48 @@ export default function LeadsPage() {
   }, [pathname])
 
   useEffect(() => {
-    if (!inmobiliariaLoading) {
+    if (!inmobiliariaLoading && inmobiliariaId !== null) {
+      const controller = new AbortController()
       const run = async () => {
-        if (inmobiliariaId !== null) {
-          await fetchPlanStatus()
-          await Promise.all([fetchAgentes(inmobiliariaId), fetchAdvertisements(), fetchLeads()])
-        } else {
-          setPlanInactive(false)
-          await Promise.all([fetchAdvertisements(), fetchLeads()])
+        try {
+          await fetchPlanStatus(controller.signal)
+          await Promise.all([
+            fetchAgentes(inmobiliariaId, controller.signal),
+            fetchAdvertisements(controller.signal)
+          ])
+        } catch (err: any) {
+          if (err?.name !== 'AbortError' && !err?.message?.includes('Abort')) {
+            console.error("[v0] Error in plan/ads effect:", err)
+          }
         }
       }
       run()
+      return () => controller.abort()
+    }
+  }, [inmobiliariaId, inmobiliariaLoading])
+
+  useEffect(() => {
+    if (!inmobiliariaLoading) {
+      const controller = new AbortController()
+      const run = async () => {
+        try {
+          if (inmobiliariaId !== null) {
+            await fetchLeads(controller.signal)
+          } else {
+            setPlanInactive(false)
+            await Promise.all([
+              fetchAdvertisements(controller.signal),
+              fetchLeads(controller.signal)
+            ])
+          }
+        } catch (err: any) {
+             if (err?.name !== 'AbortError' && !err?.message?.includes('Abort')) {
+               console.error("[v0] Error in leads effect:", err)
+             }
+        }
+      }
+      run()
+      return () => controller.abort()
     }
   }, [inmobiliariaId, inmobiliariaLoading, currentAgentId])
 
@@ -779,7 +801,7 @@ export default function LeadsPage() {
         openLeadDetail(targetLead)
       }
     }
-  }, [leads, searchParams, selectedLead])
+  }, [leads, searchParams])
 
   useEffect(() => {
     filterLeads()
@@ -865,15 +887,21 @@ export default function LeadsPage() {
     setConversionRate(rate)
   }
 
-  const fetchPlanStatus = async () => {
+  const fetchPlanStatus = async (signal?: AbortSignal) => {
     try {
       if (!inmobiliariaId) return
-      const { data: inmobiliaria, error: inmobiliariaError } = await supabase
+      let inmoQuery = supabase
         .from("Inmobiliarias")
         .select("Plan, PlanResetAt, PlanNext, PlanNextEffectiveAt")
         .eq("idi", inmobiliariaId)
-        .maybeSingle()
+      
+      if (signal) inmoQuery = inmoQuery.abortSignal(signal)
+      
+      const { data: inmobiliaria, error: inmobiliariaError } = await inmoQuery.maybeSingle()
+
       if (inmobiliariaError) throw inmobiliariaError
+      if (signal?.aborted) return
+
       const planId = Number(inmobiliaria?.Plan) || 0
       setCurrentPlanId(planId)
       const scheduledId = Number(inmobiliaria?.PlanNext || 0)
@@ -882,7 +910,12 @@ export default function LeadsPage() {
       setScheduledEffectiveAt(scheduledAt)
       let limit = 1000000
       try {
-        const { data: planesData } = await supabase.from("Planes").select("*")
+        let planesQuery = supabase.from("Planes").select("*")
+        if (signal) planesQuery = planesQuery.abortSignal(signal)
+        const { data: planesData } = await planesQuery
+        
+        if (signal?.aborted) return
+
         if (planesData && planesData.length > 0) {
           const normalize = (p: any) => ({
             ...p,
@@ -918,16 +951,23 @@ export default function LeadsPage() {
       let consumo = 0
       const dateFields = ["created_at", "fecha_creacion", "fecha_registro"]
       for (const field of dateFields) {
-        const { count, error } = await supabase
+        if (signal?.aborted) break
+        let q = supabase
           .from("Clientes")
           .select("*", { count: "exact", head: true })
           .gte(field, prIso)
           .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
+        
+        if (signal) q = q.abortSignal(signal)
+        
+        const { count, error } = await q
         if (!error) {
           consumo = count || 0
           break
         }
       }
+      
+      if (signal?.aborted) return
       
       setTotalEjecuciones(consumo)
       const inactive = limit < 1000000 && consumo >= limit
@@ -935,8 +975,10 @@ export default function LeadsPage() {
       if (inactive && !adsPaused) {
         await enforceAdvertisementsPaused()
       }
-    } catch (err) {
-      setPlanInactive(false)
+    } catch (err: any) {
+      if (err?.name !== 'AbortError' && !err?.message?.includes('Abort')) {
+        setPlanInactive(false)
+      }
     }
   }
 
@@ -967,11 +1009,13 @@ export default function LeadsPage() {
     } catch {}
   }
 
-  const fetchAdvertisements = async () => {
+  const fetchAdvertisements = async (signal?: AbortSignal) => {
     try {
       setAdsLoading(true)
       let query = supabase.from("Anuncios").select("*").order("created_at", { ascending: false })
       if (inmobiliariaId) query = query.eq("usuario", inmobiliariaId)
+      
+      if (signal) query = query.abortSignal(signal)
 
       const { data: adsData, error: adsError } = await query
 
@@ -980,18 +1024,18 @@ export default function LeadsPage() {
       setAdvertisements(adsData || [])
     } catch (err: any) {
       const msg = typeof err?.message === "string" ? err.message : String(err)
-      if (/Abort|ERR_ABORTED/i.test(msg)) {
+      if (/Abort|ERR_ABORTED/i.test(msg) || err?.name === 'AbortError') {
         console.log("[v0] Advertisements request aborted")
       } else {
         console.error("[v0] Error fetching advertisements:", err)
       }
     }
     finally {
-      setAdsLoading(false)
+      if (!signal?.aborted) setAdsLoading(false)
     }
   }
 
-  const fetchLeads = async () => {
+  const fetchLeads = async (signal?: AbortSignal) => {
     try {
       setLoading(true)
       console.log("[leads] fetchLeads:start", {
@@ -1016,6 +1060,8 @@ export default function LeadsPage() {
           dataQuery = dataQuery.is("idag", null)
         }
       }
+      
+      if (signal) dataQuery = dataQuery.abortSignal(signal)
 
       // Get leads data
       const { data: leadsData, error: leadsError } = await dataQuery
@@ -1027,6 +1073,8 @@ export default function LeadsPage() {
         ...lead,
         origen: lead?.origen ?? lead?.Origen ?? lead?.origin ?? null,
       }))
+      
+      if (signal?.aborted) return
 
       const toCorrect = baseRows.filter((lead: any) => {
         const s = String(lead?.Estado || "")
@@ -1073,14 +1121,14 @@ export default function LeadsPage() {
       }
     } catch (err: any) {
       const msg = typeof err?.message === "string" ? err.message : String(err)
-      if (/Abort|ERR_ABORTED/i.test(msg)) {
+      if (/Abort|ERR_ABORTED/i.test(msg) || err?.name === 'AbortError') {
         console.log("[v0] Leads request aborted")
       } else {
         console.error("[v0] Error fetching leads:", err)
         setError("Error al cargar los leads")
       }
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }
 
@@ -1311,6 +1359,16 @@ export default function LeadsPage() {
     }
   }
 
+  const handleCloseModal = () => {
+    setSelectedLead(null)
+    const params = new URLSearchParams(searchParams.toString())
+    if (params.has("leadId")) {
+      params.delete("leadId")
+      router.replace(`${pathname}?${params.toString()}`)
+    }
+  }
+
+
   const savePersonalInfo = async () => {
     if (!selectedLead || !editFormData) return
 
@@ -1336,7 +1394,7 @@ export default function LeadsPage() {
           Codigo_Postal: editFormData.Codigo_Postal,
           Tipo_Documento: editFormData.Tipo_Documento,
           Documento: editFormData.Documento,
-          Obsevaciones: editFormData.Observaciones || editFormData.Obsevaciones, // Matches DB column name (typo in DB)
+          Observaciones: editFormData.Observaciones || editFormData.Obsevaciones, // Matches DB column name (typo in DB)
           // Update persona-specific fields based on selectedPersona
           ...(selectedPersona === 1 && {
             Persona_2: editFormData.Persona_2, // Only update if editing persona 1
@@ -1696,8 +1754,18 @@ export default function LeadsPage() {
     }
 
     const createNewLead = async () => {
-      if (!newLeadFormData.Nombre || !newLeadFormData.Correo) {
-        alert("Por favor, completa al menos el nombre y el correo electrónico")
+      if (!newLeadFormData.Nombre) {
+        alert("Por favor, completa el nombre")
+        return
+      }
+
+      if (!newLeadFormData.Correo && !newLeadFormData.Telefono) {
+        alert("Por favor, completa el teléfono o el correo electrónico")
+        return
+      }
+
+      if (!newLeadFormData.Inmueble) {
+        alert("Por favor, selecciona un inmueble")
         return
       }
 
@@ -1729,7 +1797,7 @@ export default function LeadsPage() {
         // Reset form and close dialog
         setNewLeadFormData({
           Estado: "Pendiente",
-          Pedir_Aval: false,
+          "Pedir Aval": false,
         })
         setIsNewLeadDialogOpen(false)
 
@@ -2421,7 +2489,7 @@ export default function LeadsPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={fetchLeads}
+                    onClick={() => fetchLeads()}
                     disabled={loading}
                     className="gap-2 bg-transparent"
                   >
@@ -2790,47 +2858,35 @@ export default function LeadsPage() {
                                             <span>{formatDate(lead.created_at)}</span>
                                           </div>
                                         </div>
-
-                                        {lead.origen && null}
-                                        {(lead.Observaciones || lead.Obsevaciones) ? (
-                                          <div className="flex-1 min-w-0 mt-2 bg-muted/50 dark:bg-input/30 border rounded-md p-2 transition hover:bg-muted/70" onClick={(e) => { console.log("[router] note_click", { id: lead.id }); e.stopPropagation(); openNoteDialog(lead) }}>
-                                            <div className="text-xs text-muted-foreground font-medium mb-1.5">Anotaciones</div>
-                                            <div className="text-sm not-italic text-foreground whitespace-pre-wrap">
-                                              {lead.Observaciones || lead.Obsevaciones}
-                                            </div>
-                                            <div className="mt-1">
-                                              <Button
-                                                size="sm"
-                                                className="h-8 mt-1.5 bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 border-0 shadow-sm"
-                                                onClick={(e) => {
-                                                  e.stopPropagation()
-                                                  openNoteDialog(lead)
-                                                }}
-                                              >
-                                                Notas
-                                              </Button>
-                                            </div>
-                                          </div>
-                                        ) : (
-                                          <div className="mt-2">
-                                            <Button
-                                              size="sm"
-                                              className="h-8 mt-1.5 bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 border-0 shadow-sm"
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                openNoteDialog(lead)
-                                              }}
-                                            >
-                                              Notas
-                                            </Button>
-                                          </div>
-                                        )}
                                       </div>
                                     </div>
 
                                     {/* Quick Actions */}
                                     <TooltipProvider>
                                       <div className="flex items-center gap-1 ml-2">
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              className={`h-6 w-6 p-0 ${
+                                                lead.Observaciones || lead.Obsevaciones
+                                                  ? "bg-amber-400 border-amber-500 hover:bg-amber-500 dark:bg-amber-600 dark:border-amber-700 dark:hover:bg-amber-700"
+                                                  : "bg-transparent"
+                                              }`}
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                openNoteDialog(lead)
+                                              }}
+                                            >
+                                              <MessageSquare className={`h-3 w-3 ${lead.Observaciones || lead.Obsevaciones ? "text-black dark:text-white" : ""}`} />
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            <p>Ver/Editar Notas</p>
+                                          </TooltipContent>
+                                        </Tooltip>
+
                                         <Tooltip>
                                           <TooltipTrigger asChild>
                                         <Button
@@ -3250,45 +3306,35 @@ export default function LeadsPage() {
                                           <span>{formatDate(lead.created_at)}</span>
                                         </div>
                                       </div>
-                                      {(lead.Observaciones || lead.Obsevaciones) ? (
-                                        <div className="flex-1 min-w-0 mt-2 bg-muted/50 dark:bg-input/30 border rounded-md p-2 transition hover:bg-muted/70" onClick={(e) => { e.stopPropagation(); openNoteDialog(lead) }}>
-                                          <div className="text-xs text-muted-foreground font-medium mb-1.5">Anotaciones</div>
-                                          <div className="text-sm not-italic text-foreground whitespace-pre-wrap">
-                                            {lead.Observaciones || lead.Obsevaciones}
-                                          </div>
-                                          <div className="mt-1">
+                                      </div>
+                                    </div>
+
+                                    {/* Quick Actions */}
+                                    <TooltipProvider>
+                                      <div className="flex items-center gap-1 ml-2">
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
                                             <Button
                                               size="sm"
-                                              className="h-8 mt-1.5 bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 border-0 shadow-sm"
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                openNoteDialog(lead)
-                                              }}
-                                            >
-                                              Notas
-                                            </Button>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div className="mt-2">
-                                          <Button
-                                            size="sm"
-                                            className="h-8 mt-1.5 bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 border-0 shadow-sm"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              openNoteDialog(lead)
-                                            }}
-                                          >
-                                            Notas
-                                          </Button>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
+                                              variant="outline"
+                                              className={`h-6 w-6 p-0 ${
+                                            lead.Observaciones || lead.Obsevaciones
+                                              ? "bg-amber-400 border-amber-500 hover:bg-amber-500 dark:bg-amber-600 dark:border-amber-700 dark:hover:bg-amber-700"
+                                              : "bg-transparent"
+                                          }`}
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            openNoteDialog(lead)
+                                          }}
+                                        >
+                                          <MessageSquare className={`h-3 w-3 ${lead.Observaciones || lead.Obsevaciones ? "text-black dark:text-white" : ""}`} />
+                                        </Button>
+                                          </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Ver/Editar Notas</p>
+                                        </TooltipContent>
+                                      </Tooltip>
 
-                                  {/* Quick Actions */}
-                                  <TooltipProvider>
-                                    <div className="flex items-center gap-1 ml-2">
                                       <Tooltip>
                                         <TooltipTrigger asChild>
                                           <Button
@@ -3453,12 +3499,12 @@ export default function LeadsPage() {
           </main>
         </div>
 
-        {selectedLead && (
+        {selectedLead && mounted && createPortal(
           <>
-            <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setSelectedLead(null)} />
+            <div className="fixed inset-0 bg-black/50 z-[20050]" onClick={handleCloseModal} />
 
             <div
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[51] bg-background rounded-lg max-w-[1200px] w-[95vw] max-h-[90vh] shadow-xl flex flex-col h-full"
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[20051] bg-background rounded-lg max-w-[1200px] w-[95vw] max-h-[90vh] shadow-xl flex flex-col h-full"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex flex-col h-full max-w-full">
@@ -3474,7 +3520,7 @@ export default function LeadsPage() {
                       </Badge>
                     )}
                   </div>
-                  <button className="p-1 text-muted-foreground hover:text-foreground" onClick={() => setSelectedLead(null)}>
+                  <button className="p-1 text-muted-foreground hover:text-foreground cursor-pointer z-[9995]" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleCloseModal(); }}>
                     <X size={20} />
                   </button>
                 </div>
@@ -4864,7 +4910,7 @@ export default function LeadsPage() {
                             }}
                           >
                             <div className="text-lg font-bold text-blue-600 dark:text-blue-300">
-                              {selectedLead.Pedir_Aval ? "Sí" : "No"}
+                              {selectedLead["Pedir Aval"] ? "Sí" : "No"}
                             </div>
                             <div className="text-xs text-muted-foreground mt-2">PEDIR AVAL</div>
                             <div className="text-[0.65rem] text-blue-600 dark:text-blue-300 mt-1">Click para revisar</div>
@@ -5023,11 +5069,12 @@ export default function LeadsPage() {
                 </div>
               </div>
             </div>
-          </>
+          </>,
+          document.body
         )}
 
         <Dialog open={isNewLeadDialogOpen} onOpenChange={setIsNewLeadDialogOpen}>
-          <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[85vw] lg:w-[70vw] max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[85vw] lg:w-[70vw] max-w-3xl max-h-[90vh] overflow-y-auto z-[30000]">
             <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b">
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-primary" />
@@ -5176,7 +5223,9 @@ export default function LeadsPage() {
                 <CardContent className="pt-0">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">Referencia del Inmueble</label>
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Referencia del Inmueble <span className="text-red-500">*</span>
+                      </label>
                       <Select
                         value={newLeadFormData.Inmueble || ""}
                         onValueChange={(value) => setNewLeadFormData({ ...newLeadFormData, Inmueble: value })}
@@ -5194,15 +5243,7 @@ export default function LeadsPage() {
                       </Select>
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">Fecha de Entrada Deseada</label>
-                      <Input
-                        type="date"
-                        value={newLeadFormData.Fecha_Entrada || ""}
-                        onChange={(e) => setNewLeadFormData({ ...newLeadFormData, Fecha_Entrada: e.target.value })}
-                        className="h-9 text-sm"
-                      />
-                    </div>
+
                   </div>
                 </CardContent>
               </Card>
@@ -5244,9 +5285,9 @@ export default function LeadsPage() {
                     <div className="space-y-1">
                       <label className="text-xs font-medium text-muted-foreground">¿Pedir Aval?</label>
                       <Select
-                        value={newLeadFormData.Pedir_Aval ? "true" : "false"}
+                        value={newLeadFormData["Pedir Aval"] ? "true" : "false"}
                         onValueChange={(value) =>
-                          setNewLeadFormData({ ...newLeadFormData, Pedir_Aval: value === "true" })
+                          setNewLeadFormData({ ...newLeadFormData, "Pedir Aval": value === "true" })
                         }
                       >
                         <SelectTrigger className="h-9 text-sm">
@@ -5282,15 +5323,7 @@ export default function LeadsPage() {
                       />
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">Recordatorio</label>
-                      <Input
-                        value={typeof newLeadFormData.Recordatorio === "string" ? newLeadFormData.Recordatorio : ""}
-                        onChange={(e) => setNewLeadFormData({ ...newLeadFormData, Recordatorio: e.target.value })}
-                        placeholder="Recordatorio para seguimiento..."
-                        className="h-9 text-sm"
-                      />
-                    </div>
+
                   </div>
                 </CardContent>
               </Card>
@@ -5364,7 +5397,7 @@ export default function LeadsPage() {
         </Dialog>
 
         <Dialog open={isAvalDialogOpen} onOpenChange={setIsAvalDialogOpen}>
-          <DialogContent className="sm:max-w-lg z-[200]">
+          <DialogContent className="sm:max-w-lg z-[30000]">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5 text-primary" />
@@ -5434,24 +5467,18 @@ export default function LeadsPage() {
                 </div>
 
                 <div
-                  className={`p-4 rounded-lg border space-y-3 ${
-                    avalCalculation.needsAval
-                      ? "bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800"
-                      : "bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800"
-                  }`}
+                  className="p-4 rounded-lg border space-y-4 bg-white dark:bg-zinc-600 border-gray-200 dark:border-gray-500"
                 >
                   <h3
-                    className={`text-sm font-semibold ${
-                      avalCalculation.needsAval ? "text-red-900 dark:text-red-300" : "text-green-900 dark:text-green-300"
-                    }`}
+                    className="text-base font-bold text-gray-900 dark:text-gray-100"
                   >
                     Análisis de Requisito de Aval
                   </h3>
 
                   {(!avalCalculation.income || avalCalculation.income === 0) && (
-                    <div className="p-2 rounded-md bg-orange-100 border border-orange-300 dark:bg-orange-900/20 dark:border-orange-800">
-                      <p className="text-xs font-semibold text-orange-800 dark:text-orange-300">⚠️ Datos de Ingresos No Disponibles</p>
-                      <p className="text-xs text-orange-700 dark:text-orange-400 mt-0.5">
+                    <div className="p-3 rounded-md bg-orange-50 border border-orange-200 dark:bg-orange-900/20 dark:border-orange-800">
+                      <p className="text-sm font-bold text-orange-800 dark:text-orange-300">⚠️ Datos de Ingresos No Disponibles</p>
+                      <p className="text-sm text-orange-900 dark:text-orange-200 mt-1">
                         No se han proporcionado los ingresos del solicitante. El análisis de aval no puede ser preciso sin
                         esta información.
                       </p>
@@ -5462,20 +5489,20 @@ export default function LeadsPage() {
                     <>
                       {avalCalculation.income > 0 && (
                         <div
-                          className={`p-3 rounded-md border ${
+                          className={`p-4 rounded-md border-l-4 shadow-sm ${
                             avalCalculation.needsAval
-                              ? "bg-red-100 border-red-300 dark:bg-red-900/30 dark:border-red-700"
-                              : "bg-green-100 border-green-300 dark:bg-green-900/30 dark:border-green-700"
+                              ? "bg-white border-red-600"
+                              : "bg-white border-green-600"
                           }`}
                         >
                           <p
-                            className={`text-sm font-bold mb-2 ${
-                              avalCalculation.needsAval ? "text-red-800 dark:text-red-200" : "text-green-800 dark:text-green-200"
+                            className={`text-base font-bold mb-1 ${
+                              avalCalculation.needsAval ? "text-red-700" : "text-green-700"
                             }`}
                           >
                             {avalCalculation.needsAval ? "⚠️ REQUIERE AVAL" : "✓ NO REQUIERE AVAL"}
                           </p>
-                          <p className={`text-xs ${avalCalculation.needsAval ? "text-red-700 dark:text-red-300" : "text-green-700 dark:text-green-300"}`}>
+                          <p className="text-sm font-medium text-gray-900">
                             {avalCalculation.needsAval
                               ? "Los ingresos son insuficientes para cubrir el alquiler sin aval."
                               : "Los ingresos son suficientes para cubrir el alquiler sin necesidad de aval."}
@@ -5483,20 +5510,20 @@ export default function LeadsPage() {
                         </div>
                       )}
 
-                      <div className="space-y-2 text-xs">
+                      <div className="space-y-3 text-sm">
                         <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground">Ingresos mínimos requeridos:</span>
-                          <span className="font-semibold">{formatCurrency(avalCalculation.minRequiredIncome!)}</span>
+                          <span className="text-gray-700 dark:text-gray-300 font-medium">Ingresos mínimos requeridos:</span>
+                          <span className="font-bold text-gray-900 dark:text-white text-base">{formatCurrency(avalCalculation.minRequiredIncome!)}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                          <span className="text-muted-foreground">Ingresos ideales:</span>
-                          <span className="font-semibold">{formatCurrency(avalCalculation.idealIncome!)}</span>
+                          <span className="text-gray-700 dark:text-gray-300 font-medium">Ingresos ideales:</span>
+                          <span className="font-bold text-gray-900 dark:text-white text-base">{formatCurrency(avalCalculation.idealIncome!)}</span>
                         </div>
                         {avalCalculation.incomeRatio && avalCalculation.income > 0 && (
-                          <div className="flex justify-between items-center pt-2 border-t">
-                            <span className="text-muted-foreground">Tasa de esfuerzo:</span>
+                          <div className="flex justify-between items-center pt-3 border-t border-gray-200 dark:border-gray-700">
+                            <span className="text-gray-700 dark:text-gray-300 font-medium">Tasa de esfuerzo:</span>
                             <span
-                              className={`font-bold ${avalCalculation.incomeRatio <= 40 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                              className={`font-bold text-base ${avalCalculation.incomeRatio <= 40 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
                             >
                               {avalCalculation.incomeRatio.toFixed(1)}%
                             </span>
@@ -5504,8 +5531,8 @@ export default function LeadsPage() {
                         )}
                       </div>
 
-                      <div className="pt-2 border-t">
-                        <p className="text-xs text-muted-foreground italic">
+                      <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 italic font-medium leading-relaxed">
                           💡 Los ingresos deben ser al menos 2.5x el precio del alquiler (máximo 40% de tasa de esfuerzo).
                           Idealmente 3.3x (30% de tasa de esfuerzo).
                         </p>
@@ -5560,7 +5587,7 @@ export default function LeadsPage() {
         </Dialog>
 
         <Dialog open={visitDateDialogOpen} onOpenChange={setVisitDateDialogOpen}>
-          <DialogContent className="z-[400]">
+          <DialogContent className="z-[30000]">
             <DialogHeader>
               <DialogTitle>Reprogramar Visita</DialogTitle>
               <DialogDescription>
@@ -5661,7 +5688,7 @@ export default function LeadsPage() {
       </Dialog>
 
       <AlertDialog open={isCancelConfirmOpen} onOpenChange={setIsCancelConfirmOpen}>
-        <AlertDialogContent className="z-[500]">
+        <AlertDialogContent className="z-[30000]">
           <AlertDialogHeader>
             <AlertDialogTitle>Confirmar cancelación</AlertDialogTitle>
             <AlertDialogDescription>
@@ -5684,8 +5711,8 @@ export default function LeadsPage() {
       </AlertDialog>
 
       <Dialog open={isDocsDialogOpen} onOpenChange={setIsDocsDialogOpen}>
-        <DialogContent className="sm:max-w-2xl z-[350]">
-          <DialogHeader>
+          <DialogContent className="sm:max-w-2xl z-[50000]">
+            <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
               Gestionar documentos
@@ -5851,7 +5878,7 @@ export default function LeadsPage() {
       </Dialog>
 
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md z-[600]">
+        <DialogContent className="sm:max-w-md z-[30000]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <XCircle className="h-5 w-5 text-red-600" />
@@ -5918,7 +5945,7 @@ export default function LeadsPage() {
       </Dialog>
 
       <Dialog open={!!attachmentPreviewUrl} onOpenChange={closeAttachmentPreview}>
-        <DialogContent className="z-[360]">
+        <DialogContent className="z-[10005]">
           <DialogHeader>
             <DialogTitle>Vista previa de archivo</DialogTitle>
             <DialogDescription>{attachmentPreviewName}</DialogDescription>
@@ -5937,7 +5964,7 @@ export default function LeadsPage() {
 
       <Dialog open={isCommDialogOpen} onOpenChange={setIsCommDialogOpen}>
           <DialogContent
-            className="sm:max-w-3xl max-h-[90vh] overflow-y-auto z-[300]"
+            className="sm:max-w-3xl max-h-[90vh] overflow-y-auto z-[30000]"
             onInteractOutside={(e) => {
               e.preventDefault()
             }}
@@ -6055,7 +6082,7 @@ export default function LeadsPage() {
           setNoteDialog((prev) => ({ ...prev, open }))
         }}
       >
-        <DialogContent className="sm:max-w-md z-[280]">
+        <DialogContent className="sm:max-w-md z-[30000]">
           <DialogHeader>
             <DialogTitle>Anotaciones</DialogTitle>
             <DialogDescription>{noteDialog.leadName ? `Lead: ${noteDialog.leadName}` : ""}</DialogDescription>
