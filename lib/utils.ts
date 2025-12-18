@@ -8,7 +8,7 @@ export function isSupabaseConfigured() {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) && Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 }
 
-export function formatDate(date: string | Date | number): string {
+export function formatDate(date: string | Date | number | undefined | null): string {
   if (!date) return ""
   const d = new Date(date)
   if (isNaN(d.getTime())) return ""

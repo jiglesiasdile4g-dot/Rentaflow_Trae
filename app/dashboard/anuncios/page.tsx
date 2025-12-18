@@ -5578,7 +5578,7 @@ export default function AnunciosPage() {
                       <CalendarComponent
                         mode="single"
                         selected={visitDateDialog.selectedDate ? new Date(visitDateDialog.selectedDate) : undefined}
-                        onSelect={(date) => {
+                        onSelect={(date: Date | undefined) => {
                           if (date) {
                             const yyyy = date.getFullYear()
                             const mm = String(date.getMonth() + 1).padStart(2, "0")

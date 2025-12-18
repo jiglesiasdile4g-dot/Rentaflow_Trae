@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
+import { formatDate } from "@/lib/utils"
 
 export default function ChangePlanButton({ idi, planId, current, redirectPath = "/dashboard/informacion", onSuccess, onError }: { idi: number; planId: number; current: boolean; redirectPath?: string; onSuccess?: (newPlanId: number) => void; onError?: (msg: string) => void }) {
   const router = useRouter()
