@@ -30,7 +30,8 @@ import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, E
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { loadStripe, type Stripe as StripeJS } from "@stripe/stripe-js"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
-import { formatDate } from "@/lib/utils"
+import { formatDate, cn } from "@/lib/utils"
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import ChangePlanButton from "@/components/change-plan-button"
 import { createBrowserClient } from "@/lib/supabase/client" // Added for createBrowserClient
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts"
