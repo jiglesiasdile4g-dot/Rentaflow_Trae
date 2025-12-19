@@ -31,6 +31,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { loadStripe, type Stripe as StripeJS } from "@stripe/stripe-js"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
 import { formatDate, cn } from "@/lib/utils"
+import { format } from "date-fns"
+import { es } from "date-fns/locale"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import ChangePlanButton from "@/components/change-plan-button"
 import { createBrowserClient } from "@/lib/supabase/client" // Added for createBrowserClient
@@ -201,6 +203,122 @@ export default function AnunciosPage() {
   const [nextcloudDeletingPath, setNextcloudDeletingPath] = useState<string | null>(null)
   const [completosLeads, setCompletosLeads] = useState<any[]>([])
   const [loadingCompletos, setLoadingCompletos] = useState(false)
+  const [visitDateDialog, setVisitDateDialog] = useState<{
+    open: boolean
+    leadId: string
+    leadName: string
+    selectedDate: string
+    selectedTime: string
+    selectedAgenteId: string
+  }>({
+    open: false,
+    leadId: "",
+    leadName: "",
+    selectedDate: "",
+    selectedTime: "",
+    selectedAgenteId: "",
+  })
+  const [availableSlots, setAvailableSlots] = useState<string[]>([])
+  const [loadingAvailability, setLoadingAvailability] = useState(false)
+  const [availableDates, setAvailableDates] = useState<string[]>([])
+  const [loadingDates, setLoadingDates] = useState(false)
+
+  // Fetch agent available dates
+  useEffect(() => {
+    async function fetchAvailableDates() {
+      if (!visitDateDialog.selectedAgenteId) {
+        setAvailableDates([])
+        return
+      }
+      setLoadingDates(true)
+      try {
+        const supabase = createBrowserClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        const today = new Date().toISOString().split('T')[0]
+        const { data, error } = await supabase
+          .from("Agendas")
+          .select("fecha")
+          .eq("agente_id", visitDateDialog.selectedAgenteId)
+          .gte("fecha", today)
+        
+        if (error) throw error
+        
+        if (data) {
+           const dates = data.map((d: any) => d.fecha)
+           setAvailableDates([...new Set(dates)])
+        }
+      } catch (err) {
+        console.error("Error fetching available dates:", err)
+      } finally {
+        setLoadingDates(false)
+      }
+    }
+    fetchAvailableDates()
+  }, [visitDateDialog.selectedAgenteId])
+
+  // Fetch agent availability when agent or date changes
+  useEffect(() => {
+    async function fetchAvailability() {
+      if (!visitDateDialog.selectedAgenteId || !visitDateDialog.selectedDate) {
+        setAvailableSlots([])
+        return
+      }
+
+      setLoadingAvailability(true)
+      try {
+        const supabase = createBrowserClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        const { data, error } = await supabase
+          .from("Agendas")
+          .select("hora_inicio, hora_fin")
+          .eq("agente_id", visitDateDialog.selectedAgenteId)
+          .eq("fecha", visitDateDialog.selectedDate)
+
+        if (error) throw error
+
+        if (data && data.length > 0) {
+          const slots: string[] = []
+          data.forEach((range: any) => {
+            let start = range.hora_inicio.slice(0, 5)
+            const end = range.hora_fin.slice(0, 5)
+            
+            let [h, m] = start.split(':').map(Number)
+            let currentMins = h * 60 + m
+            const [endH, endM] = end.split(':').map(Number)
+            const endMins = endH * 60 + endM
+
+            // Generate slots every 10 minutes
+            while (currentMins < endMins) {
+              const slotH = Math.floor(currentMins / 60)
+              const slotM = currentMins % 60
+              const timeStr = `${slotH.toString().padStart(2, '0')}:${slotM.toString().padStart(2, '0')}`
+              slots.push(timeStr)
+              currentMins += 10 
+            }
+          })
+          slots.sort()
+          setAvailableSlots([...new Set(slots)])
+        } else {
+          setAvailableSlots([])
+        }
+      } catch (err) {
+        console.error("Error fetching availability:", err)
+        toast({
+          title: "Error",
+          description: "No se pudo cargar la disponibilidad del agente.",
+          variant: "destructive",
+        })
+      } finally {
+        setLoadingAvailability(false)
+      }
+    }
+
+    fetchAvailability()
+  }, [visitDateDialog.selectedAgenteId, visitDateDialog.selectedDate])
   const [infoFaqsData, setInfoFaqsData] = useState({
     informacionDetallada: "",
     faqs: [{ pregunta: "", respuesta: "" }],
@@ -412,22 +530,7 @@ export default function AnunciosPage() {
     whatsappsEnviados: 0,
     emailsEnviados: 0,
   })
-  const [visitDateDialog, setVisitDateDialog] = useState<{
-    open: boolean
-    leadId: string
-    leadName: string
-    selectedDate: string
-    selectedTime: string
-    selectedAgenteId: string
-  }>({
-    open: false,
-    leadId: "",
-    leadName: "",
-    selectedDate: "",
-    selectedTime: "",
-    selectedAgenteId: "",
-  })
-  // </CHANGE>
+
 
   // Add isStatsModalOpen state to track the visibility of the stats modal
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false)
@@ -3448,7 +3551,7 @@ export default function AnunciosPage() {
       leadId: leadId,
       leadName: leadName,
       selectedDate: "",
-      selectedTime: "12:00",
+      selectedTime: "",
       selectedAgenteId: existingLead?.idag ? String(existingLead.idag) : "",
     })
   }
@@ -5558,61 +5661,52 @@ export default function AnunciosPage() {
                   Fecha y hora de visita
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant={"outline"}
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !visitDateDialog.selectedDate && "text-muted-foreground"
-                        )}
-                      >
-                        <Calendar className="mr-2 h-4 w-4" />
-                        {visitDateDialog.selectedDate ? (
-                          formatDate(visitDateDialog.selectedDate)
-                        ) : (
-                          <span>Seleccionar fecha</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <CalendarComponent
-                        mode="single"
-                        selected={visitDateDialog.selectedDate ? new Date(visitDateDialog.selectedDate) : undefined}
-                        onSelect={(date: Date | undefined) => {
-                          if (date) {
-                            const yyyy = date.getFullYear()
-                            const mm = String(date.getMonth() + 1).padStart(2, "0")
-                            const dd = String(date.getDate()).padStart(2, "0")
-                            setVisitDateDialog({ ...visitDateDialog, selectedDate: `${yyyy}-${mm}-${dd}` })
-                          } else {
-                            setVisitDateDialog({ ...visitDateDialog, selectedDate: "" })
-                          }
-                        }}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <Select
+                    value={visitDateDialog.selectedDate}
+                    onValueChange={(val) => setVisitDateDialog({ ...visitDateDialog, selectedDate: val })}
+                    disabled={!visitDateDialog.selectedAgenteId}
+                  >
+                    <SelectTrigger className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !visitDateDialog.selectedDate && "text-muted-foreground"
+                    )}>
+                      <Calendar className="mr-2 h-4 w-4" />
+                      <SelectValue placeholder="Seleccionar fecha" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[300px] z-[40000]">
+                      {availableDates.length > 0 ? (
+                        availableDates.map((dateStr) => (
+                          <SelectItem key={dateStr} value={dateStr}>
+                            {format(new Date(dateStr), "PPP", { locale: es })}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <div className="p-2 text-sm text-muted-foreground text-center">
+                          No hay fechas disponibles
+                        </div>
+                      )}
+                    </SelectContent>
+                  </Select>
                   <Select
                     value={visitDateDialog.selectedTime}
                     onValueChange={(value) => setVisitDateDialog({ ...visitDateDialog, selectedTime: value })}
+                    disabled={loadingAvailability || !visitDateDialog.selectedDate || !visitDateDialog.selectedAgenteId}
                   >
                     <SelectTrigger className="h-10 text-sm">
-                      <SelectValue placeholder="Hora (24h)" />
+                      <SelectValue placeholder={loadingAvailability ? "Cargando..." : "Hora"} />
                     </SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 24 }, (_, h) => h).map((hour) => (
-                        ["00","15","30","45"].map((m) => {
-                          const hh = String(hour).padStart(2, "0")
-                          const mm = m
-                          const val = `${hh}:${mm}`
-                          return (
-                            <SelectItem key={val} value={val}>
-                              {val}
-                            </SelectItem>
-                          )
-                        })
-                      ))}
+                    <SelectContent className="z-[40000]">
+                      {loadingAvailability ? (
+                         <SelectItem value="loading" disabled>Cargando...</SelectItem>
+                      ) : availableSlots.length > 0 ? (
+                        availableSlots.map((time) => (
+                          <SelectItem key={time} value={time}>
+                            {time}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="none" disabled>No hay disponibilidad</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>

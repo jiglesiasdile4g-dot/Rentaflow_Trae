@@ -2,7 +2,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Home, Megaphone, Users, Info, User, Building2, Settings } from "lucide-react"
+import { Home, Megaphone, Users, Info, User, Building2, Settings, Calendar } from "lucide-react"
 import LogoutButton from "@/components/logout-button"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { APP_VERSION, APP_NAME } from "@/lib/version"
@@ -31,6 +31,11 @@ const menuItems = [
     title: "Leads",
     href: "/dashboard/leads",
     icon: Users,
+  },
+  {
+    title: "Agenda",
+    href: "/dashboard/agenda",
+    icon: Calendar,
   },
   {
     title: "Configuración",

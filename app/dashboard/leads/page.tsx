@@ -12,10 +12,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
+import { createClient, createBrowserClient } from "@/lib/supabase/client"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -25,13 +25,14 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Eye, Download, UploadCloud, IdCard, Image as ImageIcon, Tag, Trash } from 'lucide-react'
+import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Eye, Download, UploadCloud, IdCard, Image as ImageIcon, Tag, Trash, Calendar as CalendarIcon } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
 import { formatDate, cn } from "@/lib/utils"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
-import { CalendarIcon } from "lucide-react"
+import { format } from "date-fns"
+import { es } from "date-fns/locale"
 import React from "react" // Imported React
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { LeadApproveWrapper } from "@/components/lead-approve-wrapper"
 import { LeadDenyWrapper } from "@/components/lead-deny-wrapper"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
@@ -110,7 +111,7 @@ type Lead = {
   Fecha_Datos_Completos?: string
   fecha_de_visita?: string
   visita_completada?: string | boolean
-  idag?: number | string
+  idag?: number | string | null
   origen?: string
 }
 
@@ -229,6 +230,106 @@ export default function LeadsPage() {
   const [selectedAgenteId, setSelectedAgenteId] = useState("")
   const [agentes, setAgentes] = useState<any[]>([])
 
+  // State for agent availability
+  const [availableSlots, setAvailableSlots] = useState<string[]>([])
+  const [loadingAvailability, setLoadingAvailability] = useState(false)
+  const [availableDates, setAvailableDates] = useState<string[]>([])
+  const [loadingDates, setLoadingDates] = useState(false)
+
+  // Fetch agent available dates
+  useEffect(() => {
+    async function fetchAvailableDates() {
+      if (!selectedAgenteId) {
+        setAvailableDates([])
+        return
+      }
+      setLoadingDates(true)
+      try {
+        const supabase = createBrowserClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        const today = new Date().toISOString().split('T')[0]
+        const { data, error } = await supabase
+          .from("Agendas")
+          .select("fecha")
+          .eq("agente_id", selectedAgenteId)
+          .gte("fecha", today)
+        
+        if (error) throw error
+        
+        if (data) {
+           const dates = data.map(d => d.fecha)
+           setAvailableDates([...new Set(dates)])
+        }
+      } catch (err) {
+        console.error("Error fetching available dates:", err)
+      } finally {
+        setLoadingDates(false)
+      }
+    }
+    fetchAvailableDates()
+  }, [selectedAgenteId])
+
+  // Fetch agent availability when agent or date changes
+  useEffect(() => {
+    async function fetchAvailability() {
+      if (!selectedAgenteId || !newVisitDateDate) {
+        setAvailableSlots([])
+        return
+      }
+
+      setLoadingAvailability(true)
+      try {
+        const supabase = createBrowserClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
+        const { data, error } = await supabase
+          .from("Agendas")
+          .select("hora_inicio, hora_fin")
+          .eq("agente_id", selectedAgenteId)
+          .eq("fecha", newVisitDateDate)
+
+        if (error) throw error
+
+        if (data && data.length > 0) {
+          const slots: string[] = []
+          data.forEach(range => {
+            if (!range.hora_inicio || !range.hora_fin) return
+            
+            let start = range.hora_inicio.slice(0, 5)
+            const end = range.hora_fin.slice(0, 5)
+            
+            let [h, m] = start.split(':').map(Number)
+            let currentMins = h * 60 + m
+            const [endH, endM] = end.split(':').map(Number)
+            const endMins = endH * 60 + endM
+
+            // Generate slots every 10 minutes
+            while (currentMins < endMins) {
+              const slotH = Math.floor(currentMins / 60)
+              const slotM = currentMins % 60
+              const timeStr = `${slotH.toString().padStart(2, '0')}:${slotM.toString().padStart(2, '0')}`
+              slots.push(timeStr)
+              currentMins += 10 
+            }
+          })
+          slots.sort()
+          setAvailableSlots([...new Set(slots)])
+        } else {
+          setAvailableSlots([])
+        }
+      } catch (err) {
+        console.error("Error fetching availability:", err)
+      } finally {
+        setLoadingAvailability(false)
+      }
+    }
+
+    fetchAvailability()
+  }, [selectedAgenteId, newVisitDateDate])
+
   const [planLimit, setPlanLimit] = useState<number>(1000000)
   const [planResetAt, setPlanResetAt] = useState<Date | null>(null)
   const [totalEjecuciones, setTotalEjecuciones] = useState<number>(0)
@@ -263,6 +364,34 @@ export default function LeadsPage() {
     }
     fetchAgentId()
   }, [role, userEmail])
+
+  const fetchAgentes = useCallback(async (inmobiliariaId: number, signal?: AbortSignal) => {
+    try {
+      let query = supabase
+        .from("Agentes")
+        .select('idag, "Nombre", idi')
+        .eq("idi", inmobiliariaId.toString())
+
+      if (signal) query = query.abortSignal(signal)
+
+      const { data, error } = await query
+
+      if (error) throw error
+      console.log("[v0] fetchAgentes success, count:", data?.length)
+      setAgentes(data || [])
+    } catch (error: any) {
+        if (error?.name !== 'AbortError' && !error?.message?.includes('Abort')) {
+          console.error("[v0] Failed to fetch agentes:", error)
+          setAgentes([])
+        }
+      }
+    }, [supabase])
+
+  useEffect(() => {
+    if (inmobiliariaId) {
+      fetchAgentes(inmobiliariaId)
+    }
+  }, [inmobiliariaId, fetchAgentes])
 
   useEffect(() => {
     console.log("[router] leads_mount", { path: pathname })
@@ -684,35 +813,6 @@ export default function LeadsPage() {
       })()
     }
   }, [selectedLead])
-
-  const fetchAgentes = async (inmobiliariaId: number, signal?: AbortSignal) => {
-    try {
-      const supabase = createClient()
-      
-      // Filtramos agentes por la inmobiliaria (idi se almacena como string)
-      let query = supabase
-        .from("Agentes")
-        .select("idag, \"Nombre\", idi")
-        .eq("idi", inmobiliariaId.toString())
-
-      if (signal) query = query.abortSignal(signal)
-
-      const { data, error } = await query
-      
-      if (error) {
-        console.error("[v0] Error fetching agentes:", error.message)
-        throw error
-      }
-      
-      setAgentes(data || [])
-      
-    } catch (error: any) {
-      if (error?.name !== 'AbortError' && !error?.message?.includes('Abort')) {
-        console.error("[v0] Failed to fetch agentes:", error)
-        setAgentes([])
-      }
-    }
-  }
 
   useEffect(() => {
     setVisitDateDialogOpen(false)
@@ -1980,11 +2080,6 @@ export default function LeadsPage() {
           Estado: "Visita Propuesta",
           idag: selectedAgenteId ? Number(selectedAgenteId) : null,
         }
-        
-        // Add agent idag if selected
-        if (selectedAgenteId) {
-          updateData.idag = selectedAgenteId
-        }
 
         console.log("[v0] Sending update to Supabase. Data:", updateData)
 
@@ -2074,6 +2169,7 @@ export default function LeadsPage() {
             ...prev,
             fecha_de_visita: valueWithOffset,
             Estado: "Visita Propuesta",
+            idag: Number(selectedAgenteId),
           }
         })
 
@@ -3499,7 +3595,7 @@ export default function LeadsPage() {
                   <div className="flex items-baseline gap-4 flex-wrap">
                     <h1 className="text-2xl font-bold m-0">{selectedLead.Nombre || "Sin nombre"}</h1>
                     <span className="text-sm text-muted-foreground font-normal">| {selectedLead.Inmueble || "Sin inmueble"}</span>
-                    <span className="text-xs text-muted-foreground ml-2">ID: {selectedLead.id}</span>
+                    <span className="text-xs text-muted-foreground ml-2">Fecha Entrada: {selectedLead.created_at ? formatDate(selectedLead.created_at) : "N/A"}</span>
                     {selectedLead.origen && (
                       <Badge variant="secondary" className="text-xs ml-2 flex items-center gap-1">
                         <Tag className="h-3 w-3" />
@@ -3546,6 +3642,17 @@ export default function LeadsPage() {
                         updateLeadStatus={updateLeadStatus}
                         onLeadUpdated={(updatedLead) => setSelectedLead(updatedLead)}
                       />
+                      <button
+                        className={`flex items-center gap-0.5 px-3 py-2 text-sm font-medium border border-blue-700 text-blue-700 dark:border-blue-400 dark:text-blue-400 rounded-md transition-all ${planInactive ? "pointer-events-none opacity-50 cursor-not-allowed" : "hover:bg-blue-100 hover:border-blue-800 hover:text-blue-800 dark:hover:bg-blue-900/40"}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (planInactive) return
+                          openAvalDialog()
+                        }}
+                      >
+                        <FileText className="h-4 w-4 mr-1" />
+                        Pedir Aval
+                      </button>
                       <LeadDenyWrapper
                         lead={selectedLead}
                         updateLeadStatus={updateLeadStatus}
@@ -3712,6 +3819,7 @@ export default function LeadsPage() {
                             {/* Row 1 */}
                             <div style={{ display: "flex", gap: "1.5rem" }}>
                               <div style={{ flex: "1", minWidth: 0 }}>
+                                <span className="text-[10px] text-muted-foreground/70 font-normal">ID: {selectedLead.id}</span>
                                 <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
                                   Email
                                   {!isEditingPersonalInfo && selectedLead.Correo && (
@@ -4758,173 +4866,219 @@ export default function LeadsPage() {
                         </div>
                       )}
 
-                      {/* Evaluación */}
+                      {/* Visit Information */}
                       <div className="border border-border rounded-lg p-5">
-                        <h2 className="text-lg font-semibold mb-5">Evaluación</h2>
+                        <div className="flex gap-4 flex-wrap items-stretch">
+                          {/* Status Card */}
+                          <div className="flex-1 min-w-[150px] max-w-[220px] flex flex-col">
+                            <div className="text-xs font-semibold uppercase tracking-wider mb-3 pl-1">Estado</div>
+                            <Select
+                              value={selectedLead.Estado || "Pendiente"}
+                              onValueChange={async (val) => {
+                                const value = val as Lead["Estado"]
+                                try {
+                                  const { error } = await supabase
+                                    .from("Clientes")
+                                    .update({ Estado: value })
+                                    .eq("id", selectedLead.id)
 
-                        <div className="flex gap-4 flex-wrap">
-                          {(() => {
-                            const statusColors = getStatusColors(selectedLead.Estado)
-                            return (
-                              <div
+                                  if (error) throw error
+
+                                  setSelectedLead({ ...selectedLead, Estado: value })
+                                  setLeads((prev) =>
+                                    prev.map((l) => (l.id === selectedLead.id ? { ...l, Estado: value } : l))
+                                  )
+                                  toast({
+                                    title: "Estado actualizado",
+                                    description: `El estado ha sido cambiado a ${value}`,
+                                  })
+                                } catch (err) {
+                                  console.error("Error updating status:", err)
+                                  toast({
+                                    title: "Error",
+                                    description: "No se pudo actualizar el estado",
+                                    variant: "destructive",
+                                  })
+                                }
+                              }}
+                            >
+                              <SelectTrigger
+                                className="w-full flex-1 p-4 border-2 rounded-lg flex flex-col items-center justify-center gap-2 hover:opacity-90 transition-all focus:ring-0 shadow-sm"
                                 style={{
-                                  flex: "1",
-                                  minWidth: "120px",
-                                  textAlign: "center",
-                                  padding: "1rem",
-                                  backgroundColor: statusColors.bg,
-                                  borderRadius: "8px",
-                                  border: `2px solid ${statusColors.border}`,
-                                  position: "relative",
-                                  cursor: ["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || "")) ? "pointer" : "default",
-                                  transition: "all 0.2s",
-                                }}
-                                onClick={async () => {
-                                  if (selectedLead.Estado === "Visita Propuesta") {
-                                    setSelectedLeadForVisit(selectedLead)
-                                    setSelectedAgenteId(selectedLead.idag ? String(selectedLead.idag) : "")
-                                    if (selectedLead.fecha_de_visita) {
-                                      const d = new Date(selectedLead.fecha_de_visita)
-                                      const yyyy = d.getFullYear()
-                                      const mm = String(d.getMonth() + 1).padStart(2, "0")
-                                      const dd = String(d.getDate()).padStart(2, "0")
-                                      const hh = String(d.getHours()).padStart(2, "0")
-                                      const min = String(d.getMinutes()).padStart(2, "0")
-                                      setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
-                                      setNewVisitDateTime(`${hh}:${min}`)
-                                    } else {
-                                      setNewVisitDateDate("")
-                                      setNewVisitDateTime("12:00")
-                                    }
-                                    setVisitDateDialogOpen(true)
-                                  } else if (["Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || ""))) {
-                                    setSelectedLeadForVisit(selectedLead)
-                                    setSelectedAgenteId(selectedLead.idag ? String(selectedLead.idag) : "")
-                                    if (selectedLead.fecha_de_visita) {
-                                      const d = new Date(selectedLead.fecha_de_visita)
-                                      const yyyy = d.getFullYear()
-                                      const mm = String(d.getMonth() + 1).padStart(2, "0")
-                                      const dd = String(d.getDate()).padStart(2, "0")
-                                      const hh = String(d.getHours()).padStart(2, "0")
-                                      const min = String(d.getMinutes()).padStart(2, "0")
-                                      setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
-                                      setNewVisitDateTime(`${hh}:${min}`)
-                                    } else {
-                                      setNewVisitDateDate("")
-                                      setNewVisitDateTime("12:00")
-                                    }
-                                    setVisitDateDialogOpen(true)
-                                  }
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || ""))) {
-                                    e.currentTarget.style.transform = "scale(1.02)"
-                                    e.currentTarget.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
-                                  }
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || ""))) {
-                                    e.currentTarget.style.transform = "scale(1)"
-                                    e.currentTarget.style.boxShadow = "none"
-                                  }
+                                  backgroundColor: getStatusColors(selectedLead.Estado).bg,
+                                  borderColor: getStatusColors(selectedLead.Estado).border,
                                 }}
                               >
-                                {selectedLead.Estado === "Completado" && (
-                                  <div
-                                    style={{
-                                      position: "absolute",
-                                      top: "0.5rem",
-                                      right: "0.5rem",
-                                      backgroundColor: "#22c55e",
-                                      borderRadius: "50%",
-                                      width: "20px",
-                                      height: "20px",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      color: "white",
-                                      fontSize: "0.75rem",
-                                    }}
-                                  >
-                                    ✓
-                                  </div>
-                                )}
-                                <div
-                                  style={{
-                                    fontSize: "1.25rem",
-                                    fontWeight: "bold",
-                                    color: statusColors.text,
-                                  }}
+                                <div 
+                                  className="text-xl font-bold text-center leading-tight whitespace-pre-wrap"
+                                  style={{ color: getStatusColors(selectedLead.Estado).text }}
                                 >
-                                  {selectedLead.Estado || "Sin Estado"}
+                                  {selectedLead.Estado === "Datos Completos" ? (
+                                    <>
+                                      Datos<br />Completos
+                                    </>
+                                  ) : (
+                                    selectedLead.Estado || "Pendiente"
+                                  )}
                                 </div>
+                                
                                 {selectedLead.Estado === "Visita Propuesta" && selectedLead.fecha_de_visita && (
-                                  <div style={{ fontSize: "0.875rem", color: statusColors.text, marginTop: "0.5rem", fontWeight: "500" }}>
-                                    {formatDate(selectedLead.fecha_de_visita) + " " + new Date(selectedLead.fecha_de_visita).toLocaleTimeString("es-ES", {
-                                       hour: "2-digit",
-                                       minute: "2-digit"
-                                     })}
+                                  <div 
+                                    className="font-medium text-sm mt-1"
+                                    style={{ color: getStatusColors(selectedLead.Estado).text }}
+                                  >
+                                    {new Date(selectedLead.fecha_de_visita).toLocaleString("es-ES", {
+                                      day: "2-digit",
+                                      month: "2-digit",
+                                      year: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit"
+                                    })}
                                   </div>
                                 )}
-                                <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: "0.5rem" }}>
-                                  ESTADO
-                                  {selectedLead.Estado === "Visita Propuesta" ? " (Click para cambiar)" :
-                                   (["Datos Completos", "Completo", "Completado"].includes(String(selectedLead.Estado || "")) ? " (Click para programar)" : "")}
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availableStatuses.length > 0 ? (
+                                  availableStatuses.map((status) => (
+                                    <SelectItem key={status} value={status}>
+                                      {status}
+                                    </SelectItem>
+                                  ))
+                                ) : (
+                                  <>
+                                    <SelectItem value="Pendiente">Pendiente</SelectItem>
+                                    <SelectItem value="Datos Completos">Datos Completos</SelectItem>
+                                    <SelectItem value="Visita Propuesta">Visita Propuesta</SelectItem>
+                                    <SelectItem value="Validado">Validado</SelectItem>
+                                    <SelectItem value="Descartado">Descartado</SelectItem>
+                                  </>
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="flex-1 min-w-[150px] flex flex-col">
+                            <h2 className="text-xs font-semibold uppercase tracking-wider mb-3 pl-1">Información de la visita</h2>
+                            <div 
+                              className="w-full flex-1 p-4 border-2 rounded-lg flex flex-col justify-between"
+                              style={{
+                                backgroundColor: "#ffffff",
+                                borderColor: "#3b82f6",
+                              }}
+                            >
+                            <div className="space-y-3">
+                              <div className="flex gap-2">
+                                <div className="flex-1 bg-gray-50 p-2 rounded border border-gray-200">
+                                  <div className="text-[10px] text-gray-500 font-bold mb-1 uppercase tracking-wider">NOMBRE</div>
+                                  <div className="relative">
+                                    <select
+                                      className="w-full h-6 text-black font-bold border-0 bg-transparent p-0 focus:ring-0 shadow-none hover:bg-gray-100 text-xs cursor-pointer appearance-none"
+                                      value={selectedLead.idag ? String(selectedLead.idag) : "unassigned"}
+                                      onChange={async (e) => {
+                                        const value = e.target.value;
+                                        try {
+                                          const newIdag = value === "unassigned" ? null : Number(value)
+                                          
+                                          const { error } = await supabase
+                                            .from("Clientes")
+                                            .update({ idag: newIdag })
+                                            .eq("id", selectedLead.id)
+
+                                          if (error) throw error
+
+                                          const updatedLead = { ...selectedLead, idag: newIdag }
+                                          setSelectedLead(updatedLead)
+                                          setLeads((prev) =>
+                                            prev.map((l) => (l.id === selectedLead.id ? updatedLead : l))
+                                          )
+                                          toast({
+                                            title: "Agente actualizado",
+                                            description: "El agente ha sido reasignado correctamente",
+                                          })
+                                        } catch (err) {
+                                          console.error("Error updating agent:", err)
+                                          toast({
+                                            title: "Error",
+                                            description: "No se pudo actualizar el agente",
+                                            variant: "destructive",
+                                          })
+                                        }
+                                      }}
+                                    >
+                                      <option value="unassigned" className="text-gray-500 font-normal">Sin asignar</option>
+                                      {agentes.map((agente) => (
+                                        <option key={agente.idag} value={String(agente.idag)} className="text-black font-normal">
+                                          {agente.Nombre}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1 text-gray-700">
+                                      <svg className="fill-current h-3 w-3 opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex-1 bg-gray-50 p-2 rounded border border-gray-200">
+                                  <div className="text-[10px] text-gray-500 font-bold mb-1 uppercase tracking-wider">FECHA</div>
+                                  <div className="font-bold text-xs text-black h-6 flex items-center">
+                                    {selectedLead.fecha_de_visita ? (
+                                      <div className="flex flex-col leading-tight">
+                                        <span>{formatDate(selectedLead.fecha_de_visita)}</span>
+                                        <span className="text-[10px] text-gray-600 font-semibold">
+                                          {new Date(selectedLead.fecha_de_visita).toLocaleTimeString("es-ES", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })}
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-gray-400 italic">No programada</span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            )
-                          })()}
-
-                          <div className="flex-1 min-w-[120px] text-center p-4 rounded-lg bg-muted/50 dark:bg-input/30">
-                            <div className="text-xl font-bold">
-                              {calculateIAScore(selectedLead)}%
                             </div>
-                            <div className="text-xs text-muted-foreground mt-2">SCORE IA</div>
-                          </div>
 
-                          {/* Pedir Aval Card */}
-                          <div
-                            className={`flex-1 min-w-[120px] text-center p-4 rounded-lg bg-muted/50 dark:bg-input/30 transition-all ${planInactive ? "pointer-events-none opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-muted/70 dark:hover:bg-input/50 hover:scale-[1.02]"}`}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              e.preventDefault()
-                              if (planInactive) return
-                              openAvalDialog()
-                            }}
-                          >
-                            <div className="text-lg font-bold text-blue-600 dark:text-blue-300">
-                              {selectedLead["Pedir Aval"] ? "Sí" : "No"}
+                              <div className="flex gap-2 mt-4">
+                                  <Button 
+                                    variant="default" 
+                                    size="sm" 
+                                    className="flex-1 h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white border-0"
+                                    onClick={() => {
+                                      setSelectedLeadForVisit(selectedLead)
+                                      setSelectedAgenteId(selectedLead.idag ? String(selectedLead.idag) : "")
+                                      if (selectedLead.fecha_de_visita) {
+                                        const d = new Date(selectedLead.fecha_de_visita)
+                                        const yyyy = d.getFullYear()
+                                        const mm = String(d.getMonth() + 1).padStart(2, "0")
+                                        const dd = String(d.getDate()).padStart(2, "0")
+                                        const hh = String(d.getHours()).padStart(2, "0")
+                                        const min = String(d.getMinutes()).padStart(2, "0")
+                                        setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+                                        setNewVisitDateTime(`${hh}:${min}`)
+                                      } else {
+                                        setNewVisitDateDate("")
+                                        setNewVisitDateTime("12:00")
+                                      }
+                                      setVisitDateDialogOpen(true)
+                                    }}
+                                  >
+                                    {selectedLead.fecha_de_visita ? "Reprogramar" : "Programar"}
+                                  </Button>
+                                  {selectedLead.fecha_de_visita && (
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      className="flex-1 h-8 text-xs text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                      onClick={() => {
+                                        setSelectedLeadForVisit(selectedLead)
+                                        setIsCancelConfirmOpen(true)
+                                      }}
+                                    >
+                                      Cancelar
+                                    </Button>
+                                  )}
+                              </div>
                             </div>
-                            <div className="text-xs text-muted-foreground mt-2">PEDIR AVAL</div>
-                            <div className="text-[0.65rem] text-blue-600 dark:text-blue-300 mt-1">Click para revisar</div>
-                          </div>
-
-                          <div className="flex-1 min-w-[120px] text-center p-4 rounded-lg bg-muted/50 dark:bg-input/30">
-                            <div className="text-base font-bold">{getDaysAgo(selectedLead.created_at)}</div>
-                            <div className="text-xs text-muted-foreground mt-2">FECHA ENTRADA</div>
-                            <div className="text-[0.65rem] text-muted-foreground mt-2 italic">
-                              {new Date(selectedLead.created_at || Date.now()).toLocaleDateString("es-ES", {
-                                day: "numeric",
-                                month: "long",
-                                year: "numeric",
-                              })}{" "}
-                              a las{" "}
-                              {new Date(selectedLead.created_at || Date.now()).toLocaleTimeString("es-ES", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}{" "}
-                            </div>
-                            {(() => {
-                              const lastComm = getLastCommunication()
-                              if (lastComm) {
-                                return (
-                                  <div className={`text-[0.65rem] mt-2 font-medium ${lastComm.isSent ? "text-blue-600 dark:text-blue-300" : "text-green-600 dark:text-green-300"}`}>
-                                    {lastComm.daysAgo} - {lastComm.isSent ? "📤" : "📥"} {lastComm.type}
-                                  </div>
-                                )
-                              }
-                              return <div className="text-[0.65rem] text-muted-foreground mt-2">Sin comunicaciones</div>
-                            })()}
                           </div>
                         </div>
                       </div>
@@ -5537,25 +5691,31 @@ export default function LeadsPage() {
                   </Button>
                   <Button
                     className="flex-1"
-                    onClick={async () => {
+                    type="button"
+                    onClick={async (e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
                       if (selectedLead.Correo) {
-                        await updateLeadStatus(Number(selectedLead.id), "Pedir Aval")
+                        try {
+                          await updateLeadStatus(Number(selectedLead.id), "Pedir Aval")
 
-                        // Update selectedLead state to reflect the change immediately
-                        setSelectedLead({ ...selectedLead, Estado: "Pedir Aval" })
+                          // Update selectedLead state to reflect the change immediately
+                          setSelectedLead({ ...selectedLead, Estado: "Pedir Aval" })
 
-                        const subject = encodeURIComponent("Solicitud de Datos de Aval")
-                        const body = encodeURIComponent(
-                          `Estimado/a ${selectedLead.Nombre},\n\n` +
-                            `Necesitamos solicitar información adicional sobre su aval para continuar con el proceso de alquiler.\n\n` +
-                            `Por favor, proporcione los siguientes documentos:\n` +
-                            `- DNI/NIE del avalista\n` +
-                            `- Justificante de ingresos del avalista\n` +
-                            `- Declaración de la renta del avalista\n\n` +
-                            `Saludos cordiales`,
-                        )
-                        window.open(`mailto:${selectedLead.Correo}?subject=${subject}&body=${body}`, "_blank")
-                        setIsAvalDialogOpen(false)
+                          toast({
+                            title: "Solicitud enviada",
+                            description: "Se ha solicitado el aval correctamente.",
+                          })
+                          
+                          setIsAvalDialogOpen(false)
+                        } catch (err) {
+                          console.error("Error sending aval request:", err)
+                          toast({
+                            title: "Error",
+                            description: "No se pudo procesar la solicitud.",
+                            variant: "destructive"
+                          })
+                        }
                       }
                     }}
                     disabled={!selectedLead.Correo}
@@ -5612,64 +5772,62 @@ export default function LeadsPage() {
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="flex flex-col gap-1">
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !newVisitDateDate && "text-muted-foreground"
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {newVisitDateDate ? (
-                            formatDate(newVisitDateDate)
-                          ) : (
-                            <span>Seleccionar fecha</span>
-                          )}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={newVisitDateDate ? new Date(newVisitDateDate) : undefined}
-                          onSelect={(date) => {
-                            if (date) {
-                              const yyyy = date.getFullYear()
-                              const mm = String(date.getMonth() + 1).padStart(2, "0")
-                              const dd = String(date.getDate()).padStart(2, "0")
-                              setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
-                            } else {
-                              setNewVisitDateDate("")
-                            }
-                          }}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <Select
-                    value={newVisitDateTime}
-                    onValueChange={(value) => setNewVisitDateTime(value)}
-                  >
-                    <SelectTrigger className="h-10 text-sm">
-                      <SelectValue placeholder="Hora (24h)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 24 }, (_, h) => h).map((hour) => (
-                        ["00","15","30","45"].map((m) => {
-                          const hh = String(hour).padStart(2, "0")
-                          const mm = m
-                          const val = `${hh}:${mm}`
-                          return (
-                            <SelectItem key={val} value={val}>
-                              {val}
-                            </SelectItem>
-                          )
-                        })
-                      ))}
+                    <Select
+                      value={newVisitDateDate}
+                      onValueChange={setNewVisitDateDate}
+                      disabled={!selectedAgenteId || loadingDates}
+                    >
+                      <SelectTrigger className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !newVisitDateDate && "text-muted-foreground"
+                      )}>
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        <SelectValue placeholder={loadingDates ? "Cargando..." : "Seleccionar fecha"} />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[300px] z-[40000]">
+                      {availableDates.length > 0 ? (
+                        availableDates.map((dateStr) => (
+                          <SelectItem key={dateStr} value={dateStr}>
+                            {format(new Date(dateStr), "PPP", { locale: es })}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <div className="p-2 text-sm text-muted-foreground text-center">
+                          No hay fechas disponibles
+                        </div>
+                      )}
                     </SelectContent>
-                  </Select>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {loadingAvailability ? (
+                      <div className="flex items-center gap-2 p-2 h-10 border rounded-md bg-muted/50">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="text-xs">Cargando...</span>
+                      </div>
+                    ) : (
+                      <Select 
+                        value={newVisitDateTime} 
+                        onValueChange={setNewVisitDateTime}
+                        disabled={availableSlots.length === 0}
+                      >
+                        <SelectTrigger className="w-full justify-start text-left font-normal">
+                          <SelectValue placeholder={availableSlots.length > 0 ? "Seleccionar hora" : "Sin disponibilidad"} />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[200px] z-[40000]">
+                          {availableSlots.length > 0 ? (
+                            availableSlots.map(slot => (
+                              <SelectItem key={slot} value={slot}>{slot}</SelectItem>
+                            ))
+                          ) : (
+                            <div className="p-2 text-sm text-muted-foreground text-center">
+                              No hay huecos disponibles
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

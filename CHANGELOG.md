@@ -1,3 +1,13 @@
+## [0.8.0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.9...v0.8.0) (2025-12-19)
+
+
+### Features
+
+* **agenda:** reducción de tamaño de fuente (25%) y optimización de espacio
+* **agenda:** rediseño de layout (botón disponibilidad junto a semana actual, agrupación de semanas)
+* **agenda:** mejoras de usabilidad en móvil y escritorio
+
+
 ## [0.7.9](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.8...v0.7.9) (2025-12-18)
 
 
