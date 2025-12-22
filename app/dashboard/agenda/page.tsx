@@ -6,7 +6,8 @@ import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Loader2, Plus, Trash2, Clock, CalendarDays } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { Loader2, Plus, Trash2, Clock, CalendarDays, User, Building, Phone, Euro, CheckCircle, FileText, Undo, Check } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { format, addDays, startOfToday, startOfWeek, addWeeks, isBefore } from "date-fns"
 import { es } from "date-fns/locale"
@@ -20,6 +21,13 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
 interface TimeSlot {
@@ -38,9 +46,13 @@ interface AgendaItem {
 interface ScheduledVisit {
   id: number
   Nombre: string
+  Apellidos?: string
   Inmueble: string
   fecha_de_visita: string
   Telefono: string | null
+  Ingresos?: number
+  visita_completada?: boolean
+  resumen_visita?: string
 }
 
 interface DayTab {
@@ -55,7 +67,9 @@ export default function AgendaPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [agentId, setAgentId] = useState<number | null>(null)
-  
+  const [canManageOthers, setCanManageOthers] = useState(false)
+  const [agentsList, setAgentsList] = useState<Array<{ idag: number, Nombre: string, Email: string }>>([])
+
   // Tabs state
   const [currentWeekDays, setCurrentWeekDays] = useState<DayTab[]>([])
   const [nextWeekDays, setNextWeekDays] = useState<DayTab[]>([])
@@ -66,16 +80,21 @@ export default function AgendaPage() {
   const [dayVisits, setDayVisits] = useState<ScheduledVisit[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   
+  // Visit completion state
+  const [completeDialogOpen, setCompleteDialogOpen] = useState(false)
+  const [selectedVisitToComplete, setSelectedVisitToComplete] = useState<ScheduledVisit | null>(null)
+  const [visitSummary, setVisitSummary] = useState("")
+
   const { toast } = useToast()
   const supabase = createClient()
   const { inmobiliariaId } = useInmobiliaria()
 
-  // Generate time options: 12:00 to 23:50 in 10min intervals
+  // Generate time options: 07:00 to 23:00 in 10min intervals
   const timeOptions = useMemo(() => {
     const options: string[] = []
-    // Start at 12:00 (12 * 60 = 720 minutes)
-    // End at 23:50 (23 * 60 + 50 = 1430 minutes)
-    for (let minutes = 720; minutes < 1440; minutes += 10) {
+    // Start at 07:00 (7 * 60 = 420 minutes)
+    // End at 23:00 (23 * 60 = 1380 minutes)
+    for (let minutes = 420; minutes <= 1380; minutes += 10) {
       const h = Math.floor(minutes / 60)
       const m = minutes % 60
       const time = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
@@ -126,17 +145,21 @@ export default function AgendaPage() {
 
   // Update slots when selected date changes or agendaItems change
   useEffect(() => {
-    if (selectedDateStr && agentId) {
-      const daySlots = agendaItems
-        .filter(item => item.fecha === selectedDateStr)
-        .map(item => ({
-          id: item.id,
-          hora_inicio: item.hora_inicio.slice(0, 5),
-          hora_fin: item.hora_fin.slice(0, 5)
-        }))
-        .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
-      
-      setCurrentSlots(daySlots.length > 0 ? daySlots : [])
+    if (selectedDateStr) {
+      if (agentId) {
+        const daySlots = agendaItems
+          .filter(item => item.fecha === selectedDateStr)
+          .map(item => ({
+            id: item.id,
+            hora_inicio: item.hora_inicio.slice(0, 5),
+            hora_fin: item.hora_fin.slice(0, 5)
+          }))
+          .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
+        
+        setCurrentSlots(daySlots.length > 0 ? daySlots : [])
+      } else {
+        setCurrentSlots([])
+      }
 
       // Filter visits for this day
       const visits = scheduledVisits.filter(visit => {
@@ -149,34 +172,79 @@ export default function AgendaPage() {
     }
   }, [selectedDateStr, agendaItems, agentId, scheduledVisits])
 
-  const fetchAgentAndSchedule = async () => {
+  const fetchAgentAndSchedule = async (showLoader = true, targetId?: number) => {
     try {
-      setLoading(true)
+      if (showLoader) setLoading(true)
       
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      let query = supabase
-        .from("Agentes")
-        .select("idag, Email")
-        .ilike("Email", user.email || "")
-        
-      if (inmobiliariaId) {
-        query = query.eq("idi", inmobiliariaId)
+      let activeAgentId = targetId || agentId
+
+      // Initial load or permission check
+      if (!activeAgentId && inmobiliariaId) {
+          const { data: profile } = await supabase
+            .from("Perfiles")
+            .select("role, is_admin")
+            .ilike("usuario", user.email)
+            .maybeSingle()
+          
+          const isAdmin = profile?.is_admin === true
+          const isSupervisor = profile?.role === 'supervisor'
+          const canManage = isAdmin || isSupervisor
+          setCanManageOthers(canManage)
+
+          if (canManage) {
+             const { data: allAgents } = await supabase
+               .from("Agentes")
+               .select("idag, Nombre, Email")
+               .eq("idi", inmobiliariaId)
+               .order("Nombre")
+             
+             if (allAgents && allAgents.length > 0) {
+                setAgentsList(allAgents)
+                const self = allAgents.find(a => a.Email.toLowerCase() === user.email?.toLowerCase())
+                activeAgentId = self ? self.idag : allAgents[0].idag
+             }
+          } else {
+             const { data: agents } = await supabase
+                .from("Agentes")
+                .select("idag, Email")
+                .ilike("Email", user.email || "")
+                .eq("idi", inmobiliariaId)
+             
+             const agent = agents?.[0]
+             if (agent) activeAgentId = agent.idag
+          }
+          
+          if (activeAgentId) setAgentId(activeAgentId)
+      } else if (!activeAgentId) {
+          // Fallback if no inmobiliariaId yet
+          let query = supabase
+            .from("Agentes")
+            .select("idag, Email")
+            .ilike("Email", user.email || "")
+            
+          if (inmobiliariaId) {
+            query = query.eq("idi", inmobiliariaId)
+          }
+          
+          const { data: agents } = await query
+          const agent = agents?.[0]
+          if (agent) {
+             activeAgentId = agent.idag
+             setAgentId(agent.idag)
+          }
       }
-      
-      const { data: agents, error: agentError } = await query
-      
-      if (agentError) throw agentError
-      
-      const agent = agents?.[0]
-      
-      if (!agent) {
+
+      if (!activeAgentId) {
+        if (!inmobiliariaId) {
+             setLoading(false)
+             return
+        }
         setLoading(false)
         return
       }
-
-      setAgentId(agent.idag)
 
       // Fetch agenda for current and next week
       const today = startOfToday()
@@ -187,27 +255,29 @@ export default function AgendaPage() {
       const endDateStr = format(endOfNextWeek, "yyyy-MM-dd")
       
       const { data: agendaData, error: agendaError } = await supabase
-        .from("Agendas")
-        .select("*")
-        .eq("agente_id", agent.idag)
-        .gte("fecha", startDateStr)
-        .lte("fecha", endDateStr)
-        .order("fecha", { ascending: true })
+          .from("Agendas")
+          .select("*")
+          .eq("agente_id", activeAgentId)
+          .gte("fecha", startDateStr)
+          .lte("fecha", endDateStr)
+          .order("fecha", { ascending: true })
 
-      if (agendaError) {
-        console.error("Error fetching agenda:", agendaError)
-      } else {
-        setAgendaItems(agendaData || [])
-      }
+        if (agendaError) {
+          console.error("Error fetching agenda:", agendaError)
+        } else {
+          setAgendaItems(agendaData || [])
+        }
 
       // Fetch scheduled visits from Clientes
-      const { data: visitsData, error: visitsError } = await supabase
+      let visitsQuery = supabase
         .from("Clientes")
-        .select("id, Nombre, Inmueble, fecha_de_visita, Telefono")
-        .eq("idag", agent.idag)
+        .select("*")
         .not("fecha_de_visita", "is", null)
         .gte("fecha_de_visita", startDateStr)
         .lte("fecha_de_visita", endDateStr + "T23:59:59")
+        .eq("idag", activeAgentId)
+
+      const { data: visitsData, error: visitsError } = await visitsQuery
 
       if (visitsError) {
         console.error("Error fetching visits:", visitsError)
@@ -223,14 +293,14 @@ export default function AgendaPage() {
         variant: "destructive",
       })
     } finally {
-      setLoading(false)
+      if (showLoader) setLoading(false)
     }
   }
 
   const handleAddSlot = () => {
     // Find first available 1-hour slot
-    let startMinutes = 12 * 60 // 720 (12:00)
-    const endLimit = 23 * 60 + 50 // 1430 (23:50)
+    let startMinutes = 7 * 60 // 420 (07:00)
+    const endLimit = 23 * 60 // 1380 (23:00)
     
     let foundStart = ""
     let foundEnd = ""
@@ -298,6 +368,135 @@ export default function AgendaPage() {
 
     newSlots[index] = updatedSlot
     setCurrentSlots(newSlots)
+  }
+
+  const handleToggleCompletion = async (visit: ScheduledVisit) => {
+    // Determine current status strictly
+    const isCompleted = visit.visita_completada === true
+    const newStatus = !isCompleted
+    
+    console.log(`Toggling visit ${visit.id}: ${isCompleted} -> ${newStatus}`)
+
+    // 1. Optimistic Update (Immediate UI change)
+    const updateLocalState = (status: boolean) => {
+      // Update the global list
+      setScheduledVisits(prev => prev.map(v => 
+        v.id === visit.id ? { ...v, visita_completada: status } : v
+      ))
+      // Update the daily list (redundant but ensures speed)
+      setDayVisits(prev => prev.map(v => 
+        v.id === visit.id ? { ...v, visita_completada: status } : v
+      ))
+    }
+
+    updateLocalState(newStatus)
+
+    try {
+      // 2. Persist to Supabase
+      const { error } = await supabase
+        .from("Clientes")
+        .update({ visita_completada: newStatus })
+        .eq("id", visit.id)
+
+      if (error) throw error
+
+      // 3. Feedback
+      toast({
+        title: newStatus ? "¡Visita Completada!" : "Visita Pendiente",
+        description: newStatus 
+          ? "La visita ha sido marcada como realizada." 
+          : "La visita ha vuelto al estado pendiente.",
+        className: newStatus ? "bg-green-600 text-white border-none" : ""
+      })
+      
+      // 4. Background Validation
+      // REMOVED: fetchAgentAndSchedule(false)
+      // We trust the optimistic update. Re-fetching immediately often returns stale data 
+      // from the DB before the write is fully propagated/indexed, causing the UI to revert.
+      
+    } catch (err) {
+      console.error("Error toggling visit:", err)
+      // Revert on error
+      updateLocalState(isCompleted)
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el estado.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleOpenFeedbackDialog = (visit: ScheduledVisit) => {
+    setSelectedVisitToComplete(visit)
+    setVisitSummary(visit.resumen_visita || "")
+    setCompleteDialogOpen(true)
+  }
+
+  const handleSaveFeedback = async () => {
+    if (!selectedVisitToComplete) return
+
+    try {
+      setSaving(true)
+      const { error } = await supabase
+        .from("Clientes")
+        .update({
+          resumen_visita: visitSummary
+        })
+        .eq("id", selectedVisitToComplete.id)
+
+      if (error) throw error
+
+      toast({
+        title: "Resumen guardado",
+        description: "El resumen de la visita ha sido actualizado.",
+      })
+
+      setCompleteDialogOpen(false)
+      fetchAgentAndSchedule()
+    } catch (err) {
+      console.error("Error saving feedback:", err)
+      toast({
+        title: "Error",
+        description: "No se pudo guardar el resumen.",
+        variant: "destructive",
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeleteCompletion = async () => {
+    if (!selectedVisitToComplete) return
+
+    try {
+      setSaving(true)
+      const { error } = await supabase
+        .from("Clientes")
+        .update({
+          // Only clear the summary, keep completion status
+          resumen_visita: null
+        })
+        .eq("id", selectedVisitToComplete.id)
+
+      if (error) throw error
+
+      toast({
+        title: "Resumen eliminado",
+        description: "Se ha borrado el comentario de la visita.",
+      })
+
+      setCompleteDialogOpen(false)
+      fetchAgentAndSchedule()
+    } catch (err) {
+      console.error("Error deleting summary:", err)
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar el resumen.",
+        variant: "destructive",
+      })
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleSave = async () => {
@@ -391,11 +590,36 @@ export default function AgendaPage() {
 
   return (
     <div className="flex flex-col h-full gap-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Mi Agenda</h1>
-        <p className="text-sm text-muted-foreground">
-          Configura tu disponibilidad por semanas.
-        </p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">Agenda</h1>
+          <p className="text-sm text-muted-foreground">
+            Configura disponibilidad y gestiona visitas.
+          </p>
+        </div>
+        {canManageOthers && agentsList.length > 0 && (
+          <div className="w-full md:w-[280px]">
+            <Select 
+              value={agentId?.toString()} 
+              onValueChange={(val) => {
+                const newId = Number(val)
+                setAgentId(newId)
+                fetchAgentAndSchedule(true, newId)
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar agente" />
+              </SelectTrigger>
+              <SelectContent>
+                {agentsList.map(agent => (
+                  <SelectItem key={agent.idag} value={agent.idag.toString()}>
+                    {agent.Nombre} <span className="text-xs text-muted-foreground ml-1">({agent.Email})</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       <div className="w-full">
@@ -410,17 +634,24 @@ export default function AgendaPage() {
                     <TabsList className="h-auto bg-transparent p-0 gap-2 flex-wrap justify-start">
                       {currentWeekDays.map((day) => {
                         const hasSlots = agendaItems.some(item => item.fecha === day.id)
+                        const visitCount = scheduledVisits.filter(v => format(new Date(v.fecha_de_visita), "yyyy-MM-dd") === day.id).length
+                        
                         return (
                           <TabsTrigger
                             key={day.id}
                             value={day.id}
                             disabled={day.disabled}
                             className={cn(
-                              "flex flex-col items-center justify-center h-14 w-16 rounded-md border border-muted bg-card data-[state=active]:border-primary data-[state=active]:bg-primary/5 transition-all",
+                              "relative flex flex-col items-center justify-center h-14 w-16 rounded-md border border-muted bg-card data-[state=active]:border-primary data-[state=active]:bg-primary/5 transition-all",
                               hasSlots && "border-b-4 border-b-primary/40",
                               day.disabled && "opacity-50 cursor-not-allowed bg-muted/50"
                             )}
                           >
+                            {visitCount > 0 && (
+                              <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background z-10">
+                                {visitCount}
+                              </span>
+                            )}
                             <span className="text-[10px] font-medium uppercase text-muted-foreground">
                               {day.label.split(' ')[0]}
                             </span>
@@ -440,16 +671,23 @@ export default function AgendaPage() {
                      <TabsList className="h-auto bg-transparent p-0 gap-2 flex-wrap justify-start">
                       {nextWeekDays.map((day) => {
                         const hasSlots = agendaItems.some(item => item.fecha === day.id)
+                        const visitCount = scheduledVisits.filter(v => format(new Date(v.fecha_de_visita), "yyyy-MM-dd") === day.id).length
+                        
                         return (
                           <TabsTrigger
                             key={day.id}
                             value={day.id}
                             disabled={day.disabled}
                             className={cn(
-                              "flex flex-col items-center justify-center h-14 w-16 rounded-md border border-muted bg-card data-[state=active]:border-primary data-[state=active]:bg-primary/5 transition-all",
+                              "relative flex flex-col items-center justify-center h-14 w-16 rounded-md border border-muted bg-card data-[state=active]:border-primary data-[state=active]:bg-primary/5 transition-all",
                               hasSlots && "border-b-4 border-b-primary/40"
                             )}
                           >
+                            {visitCount > 0 && (
+                              <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background z-10">
+                                {visitCount}
+                              </span>
+                            )}
                             <span className="text-[10px] font-medium uppercase text-muted-foreground">
                               {day.label.split(' ')[0]}
                             </span>
@@ -464,7 +702,7 @@ export default function AgendaPage() {
                 </div>
               </div>
 
-              <Card className="w-full lg:w-80 shrink-0">
+              <Card className="w-full lg:w-80 shrink-0 border-blue-500">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">{selectedDay?.fullLabel}</CardTitle>
                   <CardDescription className="text-xs">
@@ -487,7 +725,7 @@ export default function AgendaPage() {
 
                   <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="outline" size="sm" className="w-full gap-2 text-xs">
+                      <Button size="sm" className="w-full gap-2 text-xs bg-black text-white hover:bg-black/90">
                         <Clock className="h-3 w-3" />
                         Gestionar Disponibilidad
                       </Button>
@@ -599,22 +837,80 @@ export default function AgendaPage() {
                 ) : (
                   <div className="space-y-2">
                     {dayVisits.map(visit => (
-                      <div key={visit.id} className="flex items-center justify-between p-3 border rounded-lg bg-card shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex items-center gap-3">
-                          <div className="flex flex-col items-center justify-center w-12 h-12 bg-primary/10 rounded-md text-primary shrink-0">
+                      <div key={visit.id} className={cn(
+                        "flex items-center justify-between p-3 border rounded-lg shadow-sm hover:shadow-md transition-all",
+                        visit.visita_completada 
+                          ? "border-green-500/30 bg-green-100" 
+                          : "bg-card border-border"
+                      )}>
+                        <div className="flex items-center gap-3 w-full">
+                          <div className={cn(
+                            "flex flex-col items-center justify-center w-12 h-12 rounded-md shrink-0 transition-colors",
+                            visit.visita_completada 
+                              ? "bg-green-200 text-green-800" 
+                              : "bg-primary/10 text-primary"
+                          )}>
                             <span className="text-sm font-bold">
                               {format(new Date(visit.fecha_de_visita), "HH:mm")}
                             </span>
                           </div>
-                          <div>
-                            <h4 className="font-medium text-base">{visit.Nombre}</h4>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <span className="font-medium text-foreground/80">{visit.Inmueble}</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 w-full">
+                            <div className="flex items-center gap-2">
+                              <User className={cn("h-4 w-4 shrink-0", visit.visita_completada ? "!text-black" : "text-muted-foreground")} />
+                              <h4 className={cn("font-bold text-lg", visit.visita_completada && "!text-black")}>
+                                {visit.Nombre} {visit.Apellidos}
+                              </h4>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Building className={cn("h-4 w-4 shrink-0", visit.visita_completada && "!text-black/70")} />
+                              <span className={cn("font-medium text-foreground/80", visit.visita_completada && "!text-black/80")}>{visit.Inmueble}</span>
                             </div>
                             {visit.Telefono && (
-                              <p className="text-[10px] text-muted-foreground mt-0.5">Tel: {visit.Telefono}</p>
+                              <a 
+                                href={`tel:${visit.Telefono}`}
+                                className={cn("flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group", visit.visita_completada && "!text-black/70")}
+                                title="Llamar"
+                              >
+                                <Phone className="h-4 w-4 shrink-0 group-hover:text-primary" />
+                                <span className="font-medium underline decoration-dotted underline-offset-4 group-hover:text-primary">{visit.Telefono}</span>
+                              </a>
+                            )}
+                            {(visit.Ingresos !== null && visit.Ingresos !== undefined) && (
+                              <div className={cn("flex items-center gap-2 text-sm text-muted-foreground", visit.visita_completada && "!text-black/70")}>
+                                <Euro className="h-4 w-4 shrink-0" />
+                                <span>Ingresos: {visit.Ingresos}€</span>
+                              </div>
                             )}
                           </div>
+                        </div>
+                        <div className="ml-2 shrink-0 flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className={cn(
+                              "h-9 w-9 transition-all shadow-sm rounded-full",
+                              visit.visita_completada 
+                                ? "bg-green-500 hover:bg-green-600 text-black border-green-500" 
+                                : "bg-white hover:bg-green-50 text-muted-foreground border-muted-foreground/30 hover:border-green-500 hover:text-green-600"
+                            )}
+                            onClick={() => handleToggleCompletion(visit)}
+                            title={visit.visita_completada ? "Marcar como pendiente" : "Marcar como realizada"}
+                          >
+                            <Check className={cn("h-6 w-6 stroke-[3]", visit.visita_completada ? "opacity-100" : "opacity-50")} />
+                          </Button>
+                          
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className={cn(
+                              "h-9 w-9 transition-all shadow-sm",
+                               visit.resumen_visita ? "text-blue-600 border-blue-200 bg-blue-50" : "text-muted-foreground border-muted-foreground/30"
+                            )}
+                            onClick={() => handleOpenFeedbackDialog(visit)}
+                            title="Añadir feedback / resumen"
+                          >
+                            <FileText className={cn("h-4 w-4", visit.resumen_visita && "fill-current")} />
+                          </Button>
                         </div>
                       </div>
                     ))}
@@ -625,6 +921,49 @@ export default function AgendaPage() {
           </div>
         </Tabs>
       </div>
+
+      <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Resumen de la Visita</DialogTitle>
+            <DialogDescription>
+              Añade notas o feedback sobre la visita con {selectedVisitToComplete?.Nombre}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="summary">Resumen / Notas</Label>
+              <Textarea
+                id="summary"
+                placeholder="Escribe aquí los detalles importantes de la visita..."
+                className="min-h-[150px]"
+                value={visitSummary}
+                onChange={(e) => setVisitSummary(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-3 sm:justify-between items-center sm:items-end">
+            {selectedVisitToComplete?.visita_completada ? (
+              <Button 
+                variant="destructive" 
+                onClick={handleDeleteCompletion} 
+                disabled={saving}
+                className="w-full sm:w-auto order-2 sm:order-1"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Borrar
+              </Button>
+            ) : <div className="hidden sm:block order-1" />}
+            <div className="flex gap-2 w-full sm:w-auto justify-end order-1 sm:order-2">
+              <Button variant="outline" onClick={() => setCompleteDialogOpen(false)}>Cancelar</Button>
+              <Button onClick={handleSaveFeedback} disabled={saving}>
+                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Guardar Resumen
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -212,7 +212,15 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
         "https://raw.githubusercontent.com/jiglesiasdile4g-dot/Rentaflow_Trae/main/dashboard/v0-dashboard-basico-alfa-0-2-main/CHANGELOG.md",
         { cache: "no-store" }
       )
-      if (res.ok) clText = await res.text()
+      if (res.ok) {
+        const remoteText = await res.text()
+        // Concatenar el fallback local (más reciente) con el remoto si el remoto es más antiguo
+        if (!remoteText.includes("0.8.1")) {
+             clText += "\n" + remoteText
+        } else {
+             clText = remoteText
+        }
+      }
     } catch {}
   }
 

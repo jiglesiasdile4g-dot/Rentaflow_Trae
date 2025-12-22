@@ -5042,7 +5042,7 @@ export default function LeadsPage() {
                                   <Button 
                                     variant="default" 
                                     size="sm" 
-                                    className="flex-1 h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white border-0"
+                                    className="flex-1 h-8 text-xs bg-black text-white hover:bg-black/90 border-0"
                                     onClick={() => {
                                       setSelectedLeadForVisit(selectedLead)
                                       setSelectedAgenteId(selectedLead.idag ? String(selectedLead.idag) : "")

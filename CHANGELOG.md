@@ -1,3 +1,13 @@
+## [0.8.1] (2025-12-22)
+
+
+### Features
+
+* **agenda:** gestión de agendas centralizada para administradores y supervisores
+* **agenda:** selector de agentes para visualizar y editar disponibilidad y visitas
+* **db:** actualización de políticas RLS para permitir gestión de agendas por rol
+
+
 ## [0.8.0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.9...v0.8.0) (2025-12-19)
 
 
