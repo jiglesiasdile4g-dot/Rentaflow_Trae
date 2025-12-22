@@ -598,7 +598,7 @@ export default function AgendaPage() {
           </p>
         </div>
         {canManageOthers && agentsList.length > 0 && (
-          <div className="w-full md:w-[280px]">
+          <div className="w-full md:w-[260px]">
             <Select 
               value={agentId?.toString()} 
               onValueChange={(val) => {
@@ -607,13 +607,23 @@ export default function AgendaPage() {
                 fetchAgentAndSchedule(true, newId)
               }}
             >
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar agente" />
+              <SelectTrigger className="h-10 bg-background border-input/60 shadow-sm hover:bg-accent/10 hover:border-accent transition-colors">
+                <div className="flex items-center gap-2 truncate">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                    <User className="h-3.5 w-3.5 text-primary" />
+                  </div>
+                  <span className="font-medium truncate text-sm">
+                    {selectedAgent?.Nombre || "Seleccionar agente"}
+                  </span>
+                </div>
               </SelectTrigger>
               <SelectContent>
                 {agentsList.map(agent => (
                   <SelectItem key={agent.idag} value={agent.idag.toString()}>
-                    {agent.Nombre} <span className="text-xs text-muted-foreground ml-1">({agent.Email})</span>
+                    <div className="flex flex-col items-start gap-0.5 py-0.5">
+                      <span className="font-medium text-sm leading-none">{agent.Nombre}</span>
+                      <span className="text-xs text-muted-foreground">{agent.Email}</span>
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>
