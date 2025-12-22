@@ -186,7 +186,7 @@ export default function AgendaPage() {
           const { data: profile } = await supabase
             .from("Perfiles")
             .select("role, is_admin")
-            .ilike("usuario", user.email)
+            .ilike("usuario", user.email || "")
             .maybeSingle()
           
           const isAdmin = profile?.is_admin === true
