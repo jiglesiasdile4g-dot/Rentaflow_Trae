@@ -1,3 +1,23 @@
+## [0.8.3] (2025-12-23)
+
+
+### Fixes
+
+* **agenda:** corrección de "Application error" por manejo inseguro de fechas en renderizado
+* **agenda:** validación robusta de `fecha_de_visita` para evitar caídas de la app
+* **agenda:** fix de componente Select uncontrolled en selector de agentes
+
+
+## [0.8.2] (2025-12-23)
+
+
+### Features
+
+* **agenda:** reprogramación de visitas con validación de disponibilidad (calendario inteligente y slots de 15 min)
+* **agenda:** corrección de persistencia de estado (visita completada/pendiente) al navegar
+* **agenda:** fix de desfase horario (timezone) al guardar nuevas fechas de visita
+
+
 ## [0.8.1] (2025-12-22)
 
 

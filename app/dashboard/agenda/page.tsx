@@ -7,11 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2, Plus, Trash2, Clock, CalendarDays, User, Building, Phone, Euro, CheckCircle, FileText, Undo, Check } from "lucide-react"
+import { Loader2, Plus, Trash2, Clock, CalendarDays, User, Building, Phone, Euro, CheckCircle, FileText, Undo, Check, CalendarIcon } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { format, addDays, startOfToday, startOfWeek, addWeeks, isBefore } from "date-fns"
 import { es } from "date-fns/locale"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -84,10 +87,24 @@ export default function AgendaPage() {
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false)
   const [selectedVisitToComplete, setSelectedVisitToComplete] = useState<ScheduledVisit | null>(null)
   const [visitSummary, setVisitSummary] = useState("")
+  
+  // Reschedule state
+  const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false)
+  const [visitToReschedule, setVisitToReschedule] = useState<ScheduledVisit | null>(null)
+  const [newRescheduleDate, setNewRescheduleDate] = useState<Date | undefined>(undefined)
+  const [newRescheduleTime, setNewRescheduleTime] = useState("")
+  const [availableTimes, setAvailableTimes] = useState<string[]>([])
 
   const { toast } = useToast()
   const supabase = createClient()
   const { inmobiliariaId } = useInmobiliaria()
+
+  // Helper to safely parse dates
+  const safeDate = (dateStr: string | null | undefined): Date | null => {
+    if (!dateStr) return null
+    const d = new Date(dateStr)
+    return isNaN(d.getTime()) ? null : d
+  }
 
   // Generate time options: 07:00 to 23:00 in 10min intervals
   const timeOptions = useMemo(() => {
@@ -143,6 +160,79 @@ export default function AgendaPage() {
     fetchAgentAndSchedule()
   }, [inmobiliariaId])
 
+  // Calculate available times when date changes
+  useEffect(() => {
+    if (!newRescheduleDate || !agentId) {
+      setAvailableTimes([])
+      return
+    }
+
+    const dateStr = format(newRescheduleDate, "yyyy-MM-dd")
+    
+    // 1. Get availability slots for this day
+    const dayAvailability = agendaItems.filter(item => item.fecha === dateStr)
+    
+    if (dayAvailability.length === 0) {
+      setAvailableTimes([])
+      return
+    }
+    
+    // 2. Generate all possible 15-min start times within these slots
+    let candidates: string[] = []
+    
+    const generateSlots = (startStr: string, endStr: string) => {
+      const slots: string[] = []
+      const [startH, startM] = startStr.split(':').map(Number)
+      const [endH, endM] = endStr.split(':').map(Number)
+      
+      let currentMins = startH * 60 + startM
+      const endMins = endH * 60 + endM
+      
+      // 15 minute intervals
+      while (currentMins < endMins) {
+        const h = Math.floor(currentMins / 60)
+        const m = currentMins % 60
+        slots.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`)
+        currentMins += 15
+      }
+      return slots
+    }
+
+    dayAvailability.forEach(slot => {
+      // Ensure we use HH:mm format
+      const start = slot.hora_inicio.slice(0, 5)
+      const end = slot.hora_fin.slice(0, 5)
+      candidates = [...candidates, ...generateSlots(start, end)]
+    })
+    
+    // Deduplicate and sort
+    candidates = Array.from(new Set(candidates)).sort()
+    
+    // 3. Filter out times occupied by other visits
+    const existingVisitsOnDay = scheduledVisits.filter(v => {
+      // Ignore the one we are modifying
+      if (visitToReschedule && v.id === visitToReschedule.id) return false
+      
+      const vDate = safeDate(v.fecha_de_visita)
+      if (!vDate) return false
+      return format(vDate, "yyyy-MM-dd") === dateStr
+    })
+    
+    const occupiedTimes = new Set(existingVisitsOnDay.map(v => {
+       const d = safeDate(v.fecha_de_visita)
+       return d ? format(d, "HH:mm") : ""
+    }).filter(Boolean))
+    
+    const finalTimes = candidates.filter(t => !occupiedTimes.has(t))
+    
+    setAvailableTimes(finalTimes)
+    
+    // If current selected time is not in the new list (and we just changed date), clear it
+    // But if we just opened the dialog, we might want to preserve it if valid?
+    // We'll let the user re-select if invalid.
+    
+  }, [newRescheduleDate, agendaItems, scheduledVisits, visitToReschedule, agentId])
+
   // Update slots when selected date changes or agendaItems change
   useEffect(() => {
     if (selectedDateStr) {
@@ -163,10 +253,15 @@ export default function AgendaPage() {
 
       // Filter visits for this day
       const visits = scheduledVisits.filter(visit => {
-        const visitDate = new Date(visit.fecha_de_visita)
+        const visitDate = safeDate(visit.fecha_de_visita)
+        if (!visitDate) return false
         const visitDateStr = format(visitDate, "yyyy-MM-dd")
         return visitDateStr === selectedDateStr
-      }).sort((a, b) => new Date(a.fecha_de_visita).getTime() - new Date(b.fecha_de_visita).getTime())
+      }).sort((a, b) => {
+        const dateA = safeDate(a.fecha_de_visita)
+        const dateB = safeDate(b.fecha_de_visita)
+        return (dateA?.getTime() || 0) - (dateB?.getTime() || 0)
+      })
       
       setDayVisits(visits)
     }
@@ -370,12 +465,24 @@ export default function AgendaPage() {
     setCurrentSlots(newSlots)
   }
 
+  // Helper to check completion status handling various DB types (boolean/string)
+  const isVisitCompleted = (status: any) => {
+    if (status === true) return true
+    if (typeof status === 'string') {
+      const s = status.toLowerCase().trim()
+      // "visita propuesta" is NOT completed. "cancelada" is NOT completed.
+      // Only explicit "true" or similar affirmative values are completed.
+      return s === 'true' || s === 'completada' || s === 'realizada' || s === 'si'
+    }
+    return false
+  }
+
   const handleToggleCompletion = async (visit: ScheduledVisit) => {
-    // Determine current status strictly
-    const isCompleted = visit.visita_completada === true
+    // Determine current status loosely but safely
+    const isCompleted = isVisitCompleted(visit.visita_completada)
     const newStatus = !isCompleted
     
-    console.log(`Toggling visit ${visit.id}: ${isCompleted} -> ${newStatus}`)
+    console.log(`Toggling visit ${visit.id}: ${visit.visita_completada} (${isCompleted}) -> ${newStatus}`)
 
     // 1. Optimistic Update (Immediate UI change)
     const updateLocalState = (status: boolean) => {
@@ -393,6 +500,7 @@ export default function AgendaPage() {
 
     try {
       // 2. Persist to Supabase
+      // We send boolean, assuming DB handles it or converts to string "true"/"false" if column is text
       const { error } = await supabase
         .from("Clientes")
         .update({ visita_completada: newStatus })
@@ -499,6 +607,63 @@ export default function AgendaPage() {
     }
   }
 
+  const handleOpenReschedule = (visit: ScheduledVisit) => {
+    const date = safeDate(visit.fecha_de_visita)
+    if (!date) {
+      toast({
+        title: "Error",
+        description: "La visita tiene una fecha inválida.",
+        variant: "destructive",
+      })
+      return
+    }
+    setVisitToReschedule(visit)
+    setNewRescheduleDate(date)
+    setNewRescheduleTime(format(date, "HH:mm"))
+    setRescheduleDialogOpen(true)
+  }
+
+  const handleSaveReschedule = async () => {
+    if (!visitToReschedule || !newRescheduleDate || !newRescheduleTime) return
+    
+    try {
+      setSaving(true)
+      
+      // Construct Date object in local time to handle timezone correctly
+      const [hours, minutes] = newRescheduleTime.split(':').map(Number)
+      const localDate = new Date(newRescheduleDate)
+      localDate.setHours(hours, minutes, 0, 0)
+      
+      // Convert to UTC ISO string for Supabase
+      const newDateTimeIso = localDate.toISOString()
+      
+      const { error } = await supabase
+        .from("Clientes")
+        .update({ fecha_de_visita: newDateTimeIso })
+        .eq("id", visitToReschedule.id)
+        
+      if (error) throw error
+      
+      toast({ 
+        title: "Visita reprogramada", 
+        description: "La fecha y hora han sido actualizadas correctamente." 
+      })
+      
+      setRescheduleDialogOpen(false)
+      fetchAgentAndSchedule() // Refresh to move it to correct day/time
+      
+    } catch (err) {
+      console.error("Error rescheduling visit:", err)
+      toast({
+        title: "Error",
+        description: "No se pudo reprogramar la visita.",
+        variant: "destructive",
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleSave = async () => {
     if (!agentId || !selectedDateStr) return
 
@@ -588,6 +753,9 @@ export default function AgendaPage() {
   const allDays = [...currentWeekDays, ...nextWeekDays]
   const selectedDay = allDays.find(d => d.id === selectedDateStr)
 
+  // Find selected agent for display
+  const selectedAgent = agentsList.find(a => a.idag === agentId)
+
   return (
     <div className="flex flex-col h-full gap-4 p-4">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -600,8 +768,9 @@ export default function AgendaPage() {
         {canManageOthers && agentsList.length > 0 && (
           <div className="w-full md:w-[260px]">
             <Select 
-              value={agentId?.toString()} 
+              value={agentId?.toString() || ""} 
               onValueChange={(val) => {
+                if (!val) return
                 const newId = Number(val)
                 setAgentId(newId)
                 fetchAgentAndSchedule(true, newId)
@@ -681,7 +850,10 @@ export default function AgendaPage() {
                      <TabsList className="h-auto bg-transparent p-0 gap-2 flex-wrap justify-start">
                       {nextWeekDays.map((day) => {
                         const hasSlots = agendaItems.some(item => item.fecha === day.id)
-                        const visitCount = scheduledVisits.filter(v => format(new Date(v.fecha_de_visita), "yyyy-MM-dd") === day.id).length
+                        const visitCount = scheduledVisits.filter(v => {
+                           const d = safeDate(v.fecha_de_visita)
+                           return d && format(d, "yyyy-MM-dd") === day.id
+                        }).length
                         
                         return (
                           <TabsTrigger
@@ -846,39 +1018,45 @@ export default function AgendaPage() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {dayVisits.map(visit => (
+                    {dayVisits.map(visit => {
+                      const completed = isVisitCompleted(visit.visita_completada)
+                      return (
                       <div key={visit.id} className={cn(
                         "flex items-center justify-between p-3 border rounded-lg shadow-sm hover:shadow-md transition-all",
-                        visit.visita_completada 
+                        completed 
                           ? "border-green-500/30 bg-green-100" 
                           : "bg-card border-border"
                       )}>
                         <div className="flex items-center gap-3 w-full">
-                          <div className={cn(
-                            "flex flex-col items-center justify-center w-12 h-12 rounded-md shrink-0 transition-colors",
-                            visit.visita_completada 
+                          <div 
+                            onClick={() => handleOpenReschedule(visit)}
+                            className={cn(
+                            "flex flex-col items-center justify-center w-12 h-12 rounded-md shrink-0 transition-colors cursor-pointer hover:bg-primary/20 hover:scale-105 active:scale-95",
+                            completed 
                               ? "bg-green-200 text-green-800" 
                               : "bg-primary/10 text-primary"
-                          )}>
+                          )}
+                          title="Click para reprogramar"
+                          >
                             <span className="text-sm font-bold">
                               {format(new Date(visit.fecha_de_visita), "HH:mm")}
                             </span>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 w-full">
                             <div className="flex items-center gap-2">
-                              <User className={cn("h-4 w-4 shrink-0", visit.visita_completada ? "!text-black" : "text-muted-foreground")} />
-                              <h4 className={cn("font-bold text-lg", visit.visita_completada && "!text-black")}>
+                              <User className={cn("h-4 w-4 shrink-0", completed ? "!text-black" : "text-muted-foreground")} />
+                              <h4 className={cn("font-bold text-lg", completed && "!text-black")}>
                                 {visit.Nombre} {visit.Apellidos}
                               </h4>
                             </div>
                             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              <Building className={cn("h-4 w-4 shrink-0", visit.visita_completada && "!text-black/70")} />
-                              <span className={cn("font-medium text-foreground/80", visit.visita_completada && "!text-black/80")}>{visit.Inmueble}</span>
+                              <Building className={cn("h-4 w-4 shrink-0", completed && "!text-black/70")} />
+                              <span className={cn("font-medium text-foreground/80", completed && "!text-black/80")}>{visit.Inmueble}</span>
                             </div>
                             {visit.Telefono && (
                               <a 
                                 href={`tel:${visit.Telefono}`}
-                                className={cn("flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group", visit.visita_completada && "!text-black/70")}
+                                className={cn("flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group", completed && "!text-black/70")}
                                 title="Llamar"
                               >
                                 <Phone className="h-4 w-4 shrink-0 group-hover:text-primary" />
@@ -886,7 +1064,7 @@ export default function AgendaPage() {
                               </a>
                             )}
                             {(visit.Ingresos !== null && visit.Ingresos !== undefined) && (
-                              <div className={cn("flex items-center gap-2 text-sm text-muted-foreground", visit.visita_completada && "!text-black/70")}>
+                              <div className={cn("flex items-center gap-2 text-sm text-muted-foreground", completed && "!text-black/70")}>
                                 <Euro className="h-4 w-4 shrink-0" />
                                 <span>Ingresos: {visit.Ingresos}€</span>
                               </div>
@@ -899,14 +1077,14 @@ export default function AgendaPage() {
                             size="icon"
                             className={cn(
                               "h-9 w-9 transition-all shadow-sm rounded-full",
-                              visit.visita_completada 
+                              completed 
                                 ? "bg-green-500 hover:bg-green-600 text-black border-green-500" 
                                 : "bg-white hover:bg-green-50 text-muted-foreground border-muted-foreground/30 hover:border-green-500 hover:text-green-600"
                             )}
                             onClick={() => handleToggleCompletion(visit)}
-                            title={visit.visita_completada ? "Marcar como pendiente" : "Marcar como realizada"}
+                            title={completed ? "Marcar como pendiente" : "Marcar como realizada"}
                           >
-                            <Check className={cn("h-6 w-6 stroke-[3]", visit.visita_completada ? "opacity-100" : "opacity-50")} />
+                            <Check className={cn("h-6 w-6 stroke-[3]", completed ? "opacity-100" : "opacity-50")} />
                           </Button>
                           
                           <Button
@@ -923,7 +1101,8 @@ export default function AgendaPage() {
                           </Button>
                         </div>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -971,6 +1150,76 @@ export default function AgendaPage() {
                 Guardar Resumen
               </Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rescheduleDialogOpen} onOpenChange={setRescheduleDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Reprogramar Visita</DialogTitle>
+            <DialogDescription>
+              Cambia la fecha y hora para la visita con {visitToReschedule?.Nombre}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="flex flex-col gap-2">
+              <Label>Fecha</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !newRescheduleDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {newRescheduleDate ? format(newRescheduleDate, "PPP", { locale: es }) : <span>Seleccionar fecha</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={newRescheduleDate}
+                    onSelect={setNewRescheduleDate}
+                    initialFocus
+                    locale={es}
+                    disabled={(date) => {
+                      // Disable past dates (before today)
+                      if (isBefore(date, startOfToday())) return true
+                      
+                      // Disable dates without any availability slots
+                      const dateStr = format(date, "yyyy-MM-dd")
+                      const hasSlot = agendaItems.some(item => item.fecha === dateStr)
+                      return !hasSlot
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="time">Hora</Label>
+              <Select value={newRescheduleTime} onValueChange={setNewRescheduleTime} disabled={!newRescheduleDate || availableTimes.length === 0}>
+                <SelectTrigger id="time">
+                  <SelectValue placeholder={availableTimes.length === 0 ? "Sin horarios disponibles" : "Seleccionar hora"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableTimes.map(time => (
+                    <SelectItem key={time} value={time}>
+                      {time}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRescheduleDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSaveReschedule} disabled={saving}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Guardar Cambios
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
