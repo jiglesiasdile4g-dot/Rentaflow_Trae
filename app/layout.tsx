@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
 const robotoMono = Roboto_Mono({ subsets: ["latin"], variable: "--font-mono" })
 
 export const metadata: Metadata = {
-  title: "RentaFlow - Dashboard",
+  title: "RentAFlow",
   description: "Sistema de gestión de leads y propiedades",
   generator: "v0.app",
 }

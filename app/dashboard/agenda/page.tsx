@@ -37,6 +37,7 @@ interface TimeSlot {
   id?: number
   hora_inicio: string
   hora_fin: string
+  anuncio_id?: string | number | null
 }
 
 interface AgendaItem {
@@ -44,6 +45,15 @@ interface AgendaItem {
   fecha: string | null
   hora_inicio: string
   hora_fin: string
+  anuncio_id: string | number | null
+}
+
+interface AnuncioOption {
+  ida: string | number
+  Referencia: string
+  Direccion: string
+  duracion_visita?: number
+  tiempo_entre_visitas?: number
 }
 
 interface ScheduledVisit {
@@ -94,6 +104,7 @@ export default function AgendaPage() {
   const [newRescheduleDate, setNewRescheduleDate] = useState<Date | undefined>(undefined)
   const [newRescheduleTime, setNewRescheduleTime] = useState("")
   const [availableTimes, setAvailableTimes] = useState<string[]>([])
+  const [availableAnuncios, setAvailableAnuncios] = useState<AnuncioOption[]>([])
 
   const { toast } = useToast()
   const supabase = createClient()
@@ -160,6 +171,48 @@ export default function AgendaPage() {
     fetchAgentAndSchedule()
   }, [inmobiliariaId])
 
+  // Fetch available anuncios for the selector
+  useEffect(() => {
+    const fetchAnuncios = async () => {
+      if (!inmobiliariaId) return
+
+      try {
+        console.log("Fetching anuncios for agenda, inmobiliariaId:", inmobiliariaId)
+        const { data, error } = await supabase
+          .from("Anuncios")
+          .select("ida, Referencia, Direccion, duracion_visita, tiempo_entre_visitas")
+          .eq("usuario", inmobiliariaId)
+          // .eq("Activacion", "Activo") // Show all to ensure we can resolve references for existing visits
+          .order("Referencia")
+
+        if (error) {
+          console.log("Error fetching with new columns, trying fallback:", error.message)
+          // Fallback if columns don't exist yet
+          if (error.code === 'PGRST204' || error.message.includes('duracion_visita') || error.message.includes('does not exist')) {
+             const { data: dataFallback, error: errorFallback } = await supabase
+              .from("Anuncios")
+              .select("ida, Referencia, Direccion")
+              .eq("usuario", inmobiliariaId)
+              .order("Referencia")
+              
+             if (!errorFallback) {
+                setAvailableAnuncios(dataFallback || [])
+                return
+             }
+          }
+          console.error("Error fetching anuncios:", error)
+        } else {
+          console.log("Anuncios fetched:", data?.length)
+          setAvailableAnuncios(data || [])
+        }
+      } catch (err) {
+        console.error("Error loading anuncios:", err)
+      }
+    }
+
+    fetchAnuncios()
+  }, [inmobiliariaId])
+
   // Calculate available times when date changes
   useEffect(() => {
     if (!newRescheduleDate || !agentId) {
@@ -177,10 +230,10 @@ export default function AgendaPage() {
       return
     }
     
-    // 2. Generate all possible 15-min start times within these slots
+    // 2. Generate all possible start times within these slots
     let candidates: string[] = []
     
-    const generateSlots = (startStr: string, endStr: string) => {
+    const generateSlots = (startStr: string, endStr: string, duration: number = 20, gap: number = 5) => {
       const slots: string[] = []
       const [startH, startM] = startStr.split(':').map(Number)
       const [endH, endM] = endStr.split(':').map(Number)
@@ -188,12 +241,14 @@ export default function AgendaPage() {
       let currentMins = startH * 60 + startM
       const endMins = endH * 60 + endM
       
-      // 15 minute intervals
-      while (currentMins < endMins) {
+      // Use configured duration + gap
+      const step = duration + gap
+      
+      while (currentMins + duration <= endMins) {
         const h = Math.floor(currentMins / 60)
         const m = currentMins % 60
         slots.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`)
-        currentMins += 15
+        currentMins += step
       }
       return slots
     }
@@ -202,13 +257,77 @@ export default function AgendaPage() {
       // Ensure we use HH:mm format
       const start = slot.hora_inicio.slice(0, 5)
       const end = slot.hora_fin.slice(0, 5)
-      candidates = [...candidates, ...generateSlots(start, end)]
+      
+      // Determine duration/gap based on the visit being rescheduled
+      // We prioritize the configuration of the property related to the visit
+      let duration = 20
+      let gap = 5
+      
+      if (visitToReschedule) {
+        // Find property in availableAnuncios by matching reference or similar logic
+        // The visit has 'Inmueble' string which is usually the Reference
+        const visitInmueble = visitToReschedule.Inmueble?.toLowerCase() || ""
+        
+        const relatedAnuncio = availableAnuncios.find(a => {
+           const ref = a.Referencia?.toLowerCase() || ""
+           const dir = a.Direccion?.toLowerCase() || ""
+           return (ref && ref === visitInmueble) || (dir && dir.includes(visitInmueble)) || (visitInmueble && dir && visitInmueble.includes(dir))
+        })
+        
+        if (relatedAnuncio) {
+          console.log("Found related anuncio config:", relatedAnuncio.Referencia, relatedAnuncio.duracion_visita, relatedAnuncio.tiempo_entre_visitas)
+          duration = relatedAnuncio.duracion_visita || 20
+          gap = relatedAnuncio.tiempo_entre_visitas ?? 5
+        } else if (slot.anuncio_id) {
+           // Fallback to slot configuration if visit property not found
+           const slotAnuncio = availableAnuncios.find(a => a.ida === slot.anuncio_id)
+           if (slotAnuncio) {
+             duration = slotAnuncio.duracion_visita || 20
+             gap = slotAnuncio.tiempo_entre_visitas ?? 5
+           }
+        }
+      } else if (slot.anuncio_id) {
+        // If we are just viewing slots (no reschedule context yet?), use slot config
+        const anuncio = availableAnuncios.find(a => a.ida === slot.anuncio_id)
+        if (anuncio) {
+          duration = anuncio.duracion_visita || 20
+          gap = anuncio.tiempo_entre_visitas ?? 5
+        }
+      }
+      
+      console.log(`Generating slots for ${start}-${end} with duration ${duration} and gap ${gap}`)
+      candidates = [...candidates, ...generateSlots(start, end, duration, gap)]
     })
     
     // Deduplicate and sort
     candidates = Array.from(new Set(candidates)).sort()
     
     // 3. Filter out times occupied by other visits
+    // We must ensure the new slot doesn't overlap with any existing visit
+    // For this check, we need to know the duration of the CANDIDATE slot (which we just determined)
+    // AND the duration of EXISTING visits.
+    
+    // Since 'candidates' is just a list of strings, we lost the specific duration associated with each candidate if mixed.
+    // However, usually rescheduling is for one specific visit type.
+    
+    // Let's assume the duration for the visit we are scheduling is constant for all candidates generated
+    // (which is true if we base it on visitToReschedule)
+    let activeDuration = 20
+    let activeGap = 5 // Default gap
+    
+    if (visitToReschedule) {
+        const visitInmueble = visitToReschedule.Inmueble?.toLowerCase() || ""
+        const relatedAnuncio = availableAnuncios.find(a => {
+           const ref = a.Referencia?.toLowerCase() || ""
+           const dir = a.Direccion?.toLowerCase() || ""
+           return (ref && ref === visitInmueble) || (dir && dir.includes(visitInmueble)) || (visitInmueble && dir && visitInmueble.includes(dir))
+        })
+        if (relatedAnuncio) {
+            activeDuration = relatedAnuncio.duracion_visita || 20
+            activeGap = relatedAnuncio.tiempo_entre_visitas ?? 5
+        }
+    }
+
     const existingVisitsOnDay = scheduledVisits.filter(v => {
       // Ignore the one we are modifying
       if (visitToReschedule && v.id === visitToReschedule.id) return false
@@ -218,12 +337,56 @@ export default function AgendaPage() {
       return format(vDate, "yyyy-MM-dd") === dateStr
     })
     
-    const occupiedTimes = new Set(existingVisitsOnDay.map(v => {
-       const d = safeDate(v.fecha_de_visita)
-       return d ? format(d, "HH:mm") : ""
-    }).filter(Boolean))
-    
-    const finalTimes = candidates.filter(t => !occupiedTimes.has(t))
+    const isOverlapping = (start1: number, end1: number, start2: number, end2: number) => {
+        // Simple interval overlap check: [start1, end1) vs [start2, end2)
+        // Two intervals overlap if max(start1, start2) < min(end1, end2)
+        return Math.max(start1, start2) < Math.min(end1, end2)
+    }
+
+    const finalTimes = candidates.filter(t => {
+       const [th, tm] = t.split(':').map(Number)
+       const tStart = th * 60 + tm
+       // The time we occupy is duration + gap (to ensure we leave gap after us)
+       // But wait, the "gap" is effectively a buffer. 
+       // If I book 10:00 (20 min + 5 gap), I occupy 10:00-10:25.
+       // The next person can start at 10:25.
+       // So for collision check, we treat my slot as [Start, Start + Duration + Gap).
+       const tEnd = tStart + activeDuration + activeGap
+
+       // Check collision with any existing visit
+       return !existingVisitsOnDay.some(v => {
+          const d = safeDate(v.fecha_de_visita)
+          if (!d) return false
+          const [vh, vm] = format(d, "HH:mm").split(':').map(Number)
+          const vStart = vh * 60 + vm
+          
+          // Ideally we should know the duration of the EXISTING visit 'v'
+          // We can try to find its property config too
+          let vDuration = 20
+          let vGap = 5
+          
+          const vInmueble = v.Inmueble?.toLowerCase() || ""
+          const vAnuncio = availableAnuncios.find(a => {
+             const ref = a.Referencia?.toLowerCase() || ""
+             const dir = a.Direccion?.toLowerCase() || ""
+             return (ref && ref === vInmueble) || (dir && dir.includes(vInmueble)) || (vInmueble && dir && vInmueble.includes(dir))
+          })
+          
+          if (vAnuncio) {
+              vDuration = vAnuncio.duracion_visita || 20
+              vGap = vAnuncio.tiempo_entre_visitas ?? 5
+          }
+          
+          // The existing visit occupies [vStart, vStart + vDuration + vGap)
+          const vEnd = vStart + vDuration + vGap
+          
+          const overlaps = isOverlapping(tStart, tEnd, vStart, vEnd)
+          if (overlaps) {
+             console.log(`Collision detected: Candidate ${t} (${tStart}-${tEnd}) overlaps with Visit ${v.id} at ${format(d, "HH:mm")} (${vStart}-${vEnd})`)
+          }
+          return overlaps
+       })
+    })
     
     setAvailableTimes(finalTimes)
     
@@ -242,7 +405,8 @@ export default function AgendaPage() {
           .map(item => ({
             id: item.id,
             hora_inicio: item.hora_inicio.slice(0, 5),
-            hora_fin: item.hora_fin.slice(0, 5)
+            hora_fin: item.hora_fin.slice(0, 5),
+            anuncio_id: item.anuncio_id
           }))
           .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
         
@@ -424,7 +588,7 @@ export default function AgendaPage() {
     }
     
     if (foundStart) {
-      setCurrentSlots(prev => [...prev, { hora_inicio: foundStart, hora_fin: foundEnd }])
+      setCurrentSlots(prev => [...prev, { hora_inicio: foundStart, hora_fin: foundEnd, anuncio_id: null }])
     } else {
        toast({
         title: "Agenda completa",
@@ -442,23 +606,25 @@ export default function AgendaPage() {
     })
   }
 
-  const handleTimeChange = (index: number, field: "hora_inicio" | "hora_fin", value: string) => {
+  const handleSlotChange = (index: number, field: keyof TimeSlot, value: any) => {
     const newSlots = [...currentSlots]
     const updatedSlot = { ...newSlots[index], [field]: value }
     
-    // Check overlap with OTHER slots
-    const otherSlots = newSlots.filter((_, i) => i !== index)
-    const isOverlapping = otherSlots.some(slot => 
-       (updatedSlot.hora_inicio < slot.hora_fin && slot.hora_inicio < updatedSlot.hora_fin)
-    )
-    
-    if (isOverlapping) {
-       toast({
-        title: "Superposición de horarios",
-        description: "El horario seleccionado se cruza con otro existente.",
-        variant: "destructive",
-      })
-      return
+    // Check overlap with OTHER slots if time changed
+    if (field === "hora_inicio" || field === "hora_fin") {
+      const otherSlots = newSlots.filter((_, i) => i !== index)
+      const isOverlapping = otherSlots.some(slot => 
+         (updatedSlot.hora_inicio < slot.hora_fin && slot.hora_inicio < updatedSlot.hora_fin)
+      )
+      
+      if (isOverlapping) {
+         toast({
+          title: "Superposición de horarios",
+          description: "El horario seleccionado se cruza con otro existente.",
+          variant: "destructive",
+        })
+        return
+      }
     }
 
     newSlots[index] = updatedSlot
@@ -695,7 +861,8 @@ export default function AgendaPage() {
         agente_id: agentId,
         fecha: selectedDateStr,
         hora_inicio: slot.hora_inicio,
-        hora_fin: slot.hora_fin
+        hora_fin: slot.hora_fin,
+        anuncio_id: slot.anuncio_id
       }))
 
       if (newSlots.length > 0) {
@@ -720,11 +887,18 @@ export default function AgendaPage() {
 
       setIsDialogOpen(false)
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error saving agenda:", err)
+      let message = "No se pudieron guardar los cambios."
+      
+      // Check for missing column error (PGRST204 or specific message)
+      if (err?.code === "PGRST204" || err?.message?.includes("anuncio_id")) {
+        message = "Error de configuración: Falta la columna 'anuncio_id' en la base de datos. Por favor, ejecute el script de migración 013."
+      }
+      
       toast({
-        title: "Error",
-        description: "No se pudieron guardar los cambios.",
+        title: "Error al guardar",
+        description: message,
         variant: "destructive",
       })
     } finally {
@@ -895,13 +1069,29 @@ export default function AgendaPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {currentSlots.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {currentSlots.map((slot, i) => (
-                        <div key={i} className="px-2 py-1 bg-muted rounded-full text-[10px] font-medium flex items-center gap-1">
-                          <Clock className="h-3 w-3 text-muted-foreground" />
-                          {slot.hora_inicio} - {slot.hora_fin}
-                        </div>
-                      ))}
+                    <div className="flex flex-col gap-2">
+                      {currentSlots.map((slot, i) => {
+                        const anuncio = availableAnuncios.find(a => a.ida === slot.anuncio_id)
+                        return (
+                          <div key={i} className="px-2 py-1.5 bg-muted rounded-md text-xs font-medium flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span>{slot.hora_inicio} - {slot.hora_fin}</span>
+                            </div>
+                            {anuncio && (
+                              <>
+                                <div className="h-3 w-[1px] bg-border mx-1" />
+                                <div className="flex items-center gap-1.5 min-w-0 overflow-hidden text-muted-foreground">
+                                  <Building className="h-3.5 w-3.5 shrink-0" />
+                                  <span className="truncate" title={`${anuncio.Referencia} - ${anuncio.Direccion}`}>
+                                    {anuncio.Referencia}
+                                  </span>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
 
@@ -940,41 +1130,73 @@ export default function AgendaPage() {
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             {currentSlots.map((slot, index) => (
                               <div key={index} className="flex flex-col gap-2 p-3 border rounded-lg bg-card text-card-foreground shadow-sm relative group hover:border-primary/50 transition-colors">
-                                <div className="flex items-center gap-2">
-                                  <div className="flex-1 space-y-1">
-                                    <Label htmlFor={`start-${index}`} className="text-[10px] text-muted-foreground">Inicio</Label>
-                                    <div className="relative">
-                                      <Clock className="absolute left-2.5 top-2.5 h-3 w-3 text-muted-foreground" />
-                                      <select
-                                        id={`start-${index}`}
-                                        className="w-full pl-8 h-8 rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
-                                        value={slot.hora_inicio}
-                                        onChange={(e) => handleTimeChange(index, "hora_inicio", e.target.value)}
-                                      >
-                                        {timeOptions.map((time) => (
-                                          <option key={time} value={time}>{time}</option>
-                                        ))}
-                                      </select>
+                                <div className="flex flex-col gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1 space-y-1">
+                                      <Label htmlFor={`start-${index}`} className="text-[10px] text-muted-foreground">Inicio</Label>
+                                      <div className="relative">
+                                        <Clock className="absolute left-2.5 top-2.5 h-3 w-3 text-muted-foreground" />
+                                        <select
+                                          id={`start-${index}`}
+                                          className="w-full pl-8 h-8 rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
+                                          value={slot.hora_inicio}
+                                          onChange={(e) => handleSlotChange(index, "hora_inicio", e.target.value)}
+                                        >
+                                          {timeOptions.map((time) => (
+                                            <option key={time} value={time}>{time}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    </div>
+                                    <span className="text-muted-foreground mt-5">-</span>
+                                    <div className="flex-1 space-y-1">
+                                      <Label htmlFor={`end-${index}`} className="text-[10px] text-muted-foreground">Fin</Label>
+                                      <div className="relative">
+                                        <Clock className="absolute left-2.5 top-2.5 h-3 w-3 text-muted-foreground" />
+                                        <select
+                                          id={`end-${index}`}
+                                          className="w-full pl-8 h-8 rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
+                                          value={slot.hora_fin}
+                                          onChange={(e) => handleSlotChange(index, "hora_fin", e.target.value)}
+                                        >
+                                          {timeOptions.map((time) => (
+                                            <option key={time} value={time}>{time}</option>
+                                          ))}
+                                        </select>
+                                      </div>
                                     </div>
                                   </div>
-                                  <span className="text-muted-foreground mt-5">-</span>
-                                  <div className="flex-1 space-y-1">
-                                    <Label htmlFor={`end-${index}`} className="text-[10px] text-muted-foreground">Fin</Label>
+                                  
+                                  <div className="space-y-1">
+                                    <Label className="text-[10px] text-muted-foreground">Inmueble (Opcional)</Label>
                                     <div className="relative">
-                                      <Clock className="absolute left-2.5 top-2.5 h-3 w-3 text-muted-foreground" />
-                                      <select
-                                        id={`end-${index}`}
-                                        className="w-full pl-8 h-8 rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
-                                        value={slot.hora_fin}
-                                        onChange={(e) => handleTimeChange(index, "hora_fin", e.target.value)}
+                                      <Select
+                                        value={slot.anuncio_id ? String(slot.anuncio_id) : "unassigned"}
+                                        onValueChange={(val) => handleSlotChange(index, "anuncio_id", val === "unassigned" ? null : val)}
                                       >
-                                        {timeOptions.map((time) => (
-                                          <option key={time} value={time}>{time}</option>
-                                        ))}
-                                      </select>
+                                        <SelectTrigger className="w-full h-8 pl-8 text-xs bg-background">
+                                          <Building className="absolute left-2.5 top-2.5 h-3 w-3 text-muted-foreground z-10" />
+                                          <SelectValue placeholder="Cualquiera" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="unassigned">Cualquiera</SelectItem>
+                                          {availableAnuncios.length > 0 ? (
+                                            availableAnuncios.map(ad => (
+                                              <SelectItem key={ad.ida} value={String(ad.ida)}>
+                                                {ad.Referencia} - {ad.Direccion}
+                                              </SelectItem>
+                                            ))
+                                          ) : (
+                                            <div className="p-2 text-xs text-muted-foreground text-center">
+                                              No hay inmuebles disponibles
+                                            </div>
+                                          )}
+                                        </SelectContent>
+                                      </Select>
                                     </div>
                                   </div>
                                 </div>
+                              
                                 <Button
                                   variant="ghost"
                                   size="icon"

@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Menu, X } from "lucide-react"
+import { Menu, ChevronLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Sidebar from "@/components/sidebar"
 
@@ -16,22 +16,26 @@ interface SidebarLayoutProps {
 }
 
 export default function SidebarLayout({ user, children }: SidebarLayoutProps) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true
-    const saved = localStorage.getItem("rf_sidebar_open")
-    return saved ? saved === "1" : true
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false
+    const saved = localStorage.getItem("rf_sidebar_collapsed")
+    if (saved !== null) {
+      return saved === "1"
+    }
+    // Default to collapsed on mobile/tablet (< 1024px)
+    return window.innerWidth < 1024
   })
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("rf_sidebar_open", isSidebarOpen ? "1" : "0")
+      localStorage.setItem("rf_sidebar_collapsed", isCollapsed ? "1" : "0")
     }
-  }, [isSidebarOpen])
+  }, [isCollapsed])
 
   return (
     <div className="flex h-screen bg-background">
-      <div className={`transition-all duration-300 ${isSidebarOpen ? "w-64" : "w-0"} overflow-hidden`}>
-        <Sidebar user={user} />
+      <div className="flex-shrink-0 h-full">
+        <Sidebar user={user} collapsed={isCollapsed} />
       </div>
 
       <main className="flex-1 overflow-y-auto relative">
@@ -39,13 +43,13 @@ export default function SidebarLayout({ user, children }: SidebarLayoutProps) {
           variant="ghost"
           size="icon"
           className="absolute top-4 left-4 z-10"
-          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          aria-label={isSidebarOpen ? "Ocultar panel lateral" : "Mostrar panel lateral"}
-          title={isSidebarOpen ? "Ocultar panel lateral" : "Mostrar panel lateral"}
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          aria-label={isCollapsed ? "Expandir panel lateral" : "Contraer panel lateral"}
+          title={isCollapsed ? "Expandir panel lateral" : "Contraer panel lateral"}
         >
-          {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          {isCollapsed ? <Menu className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
         </Button>
-        <div className={`${isSidebarOpen ? "pl-16" : "pl-0"}`}>{children}</div>
+        <div className="pl-16">{children}</div>
       </main>
     </div>
   )

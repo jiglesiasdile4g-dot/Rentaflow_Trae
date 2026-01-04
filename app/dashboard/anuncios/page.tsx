@@ -91,6 +91,8 @@ interface AnuncioCard {
   }
   // Added descartados field
   descartados?: number
+  // Availability indicator
+  hasAvailability?: boolean
 }
 
 interface CreationStep {
@@ -114,6 +116,8 @@ interface EditFormData {
   precio: string
   portal: string
   activacion: string
+  duracion_visita?: string
+  tiempo_entre_visitas?: string
 }
 
 const DEFAULT_FAQ_QUESTIONS = [
@@ -2183,6 +2187,27 @@ export default function AnunciosPage() {
         return dateB - dateA
       })
 
+      try {
+        const todayStr = new Date().toISOString().split('T')[0]
+        const anuncioIds = cards.map(c => c.id)
+        
+        if (anuncioIds.length > 0) {
+          const { data: agendaData } = await supabase
+            .from("Agendas")
+            .select("anuncio_id")
+            .in("anuncio_id", anuncioIds)
+            .gte("fecha", todayStr)
+          
+          const adsWithAvailability = new Set(agendaData?.map(a => String(a.anuncio_id)) || [])
+          
+          cards.forEach(card => {
+            card.hasAvailability = adsWithAvailability.has(String(card.id))
+          })
+        }
+      } catch (e) {
+        console.log("[v0] Error checking availability:", e)
+      }
+
       setAnunciosCards(cards)
       setTotalLeads(totalLeadsSum)
       setTotalCompletos(totalCompletosSum)
@@ -2458,6 +2483,8 @@ export default function AnunciosPage() {
         precio: (anuncioData.Precio || 0).toString(),
         portal: anuncioData.Portal || "",
         activacion: anuncioData.Activacion || "Inactivo",
+        duracion_visita: (anuncioData.duracion_visita || 20).toString(),
+        tiempo_entre_visitas: (anuncioData.tiempo_entre_visitas || 5).toString(),
       })
 
       console.log("[v0] Edit form preloaded with database data")
@@ -2486,7 +2513,8 @@ export default function AnunciosPage() {
         Precio: Number.parseFloat(editFormData.precio) || 0,
         Portal: editFormData.portal,
         Activacion: editFormData.activacion,
-        
+        duracion_visita: Number.parseInt(editFormData.duracion_visita || "20") || 20,
+        tiempo_entre_visitas: Number.parseInt(editFormData.tiempo_entre_visitas || "5") || 5,
       }
 
       const { error } = await supabase.from("Anuncios").update(updateData).eq("ida", editingAnuncio.id)
@@ -3980,8 +4008,24 @@ export default function AnunciosPage() {
                               <p className="text-xs text-muted-foreground truncate mt-0.5">{anuncio.direccion}</p>
                             </div>
 
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-2">
                               
+                              {/* Availability Indicator */}
+                              {anuncio.hasAvailability ? (
+                                <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 border border-emerald-300 text-xs font-bold text-emerald-900 dark:bg-emerald-950 dark:border-emerald-700 dark:text-emerald-100 shadow-sm">
+                                  <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600 dark:bg-emerald-400"></span>
+                                  </span>
+                                  Huecos libres
+                                </div>
+                              ) : (
+                                <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-300 text-xs font-bold text-slate-700 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-300 shadow-sm">
+                                  <div className="h-2 w-2 rounded-full bg-slate-400 dark:bg-slate-500" />
+                                  Sin huecos
+                                </div>
+                              )}
+
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -4767,6 +4811,36 @@ export default function AnunciosPage() {
                   className="col-span-3"
                   placeholder="Portal de publicación"
                 />
+              </div>
+
+              <div className="grid grid-cols-4 gap-4">
+                <Label className="text-right pt-2">Configuración Visitas</Label>
+                <div className="col-span-3 flex gap-4">
+                   <div className="flex-1 space-y-2">
+                     <Label htmlFor="duracion_visita" className="text-xs text-muted-foreground">Duración (min)</Label>
+                     <Input
+                        id="duracion_visita"
+                        type="number"
+                        min="5"
+                        step="5"
+                        value={editFormData.duracion_visita}
+                        onChange={(e) => setEditFormData((prev) => ({ ...prev, duracion_visita: e.target.value }))}
+                        placeholder="20"
+                      />
+                   </div>
+                   <div className="flex-1 space-y-2">
+                     <Label htmlFor="tiempo_entre_visitas" className="text-xs text-muted-foreground">Gap (min)</Label>
+                     <Input
+                        id="tiempo_entre_visitas"
+                        type="number"
+                        min="0"
+                        step="5"
+                        value={editFormData.tiempo_entre_visitas}
+                        onChange={(e) => setEditFormData((prev) => ({ ...prev, tiempo_entre_visitas: e.target.value }))}
+                        placeholder="5"
+                      />
+                   </div>
+                </div>
               </div>
               
                       <div className="grid grid-cols-4 items-center gap-4">

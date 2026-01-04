@@ -14,6 +14,7 @@ interface SidebarProps {
     email?: string
     id: string
   }
+  collapsed?: boolean
 }
 
 const menuItems = [
@@ -49,7 +50,7 @@ const menuItems = [
   },
 ]
 
-export default function Sidebar({ user }: SidebarProps) {
+export default function Sidebar({ user, collapsed = false }: SidebarProps) {
   const pathname = usePathname()
   const { inmobiliariaId, inmobiliariaNombre, loading, isAdmin, role, setAdminSelectedInmobiliaria } = useInmobiliaria()
   const supabase = createClient()
@@ -70,12 +71,19 @@ export default function Sidebar({ user }: SidebarProps) {
   }, [isAdmin, supabase])
 
   return (
-    <div className="w-64 bg-card border-r border-border flex flex-col">
+    <div className={cn("bg-card border-r border-border flex flex-col h-full transition-all duration-300 overflow-y-auto overflow-x-hidden", collapsed ? "w-[70px] items-center" : "w-64")}>
       {/* Header */}
-      <div className="p-6 border-b border-border">
-        <h1 className="text-lg font-semibold text-foreground">Dashboard Básico</h1>
-        <p className="text-xs text-muted-foreground">Versión {APP_VERSION}</p>
-        {isAdmin && (
+      <div className={cn("border-b border-border flex flex-col", collapsed ? "p-4 items-center justify-center h-[88px]" : "p-6")}>
+        {!collapsed ? (
+          <>
+            <h1 className="text-lg font-semibold text-foreground truncate">{APP_NAME}</h1>
+            <p className="text-xs text-muted-foreground">Versión {APP_VERSION}</p>
+          </>
+        ) : (
+          <span className="font-bold text-xl">RF</span>
+        )}
+        
+        {isAdmin && !collapsed && (
           <div className="mt-3">
             <label className="text-xs text-muted-foreground">Seleccionar inmobiliaria</label>
             <select
@@ -108,7 +116,7 @@ export default function Sidebar({ user }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4">
+      <nav className="flex-1 p-2 w-full">
         <ul className="space-y-2">
           {menuItems.map((item) => {
             const Icon = item.icon
@@ -124,10 +132,12 @@ export default function Sidebar({ user }: SidebarProps) {
                     isActive
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground hover:bg-accent",
+                    collapsed && "justify-center px-2"
                   )}
+                  title={collapsed ? item.title : undefined}
                 >
-                  <Icon className="h-4 w-4" />
-                  {item.title}
+                  <Icon className="h-4 w-4 min-h-4 min-w-4" />
+                  {!collapsed && <span className="truncate">{item.title}</span>}
                 </Link>
               </li>
             )
@@ -136,28 +146,32 @@ export default function Sidebar({ user }: SidebarProps) {
       </nav>
 
       {/* User info and logout */}
-      <div className="p-4 border-t border-border">
-        {!loading && inmobiliariaNombre && (
+      <div className={cn("border-t border-border flex flex-col", collapsed ? "p-2 items-center" : "p-4")}>
+        {!loading && inmobiliariaNombre && !collapsed && (
           <div className="flex items-center gap-3 mb-2">
             <Building2 className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground truncate">{inmobiliariaNombre}</span>
           </div>
         )}
-        <div className="flex items-start gap-3 mb-3">
+        <div className={cn("flex items-start mb-3", collapsed ? "justify-center" : "gap-3")}>
           <User className="h-4 w-4 text-muted-foreground mt-0.5" />
-          <div className="flex flex-col min-w-0">
-            <span className="text-sm text-muted-foreground truncate" title={user.email}>{user.email}</span>
-            <div className="flex items-center gap-1.5 text-xs mt-0.5">
-               {role && <span className="font-medium text-foreground capitalize">{role}</span>}
-               {isAdmin && (
-                  <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
-                    Superusuario
-                  </span>
-               )}
+          {!collapsed && (
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm text-muted-foreground truncate" title={user.email}>{user.email}</span>
+              <div className="flex items-center gap-1.5 text-xs mt-0.5">
+                {role && <span className="font-medium text-foreground capitalize">{role}</span>}
+                {isAdmin && (
+                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
+                      Superusuario
+                    </span>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
-        <LogoutButton />
+        <div className={cn("flex", collapsed ? "justify-center" : "")}>
+           <LogoutButton />
+        </div>
       </div>
     </div>
   )

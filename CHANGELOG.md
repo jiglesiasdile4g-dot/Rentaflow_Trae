@@ -1,3 +1,15 @@
+## [0.8.4] (2026-01-04)
+
+### Features
+
+* **sidebar:** modo contraído (icon-only) con persistencia de estado y adaptación automática en móvil/tablet
+* **ui:** cambio de nombre de aplicación a "RentAFlow"
+
+### Fixes
+
+* **sidebar:** mejora de accesibilidad y visibilidad de iconos en modo móvil
+
+
 ## [0.8.3] (2025-12-23)
 
 

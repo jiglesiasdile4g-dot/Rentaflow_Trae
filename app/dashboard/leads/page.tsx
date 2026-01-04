@@ -127,6 +127,10 @@ interface Advertisement {
   Portal?: string
   Descripcion?: string
   fecha_activacion?: string
+  Duracion_visita?: number
+  Gap_visita?: number
+  duracion_visita?: number
+  tiempo_entre_visitas?: number
 }
 
 interface Communication {
@@ -233,6 +237,7 @@ export default function LeadsPage() {
   // State for agent availability
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
   const [loadingAvailability, setLoadingAvailability] = useState(false)
+  const [availabilityReason, setAvailabilityReason] = useState<"none" | "no_config" | "blocked_by_property" | "available">("none")
   const [availableDates, setAvailableDates] = useState<string[]>([])
   const [loadingDates, setLoadingDates] = useState(false)
 
@@ -276,10 +281,12 @@ export default function LeadsPage() {
     async function fetchAvailability() {
       if (!selectedAgenteId || !newVisitDateDate) {
         setAvailableSlots([])
+        setAvailabilityReason("none")
         return
       }
 
       setLoadingAvailability(true)
+      setAvailabilityReason("none")
       try {
         const supabase = createBrowserClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -287,16 +294,74 @@ export default function LeadsPage() {
         )
         const { data, error } = await supabase
           .from("Agendas")
-          .select("hora_inicio, hora_fin")
+          .select("hora_inicio, hora_fin, anuncio_id")
           .eq("agente_id", selectedAgenteId)
           .eq("fecha", newVisitDateDate)
 
         if (error) throw error
 
+        // Normalize date to ISO YYYY-MM-DD
+        let isoDate = newVisitDateDate
+        if (newVisitDateDate.includes('/')) {
+          const [day, month, year] = newVisitDateDate.split('/')
+          isoDate = `${year}-${month}-${day}`
+        }
+
+        // Fetch existing visits for the agent on this date
+        const startOfDay = `${isoDate}T00:00:00`
+        const endOfDay = `${isoDate}T23:59:59`
+        
+        const { data: existingVisits } = await supabase
+          .from("Clientes")
+          .select("fecha_de_visita, Inmueble")
+          .eq("idag", selectedAgenteId)
+          .gte("fecha_de_visita", startOfDay)
+          .lte("fecha_de_visita", endOfDay)
+          
+        const busyRanges: { start: number, end: number }[] = []
+        if (existingVisits) {
+          existingVisits.forEach(v => {
+            if (v.fecha_de_visita) {
+              const start = new Date(v.fecha_de_visita).getTime()
+              // Find ad for this visit to get duration
+              const visitAd = advertisements.find(a => 
+                a.Referencia === v.Inmueble || 
+                a.Direccion === v.Inmueble ||
+                (v.Inmueble && a.Direccion && v.Inmueble.includes(a.Direccion)) ||
+                (v.Inmueble && a.Referencia && v.Inmueble.includes(a.Referencia))
+              )
+              const dur = (visitAd?.Duracion_visita || 30) * 60000
+              const gap = (visitAd?.Gap_visita || 0) * 60000
+              busyRanges.push({ start, end: start + dur + gap })
+            }
+          })
+        }
+
         if (data && data.length > 0) {
+          // Determine the target anuncio_id for the current lead
+          let targetAnuncioId: string | null = null
+          if (selectedLeadForVisit && selectedLeadForVisit.Inmueble) {
+             const ad = advertisements.find(a => 
+               a.Referencia === selectedLeadForVisit.Inmueble ||
+               a.Direccion === selectedLeadForVisit.Inmueble ||
+               (selectedLeadForVisit.Inmueble && a.Direccion && selectedLeadForVisit.Inmueble.includes(a.Direccion))
+             )
+             if (ad) {
+               targetAnuncioId = ad.ida
+             }
+          }
+
           const slots: string[] = []
+          let hasBlockedSlots = false
+
           data.forEach(range => {
             if (!range.hora_inicio || !range.hora_fin) return
+
+            // Filter: if slot is assigned to another property, skip it
+            if (range.anuncio_id && targetAnuncioId && range.anuncio_id !== targetAnuncioId) {
+               hasBlockedSlots = true
+               return
+            }
             
             let start = range.hora_inicio.slice(0, 5)
             const end = range.hora_fin.slice(0, 5)
@@ -306,29 +371,71 @@ export default function LeadsPage() {
             const [endH, endM] = end.split(':').map(Number)
             const endMins = endH * 60 + endM
 
-            // Generate slots every 10 minutes
+            // Generate slots every 5 minutes
             while (currentMins < endMins) {
               const slotH = Math.floor(currentMins / 60)
               const slotM = currentMins % 60
               const timeStr = `${slotH.toString().padStart(2, '0')}:${slotM.toString().padStart(2, '0')}`
               slots.push(timeStr)
-              currentMins += 10 
+              currentMins += 5 
             }
           })
           slots.sort()
-          setAvailableSlots([...new Set(slots)])
+          
+          // Determine duration for CURRENT visit
+          let currentDur = 30 * 60000
+          let currentGap = 0
+          if (selectedLeadForVisit && selectedLeadForVisit.Inmueble) {
+             const ad = advertisements.find(a => 
+               a.Referencia === selectedLeadForVisit.Inmueble ||
+               a.Direccion === selectedLeadForVisit.Inmueble ||
+               (selectedLeadForVisit.Inmueble && a.Direccion && selectedLeadForVisit.Inmueble.includes(a.Direccion))
+             )
+             if (ad) {
+               currentDur = (ad.duracion_visita || ad.Duracion_visita || 30) * 60000
+               currentGap = (ad.tiempo_entre_visitas || ad.Gap_visita || 0) * 60000
+             }
+          }
+          const totalDur = currentDur + currentGap
+
+          const uniqueSlots = [...new Set(slots)].filter(slot => {
+             // Construct start time for this slot
+             // We need to use isoDate to ensure correct date parsing
+             const slotStart = new Date(`${isoDate}T${slot}`).getTime()
+             const slotEnd = slotStart + totalDur
+             
+             // Check overlap with busyRanges
+             // Overlap if (StartA < EndB) and (EndA > StartB)
+             return !busyRanges.some(range => (slotStart < range.end && slotEnd > range.start))
+          })
+          setAvailableSlots(uniqueSlots)
+          
+          if (uniqueSlots.length > 0) {
+            setAvailabilityReason("available")
+          } else if (hasBlockedSlots) {
+            setAvailabilityReason("blocked_by_property")
+          } else {
+             // Slots existed but generated no 10-min intervals? unlikely but possible
+             // or maybe the logic filtered them all out?
+             // If data was not empty but slots is empty, and we didn't flag hasBlockedSlots, it means ranges were weird.
+             // But if hasBlockedSlots is true, it means we skipped them because of property.
+             setAvailabilityReason(hasBlockedSlots ? "blocked_by_property" : "no_config") 
+          }
+
         } else {
           setAvailableSlots([])
+          setAvailabilityReason("no_config")
         }
       } catch (err) {
         console.error("Error fetching availability:", err)
+        setAvailabilityReason("none")
       } finally {
         setLoadingAvailability(false)
       }
     }
 
     fetchAvailability()
-  }, [selectedAgenteId, newVisitDateDate])
+  }, [selectedAgenteId, newVisitDateDate, selectedLeadForVisit, advertisements])
 
   const [planLimit, setPlanLimit] = useState<number>(1000000)
   const [planResetAt, setPlanResetAt] = useState<Date | null>(null)
@@ -2054,19 +2161,56 @@ export default function LeadsPage() {
         return
       }
 
+      // Parse DD/MM/YYYY to ISO YYYY-MM-DD if needed
+      let isoDate = newVisitDateDate
+      if (newVisitDateDate.includes('/')) {
+        const [day, month, year] = newVisitDateDate.split('/')
+        isoDate = `${year}-${month}-${day}`
+      }
+
+      // Check for collision with other visits
+      const proposedTimeStart = new Date(`${isoDate}T${newVisitDateTime}`).getTime()
+      
+      const collision = leads.find(lead => {
+        // Skip current lead
+        if (lead.id === selectedLeadForVisit.id) return false
+        // Must have a visit date
+        if (!lead.fecha_de_visita) return false
+        
+        const visitDate = new Date(lead.fecha_de_visita)
+        // Check if same time (within 1 minute tolerance)
+        const isSameTime = Math.abs(visitDate.getTime() - proposedTimeStart) < 60 * 1000
+
+        if (!isSameTime) return false
+
+        // Collision if:
+        // 1. Same Property (Property double-booked)
+        if (lead.Inmueble === selectedLeadForVisit.Inmueble) return true
+        
+        // 2. Same Agent (Agent double-booked)
+        if (lead.idag && selectedAgenteId && String(lead.idag) === String(selectedAgenteId)) return true
+        
+        return false
+      })
+
+      if (collision) {
+        const isPropertyCollision = collision.Inmueble === selectedLeadForVisit.Inmueble
+        toast({
+          title: isPropertyCollision ? "Propiedad ocupada" : "Agente ocupado",
+          description: isPropertyCollision 
+            ? `El inmueble ya tiene una visita a esa hora con ${collision.Nombre}.`
+            : `El agente ya tiene una visita programada a esa hora con ${collision.Nombre}.`,
+          variant: "destructive",
+        })
+        return
+      }
+
       console.log("[v0] handleReprogramVisit started. Lead:", selectedLeadForVisit)
       console.log("[v0] Lead ID type:", typeof selectedLeadForVisit.id, "Value:", selectedLeadForVisit.id)
 
       try {
         const supabase = createClient()
         
-        // Parse DD/MM/YYYY to ISO YYYY-MM-DD if needed
-        let isoDate = newVisitDateDate
-        if (newVisitDateDate.includes('/')) {
-            const [day, month, year] = newVisitDateDate.split('/')
-            isoDate = `${year}-${month}-${day}`
-        }
-
         const d = new Date(`${isoDate}T${newVisitDateTime}`)
         const off = d.getTimezoneOffset()
         const sign = off <= 0 ? "+" : "-"
@@ -5755,7 +5899,11 @@ export default function LeadsPage() {
                 <select
                   id="visit-agent"
                   value={selectedAgenteId}
-                  onChange={(e) => setSelectedAgenteId(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedAgenteId(e.target.value)
+                    setNewVisitDateDate("")
+                    setNewVisitDateTime("")
+                  }}
                   className="w-full p-2 border rounded-md"
                 >
                   <option value="">Seleccionar agente</option>
@@ -5774,7 +5922,10 @@ export default function LeadsPage() {
                   <div className="flex flex-col gap-1">
                     <Select
                       value={newVisitDateDate}
-                      onValueChange={setNewVisitDateDate}
+                      onValueChange={(val) => {
+                        setNewVisitDateDate(val)
+                        setNewVisitDateTime("")
+                      }}
                       disabled={!selectedAgenteId || loadingDates}
                     >
                       <SelectTrigger className={cn(
@@ -5806,26 +5957,55 @@ export default function LeadsPage() {
                         <span className="text-xs">Cargando...</span>
                       </div>
                     ) : (
-                      <Select 
-                        value={newVisitDateTime} 
-                        onValueChange={setNewVisitDateTime}
-                        disabled={availableSlots.length === 0}
-                      >
-                        <SelectTrigger className="w-full justify-start text-left font-normal">
-                          <SelectValue placeholder={availableSlots.length > 0 ? "Seleccionar hora" : "Sin disponibilidad"} />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[200px] z-[40000]">
-                          {availableSlots.length > 0 ? (
-                            availableSlots.map(slot => (
-                              <SelectItem key={slot} value={slot}>{slot}</SelectItem>
-                            ))
-                          ) : (
-                            <div className="p-2 text-sm text-muted-foreground text-center">
-                              No hay huecos disponibles
-                            </div>
-                          )}
-                        </SelectContent>
-                      </Select>
+                      <>
+                        <Select 
+                          value={newVisitDateTime} 
+                          onValueChange={setNewVisitDateTime}
+                          disabled={!newVisitDateDate || availableSlots.length === 0 || availableDates.length === 0}
+                        >
+                          <SelectTrigger className="w-full justify-start text-left font-normal">
+                            <SelectValue placeholder={
+                            !selectedAgenteId ? "Selecciona agente" :
+                            loadingDates ? "Cargando fechas..." :
+                            availableDates.length === 0 ? "No hay fechas disponibles" :
+                            !newVisitDateDate ? "Selecciona fecha" :
+                            availableSlots.length > 0 ? "Seleccionar hora" : 
+                            "Sin disponibilidad"
+                          } />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-[200px] z-[40000]">
+                            {availableSlots.length > 0 ? (
+                              availableSlots.map(slot => (
+                                <SelectItem key={slot} value={slot}>{slot}</SelectItem>
+                              ))
+                            ) : (
+                              <div className="p-2 text-sm text-muted-foreground text-center flex flex-col gap-1">
+                                <span>No hay huecos disponibles</span>
+                                {availabilityReason === "no_config" && (
+                                   <span className="text-xs text-red-400">El agente no tiene horario configurado para este día.</span>
+                                )}
+                                {availabilityReason === "blocked_by_property" && (
+                                   <span className="text-xs text-orange-400">Los huecos existentes están reservados para otros inmuebles.</span>
+                                )}
+                              </div>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        {availableSlots.length === 0 && availabilityReason !== "none" && (
+                          <div className="mt-2 p-2 rounded-md border text-sm bg-muted/30">
+                             {availabilityReason === "no_config" && (
+                                <div className="text-red-500 font-medium">
+                                  ⚠️ Sin horario configurado para este día.
+                                </div>
+                             )}
+                             {availabilityReason === "blocked_by_property" && (
+                                <div className="text-orange-500 font-medium">
+                                  🚫 Horarios reservados para otros inmuebles.
+                                </div>
+                             )}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
