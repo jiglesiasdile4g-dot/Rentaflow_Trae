@@ -18,12 +18,14 @@ interface SidebarLayoutProps {
 export default function SidebarLayout({ user, children }: SidebarLayoutProps) {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false
+    // Always default to collapsed on mobile/tablet (< 1024px) to ensure it doesn't take up space
+    if (window.innerWidth < 1024) return true
+    
     const saved = localStorage.getItem("rf_sidebar_collapsed")
     if (saved !== null) {
       return saved === "1"
     }
-    // Default to collapsed on mobile/tablet (< 1024px)
-    return window.innerWidth < 1024
+    return false
   })
 
   useEffect(() => {
@@ -35,21 +37,11 @@ export default function SidebarLayout({ user, children }: SidebarLayoutProps) {
   return (
     <div className="flex h-screen bg-background">
       <div className="flex-shrink-0 h-full">
-        <Sidebar user={user} collapsed={isCollapsed} />
+        <Sidebar user={user} collapsed={isCollapsed} onToggle={() => setIsCollapsed(!isCollapsed)} />
       </div>
 
       <main className="flex-1 overflow-y-auto relative">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute top-4 left-4 z-10"
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          aria-label={isCollapsed ? "Expandir panel lateral" : "Contraer panel lateral"}
-          title={isCollapsed ? "Expandir panel lateral" : "Contraer panel lateral"}
-        >
-          {isCollapsed ? <Menu className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
-        </Button>
-        <div className="pl-16">{children}</div>
+        <div className="w-full h-full">{children}</div>
       </main>
     </div>
   )

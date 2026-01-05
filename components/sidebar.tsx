@@ -2,12 +2,13 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Home, Megaphone, Users, Info, User, Building2, Settings, Calendar } from "lucide-react"
+import { Home, Megaphone, Users, Info, User, Building2, Settings, Calendar, ChevronsLeft, Menu } from "lucide-react"
 import LogoutButton from "@/components/logout-button"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { APP_VERSION, APP_NAME } from "@/lib/version"
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { Button } from "@/components/ui/button"
 
 interface SidebarProps {
   user: {
@@ -15,6 +16,7 @@ interface SidebarProps {
     id: string
   }
   collapsed?: boolean
+  onToggle?: () => void
 }
 
 const menuItems = [
@@ -50,7 +52,7 @@ const menuItems = [
   },
 ]
 
-export default function Sidebar({ user, collapsed = false }: SidebarProps) {
+export default function Sidebar({ user, collapsed = false, onToggle }: SidebarProps) {
   const pathname = usePathname()
   const { inmobiliariaId, inmobiliariaNombre, loading, isAdmin, role, setAdminSelectedInmobiliaria } = useInmobiliaria()
   const supabase = createClient()
@@ -73,15 +75,30 @@ export default function Sidebar({ user, collapsed = false }: SidebarProps) {
   return (
     <div className={cn("bg-card border-r border-border flex flex-col h-full transition-all duration-300 overflow-y-auto overflow-x-hidden", collapsed ? "w-[70px] items-center" : "w-64")}>
       {/* Header */}
-      <div className={cn("border-b border-border flex flex-col", collapsed ? "p-4 items-center justify-center h-[88px]" : "p-6")}>
-        {!collapsed ? (
-          <>
-            <h1 className="text-lg font-semibold text-foreground truncate">{APP_NAME}</h1>
-            <p className="text-xs text-muted-foreground">Versión {APP_VERSION}</p>
-          </>
-        ) : (
-          <span className="font-bold text-xl">RF</span>
+      <div 
+        className={cn(
+          "border-b border-border flex flex-col transition-colors", 
+          collapsed ? "p-2 items-center justify-center h-[88px]" : "p-4"
         )}
+      >
+        <div className="flex items-center justify-between w-full">
+            {!collapsed ? (
+              <>
+                <div className="flex flex-col overflow-hidden mr-2">
+                    <h1 className="text-lg font-semibold text-foreground truncate">{APP_NAME}</h1>
+                    <p className="text-xs text-muted-foreground">Versión {APP_VERSION}</p>
+                </div>
+                <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onToggle}>
+                    <ChevronsLeft className="h-4 w-4" />
+                </Button>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-1 cursor-pointer w-full" onClick={onToggle}>
+                  <span className="font-bold text-lg">RF</span>
+                  <Menu className="h-4 w-4 text-muted-foreground" />
+              </div>
+            )}
+        </div>
         
         {isAdmin && !collapsed && (
           <div className="mt-3">

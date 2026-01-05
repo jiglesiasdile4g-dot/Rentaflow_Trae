@@ -4226,8 +4226,40 @@ export default function LeadsPage() {
                                       className="text-sm mt-2"
                                     />
                                   ) : (
-                                    <div className="text-sm not-italic text-foreground whitespace-pre-wrap mt-2">
-                                      {(selectedLead as any).Observaciones || (selectedLead as any).Obsevaciones}
+                                    <div className="mt-2 space-y-2">
+                                      {(() => {
+                                        const rawText = (selectedLead as any).Observaciones || (selectedLead as any).Obsevaciones || "";
+                                        const notes = splitNotes(rawText);
+                                        
+                                        if (notes.length === 0 && rawText.trim()) {
+                                           return (
+                                             <div className="text-sm not-italic text-foreground whitespace-pre-wrap">
+                                               {rawText}
+                                             </div>
+                                           );
+                                        }
+
+                                        return notes.map((n, idx) => {
+                                          const cleanHeader = n.header.replace(/^\[|\]$/g, "")
+                                          const [dateStr, userStr] = cleanHeader.includes(" • ")
+                                            ? cleanHeader.split(" • ")
+                                            : [cleanHeader, null]
+                                          
+                                          return (
+                                            <div key={idx} className="bg-background/50 rounded-md p-2.5 border border-border/50 text-sm shadow-sm">
+                                              <div className="flex flex-col gap-0.5 mb-2 pb-2 border-b border-border/40">
+                                                <span className="text-[11px] font-semibold text-primary/80 tracking-tight">{dateStr}</span>
+                                                {userStr && (
+                                                  <span className="text-[10px] text-muted-foreground flex items-center gap-1.5 bg-muted/50 w-fit px-1.5 py-0.5 rounded-full">
+                                                    <User className="h-3 w-3" /> {userStr}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <div className="whitespace-pre-wrap leading-relaxed text-foreground/90">{n.body}</div>
+                                            </div>
+                                          )
+                                        });
+                                      })()}
                                     </div>
                                   )}
                                 </div>
@@ -6461,23 +6493,37 @@ export default function LeadsPage() {
               <div className="space-y-2">
                 <div className="text-xs text-muted-foreground font-medium">Anotaciones existentes</div>
                 <div className="space-y-2">
-                  {splitNotes(noteDialog.existing).map((n, idx) => (
-                    <div key={idx} className="border rounded-md p-2 bg-muted/50 dark:bg-input/30">
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-muted-foreground">{n.header}</div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2"
-                          onClick={() => deleteNoteEntry(idx)}
-                        >
-                          <Trash className="h-3.5 w-3.5 mr-1" />
-                          Eliminar
-                        </Button>
+                  {splitNotes(noteDialog.existing).map((n, idx) => {
+                    const cleanHeader = n.header.replace(/^\[|\]$/g, "")
+                    const [dateStr, userStr] = cleanHeader.includes(" • ")
+                      ? cleanHeader.split(" • ")
+                      : [cleanHeader, null]
+
+                    return (
+                      <div key={idx} className="border rounded-md p-2 bg-muted/50 dark:bg-input/30">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-xs font-medium text-foreground/80">{dateStr}</span>
+                            {userStr && (
+                              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                <User className="h-3 w-3" /> {userStr}
+                              </span>
+                            )}
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2"
+                            onClick={() => deleteNoteEntry(idx)}
+                          >
+                            <Trash className="h-3.5 w-3.5 mr-1" />
+                            Eliminar
+                          </Button>
+                        </div>
+                        {n.body && <div className="text-sm whitespace-pre-wrap mt-2">{n.body}</div>}
                       </div>
-                      {n.body && <div className="text-sm whitespace-pre-wrap mt-1">{n.body}</div>}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}
