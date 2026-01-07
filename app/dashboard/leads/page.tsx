@@ -1704,6 +1704,34 @@ export default function LeadsPage() {
       // Update local state
       setLeads(leads.map((lead) => (String(lead.id) === String(leadId) ? { ...lead, Estado: newStatus as Lead["Estado"] } : lead)))
 
+      if (newStatus === "Visita Propuesta") {
+        try {
+          const lead = leads.find(l => String(l.id) === String(leadId))
+          if (lead) {
+            const currentAd = advertisements.find(a => 
+              a.Referencia === lead.Inmueble || 
+              a.Direccion === lead.Inmueble ||
+              (lead.Inmueble && a.Direccion && lead.Inmueble.includes(a.Direccion))
+            )
+
+            console.log("[v0] Calling n8n webhook from updateLeadStatus", { leadId, adId: currentAd?.ida })
+            
+            fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/proponer_visita", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                lead: { ...lead, Estado: newStatus },
+                anuncio: currentAd || null
+              }),
+            }).then(res => {
+              if (!res.ok) console.error("[v0] n8n webhook error:", res.status)
+            }).catch(e => console.error("[v0] n8n webhook error:", e))
+          }
+        } catch (e) {
+          console.error("[v0] Error preparing webhook in updateLeadStatus:", e)
+        }
+      }
+
       console.log("[v0] Lead status updated successfully")
     } catch (err) {
       console.error("[v0] Error updating lead status:", err)
@@ -2305,6 +2333,27 @@ export default function LeadsPage() {
 
       setLeads((prev) => prev.map((l) => (l.id === selectedLeadForVisit.id ? { ...l, ...updatedLead } : l)))
       
+      if (updateData.Estado === "Visita Propuesta") {
+        try {
+            const currentAd = advertisements.find(a => 
+              a.Referencia === selectedLeadForVisit.Inmueble || 
+              a.Direccion === selectedLeadForVisit.Inmueble ||
+              (selectedLeadForVisit.Inmueble && a.Direccion && selectedLeadForVisit.Inmueble.includes(a.Direccion))
+            )
+
+            console.log("[v0] Calling n8n webhook from handleReprogramVisit", { leadId: selectedLeadForVisit.id })
+            
+            fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/proponer_visita", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                lead: updatedLead,
+                anuncio: currentAd || null
+              }),
+            }).then(res => { if(!res.ok) console.error("Webhook error") }).catch(e => console.error("Webhook error", e))
+        } catch(e) { console.error("Error calling webhook", e) }
+      }
+
       // Update selectedLead panel immediately
       setSelectedLead((prev) => {
           if (!prev) return prev
@@ -5064,6 +5113,38 @@ export default function LeadsPage() {
                                   setLeads((prev) =>
                                     prev.map((l) => (l.id === selectedLead.id ? { ...l, Estado: value } : l))
                                   )
+
+                                  // Call n8n webhook if status is "Visita Propuesta"
+                                  if (value === "Visita Propuesta") {
+                                    try {
+                                      const currentAd = advertisements.find(a => 
+                                        a.Referencia === selectedLead.Inmueble || 
+                                        a.Direccion === selectedLead.Inmueble ||
+                                        (selectedLead.Inmueble && a.Direccion && selectedLead.Inmueble.includes(a.Direccion))
+                                      )
+
+                                      console.log("[v0] Calling n8n webhook for Visita Propuesta", { leadId: selectedLead.id, adId: currentAd?.ida })
+                                      
+                                      fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/proponer_visita", {
+                                        method: "POST",
+                                        headers: {
+                                          "Content-Type": "application/json",
+                                        },
+                                        body: JSON.stringify({
+                                          lead: { ...selectedLead, Estado: value },
+                                          anuncio: currentAd || null
+                                        }),
+                                      }).then(res => {
+                                        if (!res.ok) console.error("[v0] n8n webhook returned error:", res.status)
+                                        else console.log("[v0] n8n webhook called successfully")
+                                      }).catch(err => {
+                                        console.error("[v0] Error calling n8n webhook:", err)
+                                      })
+                                    } catch (webhookError) {
+                                      console.error("[v0] Error preparing n8n webhook:", webhookError)
+                                    }
+                                  }
+
                                   toast({
                                     title: "Estado actualizado",
                                     description: `El estado ha sido cambiado a ${value}`,
