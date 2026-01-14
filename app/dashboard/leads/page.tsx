@@ -6921,7 +6921,7 @@ export default function LeadsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Confirmar cambio de estado masivo</AlertDialogTitle>
             <AlertDialogDescription>
-              ¿Estás seguro de que quieres cambiar el estado de {selectedLeadIds.length} leads a "{pendingBulkStatus === "Aceptado" ? "Aprobado" : pendingBulkStatus}"?
+              ¿Estás seguro de que quieres cambiar el estado de {selectedLeadIds.length} leads a &quot;{pendingBulkStatus === "Aceptado" ? "Aprobado" : pendingBulkStatus}&quot;?
               Esta acción activará notificaciones automáticas y otros procesos asociados a estos leads.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -6942,7 +6942,7 @@ export default function LeadsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Estás seguro de cambiar el estado?</AlertDialogTitle>
             <AlertDialogDescription>
-              Cambiar el estado a "{pendingSingleStatus?.status === "Aceptado" ? "Aprobado" : pendingSingleStatus?.status}" activará notificaciones automáticas y otros procesos asociados a este lead.
+              Cambiar el estado a &quot;{pendingSingleStatus?.status === "Aceptado" ? "Aprobado" : pendingSingleStatus?.status}&quot; activará notificaciones automáticas y otros procesos asociados a este lead.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

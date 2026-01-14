@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { getBookingData, confirmVisit } from "@/app/actions/booking"
 import { Calendar } from "@/components/ui/calendar"
@@ -45,7 +45,7 @@ type AgendaItem = {
   anuncio_id?: string
 }
 
-export default function AgendarVisitaPage() {
+function AgendarVisitaContent() {
   const searchParams = useSearchParams()
   const leadId = searchParams.get("leadId")
   const { toast } = useToast()
@@ -525,5 +525,17 @@ export default function AgendarVisitaPage() {
 
       </div>
     </div>
+  )
+}
+
+export default function AgendarVisitaPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    }>
+      <AgendarVisitaContent />
+    </Suspense>
   )
 }
