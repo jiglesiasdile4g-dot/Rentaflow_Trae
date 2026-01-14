@@ -1,111 +1,26 @@
-## [0.8.4] (2026-01-04)
-
-### Features
-
-* **sidebar:** modo contraído (icon-only) con persistencia de estado y adaptación automática en móvil/tablet
-* **ui:** cambio de nombre de aplicación a "RentAFlow"
-
-### Fixes
-
-* **sidebar:** mejora de accesibilidad y visibilidad de iconos en modo móvil
+## [0.8.6](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.8.5...v0.8.6) (2026-01-14)
 
 
-## [0.8.3] (2025-12-23)
 
-
-### Fixes
-
-* **agenda:** corrección de "Application error" por manejo inseguro de fechas en renderizado
-* **agenda:** validación robusta de `fecha_de_visita` para evitar caídas de la app
-* **agenda:** fix de componente Select uncontrolled en selector de agentes
-
-
-## [0.8.2] (2025-12-23)
-
-
-### Features
-
-* **agenda:** reprogramación de visitas con validación de disponibilidad (calendario inteligente y slots de 15 min)
-* **agenda:** corrección de persistencia de estado (visita completada/pendiente) al navegar
-* **agenda:** fix de desfase horario (timezone) al guardar nuevas fechas de visita
-
-
-## [0.8.1] (2025-12-22)
-
-
-### Features
-
-* **agenda:** gestión de agendas centralizada para administradores y supervisores
-* **agenda:** selector de agentes para visualizar y editar disponibilidad y visitas
-* **db:** actualización de políticas RLS para permitir gestión de agendas por rol
-
-
-## [0.8.0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.9...v0.8.0) (2025-12-19)
-
-
-### Features
-
-* **agenda:** reducción de tamaño de fuente (25%) y optimización de espacio
-* **agenda:** rediseño de layout (botón disponibilidad junto a semana actual, agrupación de semanas)
-* **agenda:** mejoras de usabilidad en móvil y escritorio
-
-
-## [0.7.9](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.8...v0.7.9) (2025-12-18)
-
-
-### Features
-
-* **leads:** mejora de visibilidad en estado "Pedir Aval" (fondo blanco, texto oscuro)
-* **ui:** ajuste de colores en badges de comunicaciones (fondo sólido para mejor legibilidad)
-* **docs:** corrección de z-index en modal "Gestionar documentos" para asegurar visibilidad
+## [0.8.5](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.5...v0.8.5) (2026-01-14)
 
 
 ### Bug Fixes
 
-* **sidebar:** corrección de visualización de rol y contador de emails
-
-
-## [0.7.8](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.7...v0.7.8) (2025-12-16)
-
-
-### Features
-
-* **leads:** visualización mejorada de emails proxy (idealista) con tooltip y botón de copiar
-* **db:** trigger automático para preservar correos proxy de idealista al actualizar leads
-* **ui:** adaptaciones de modo oscuro para modales y mensajes de whatsapp
-* **admin:** habilitar funciones de agente para supervisores
-
-
-### Bug Fixes
-
-* **hydration:** corrección de error de hidratación en auth/confirm (browser extensions)
-* **user-mgmt:** fix en desactivación de cuentas y visualización de badges
-* **metrics:** unificación de lógica de conteo de leads
-
-
-## [0.7.7](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.6...v0.7.7) (2025-12-15)
-
-
-### Bug Fixes
-
-* **agentes:** solución al problema de desactivación de funciones del agente (eliminación por ID con permisos de administrador)
-* **nextcloud:** corrección de visibilidad de archivos en modal de anuncios (manejo de errores de conexión y actualización de URL)
-* **api:** mejora en el reporte de errores de conexión WebDAV
-
-
-## [0.7.6](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.7.5...v0.7.6) (2025-12-14)
+* **agenda:** corregir errores de tipado y variable no definida en el selector ([9eaffc9](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/9eaffc9a8ff663f8204de147841e49c2c0d59aa4))
+* **agenda:** v0.8.3 - Resolve application error on invalid dates and uncontrolled select ([862fdc3](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/862fdc37f965713b1ee37e22d09372dd121ce25f))
+* **build:** agregar Suspense boundary para useSearchParams en auth/confirm y configuracion ([e253b8d](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/e253b8dfead29c3768b2fa69cfaeaa592d8994f2))
+* resolve linter errors and update calendar component for v9 ([ed746ab](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/ed746ab6bf880b3e7ce38629faebda3d74f247ef))
+* resolve linter errors in calendar and imports ([d068569](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/d06856989a7fa104a1280a9d5588d710da585cb8))
+* resolve user management errors (RLS, column names, redirects) ([5cdfc98](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/5cdfc98ce1194c9c672c0fb5e240c0a03e155c21))
+* **ui:** asegurar visualización de novedades y robustez en detección de permisos ([0ec2961](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/0ec2961d591167d49849a70af3e44982563b5303))
 
 
 ### Features
 
-* **configuracion:** rediseño completo de gestión de usuarios (tabla compacta, acciones en menú, modal de creación)
-* **admin:** corrección de listado de usuarios (bypass RLS con service role) y optimización de espacio
-
-
-### Bug Fixes
-
-* **configuracion:** corrección de usuarios faltantes en inmobiliaria ID 1
-* **build:** limpieza de caché y reconstrucción para eliminar errores de chunks
+* add n8n webhook call on Visita Propuesta status change ([aab45f7](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/aab45f718473dde17f4f861925a25ed843f50f68))
+* improve annotations visualization with user and timestamp separation ([4364503](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/436450369beca5e49f2b5983ba9b9973a61d08c4))
+* upgrade to v0.8.4 (sidebar collapsed mode, rename to RentAFlow) ([3b960e3](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/3b960e303ecb6a7df96a316768343503dba967af))
 
 
 
