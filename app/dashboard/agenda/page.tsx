@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2, Plus, Trash2, Clock, CalendarDays, User, Building, Phone, Euro, CheckCircle, FileText, Undo, Check, CalendarIcon } from "lucide-react"
+import { getAgentsByIdi, getAgentByEmail } from "@/app/actions/get-agents"
 import { useToast } from "@/hooks/use-toast"
 import { format, addDays, startOfToday, startOfWeek, addWeeks, isBefore } from "date-fns"
 import { es } from "date-fns/locale"
@@ -24,14 +25,10 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { fixUserPermissionsAction } from "@/app/actions/user-config"
+import { LeadDetailModal } from "@/components/lead-detail-modal"
 
 interface TimeSlot {
   id?: number
@@ -54,6 +51,7 @@ interface AnuncioOption {
   Direccion: string
   duracion_visita?: number
   tiempo_entre_visitas?: number
+  Activacion?: string
 }
 
 interface ScheduledVisit {
@@ -81,7 +79,8 @@ export default function AgendaPage() {
   const [saving, setSaving] = useState(false)
   const [agentId, setAgentId] = useState<number | null>(null)
   const [canManageOthers, setCanManageOthers] = useState(false)
-  const [agentsList, setAgentsList] = useState<Array<{ idag: number, Nombre: string, Email: string }>>([])
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
+  const [agentsList, setAgentsList] = useState<Array<{ idag: number; Nombre: string; nombre?: string; Email: string }>>([])
 
   // Tabs state
   const [currentWeekDays, setCurrentWeekDays] = useState<DayTab[]>([])
@@ -105,6 +104,14 @@ export default function AgendaPage() {
   const [newRescheduleTime, setNewRescheduleTime] = useState("")
   const [availableTimes, setAvailableTimes] = useState<string[]>([])
   const [availableAnuncios, setAvailableAnuncios] = useState<AnuncioOption[]>([])
+
+  // Cancel state
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [visitToCancel, setVisitToCancel] = useState<ScheduledVisit | null>(null)
+
+  // Lead Detail Modal state
+  const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null)
+  const [isLeadDetailModalOpen, setIsLeadDetailModalOpen] = useState(false)
 
   const { toast } = useToast()
   const supabase = createClient()
@@ -180,9 +187,9 @@ export default function AgendaPage() {
         console.log("Fetching anuncios for agenda, inmobiliariaId:", inmobiliariaId)
         const { data, error } = await supabase
           .from("Anuncios")
-          .select("ida, Referencia, Direccion, duracion_visita, tiempo_entre_visitas")
+          .select("ida, Referencia, Direccion, duracion_visita, tiempo_entre_visitas, Activacion")
           .eq("usuario", inmobiliariaId)
-          // .eq("Activacion", "Activo") // Show all to ensure we can resolve references for existing visits
+          .eq("Activacion", "Activo") // Show all to ensure we can resolve references for existing visits
           .order("Referencia")
 
         if (error) {
@@ -191,7 +198,7 @@ export default function AgendaPage() {
           if (error.code === 'PGRST204' || error.message.includes('duracion_visita') || error.message.includes('does not exist')) {
              const { data: dataFallback, error: errorFallback } = await supabase
               .from("Anuncios")
-              .select("ida, Referencia, Direccion")
+              .select("ida, Referencia, Direccion, Activacion")
               .eq("usuario", inmobiliariaId)
               .order("Referencia")
               
@@ -431,12 +438,18 @@ export default function AgendaPage() {
     }
   }, [selectedDateStr, agendaItems, agentId, scheduledVisits])
 
+  const handleOpenLeadDetail = (visit: ScheduledVisit) => {
+    setSelectedLeadId(visit.id)
+    setIsLeadDetailModalOpen(true)
+  }
+
   const fetchAgentAndSchedule = async (showLoader = true, targetId?: number) => {
     try {
       if (showLoader) setLoading(true)
       
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+      setCurrentUserEmail(user.email || null)
 
       let activeAgentId = targetId || agentId
 
@@ -454,45 +467,30 @@ export default function AgendaPage() {
           setCanManageOthers(canManage)
 
           if (canManage) {
-             const { data: allAgents } = await supabase
-               .from("Agentes")
-               .select("idag, Nombre, Email")
-               .eq("idi", inmobiliariaId)
-               .order("Nombre")
+             const { data: mappedAgents } = await getAgentsByIdi(inmobiliariaId)
              
-             if (allAgents && allAgents.length > 0) {
-                setAgentsList(allAgents)
-                const self = allAgents.find(a => a.Email.toLowerCase() === user.email?.toLowerCase())
-                activeAgentId = self ? self.idag : allAgents[0].idag
+             if (mappedAgents && mappedAgents.length > 0) {
+                setAgentsList(mappedAgents)
+                const self = mappedAgents.find((a: any) => a.Email.toLowerCase() === user.email?.toLowerCase())
+                activeAgentId = self ? self.idag : mappedAgents[0].idag
              }
           } else {
-             const { data: agents } = await supabase
-                .from("Agentes")
-                .select("idag, Email")
-                .ilike("Email", user.email || "")
-                .eq("idi", inmobiliariaId)
-             
-             const agent = agents?.[0]
-             if (agent) activeAgentId = agent.idag
+             const { data: agent } = await getAgentByEmail(user.email || "")
+             if (agent && (!inmobiliariaId || Number(agent.idi) === Number(inmobiliariaId))) {
+                 activeAgentId = agent.idag
+             }
           }
           
           if (activeAgentId) setAgentId(activeAgentId)
       } else if (!activeAgentId) {
           // Fallback if no inmobiliariaId yet
-          let query = supabase
-            .from("Agentes")
-            .select("idag, Email")
-            .ilike("Email", user.email || "")
-            
-          if (inmobiliariaId) {
-            query = query.eq("idi", inmobiliariaId)
-          }
+          const { data: agent } = await getAgentByEmail(user.email || "")
           
-          const { data: agents } = await query
-          const agent = agents?.[0]
           if (agent) {
-             activeAgentId = agent.idag
-             setAgentId(agent.idag)
+             if (!inmobiliariaId || Number(agent.idi) === Number(inmobiliariaId)) {
+                 activeAgentId = agent.idag
+                 setAgentId(agent.idag)
+             }
           }
       }
 
@@ -501,6 +499,14 @@ export default function AgendaPage() {
              setLoading(false)
              return
         }
+
+        console.warn("No se encontró agente para el usuario:", user.email)
+        toast({
+            title: "Agente no encontrado",
+            description: "No hay un perfil de agente asociado a tu cuenta en esta inmobiliaria.",
+            variant: "destructive"
+        })
+
         setLoading(false)
         return
       }
@@ -830,8 +836,56 @@ export default function AgendaPage() {
     }
   }
 
+  const handleOpenCancelDialog = (visit: ScheduledVisit) => {
+    setVisitToCancel(visit)
+    setCancelDialogOpen(true)
+  }
+
+  const handleCancelVisit = async () => {
+    if (!visitToCancel) return
+
+    try {
+      setSaving(true)
+      const { error } = await supabase
+        .from("Clientes")
+        .update({
+          visita_completada: "cancelada",
+          fecha_de_visita: null
+        })
+        .eq("id", visitToCancel.id)
+
+      if (error) throw error
+
+      toast({
+        title: "Visita cancelada",
+        description: "La visita se ha cancelado correctamente.",
+      })
+
+      setCancelDialogOpen(false)
+      fetchAgentAndSchedule() // Refresh
+    } catch (err) {
+      console.error("Error canceling visit:", err)
+      toast({
+        title: "Error",
+        description: "No se pudo cancelar la visita.",
+        variant: "destructive",
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleSave = async () => {
-    if (!agentId || !selectedDateStr) return
+    if (!agentId) {
+      toast({
+        title: "Error de identificación",
+        description: "No se ha detectado un perfil de agente activo. Intenta recargar la página.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!selectedDateStr) return
 
     // Validar antes de guardar
     const invalidTime = currentSlots.find(s => s.hora_inicio >= s.hora_fin)
@@ -842,6 +896,31 @@ export default function AgendaPage() {
         variant: "destructive",
       })
       return
+    }
+
+    // Auto-correction for Email casing if needed
+    if (currentUserEmail && !canManageOthers) {
+        // Find the current agent's email
+        const currentAgent = agentsList.find(a => a.idag === agentId)
+        if (currentAgent && currentAgent.Email !== currentUserEmail && currentAgent.Email.toLowerCase() === currentUserEmail.toLowerCase()) {
+            console.warn(`[Agenda] Email mismatch detected. Agent: ${currentAgent.Email}, User: ${currentUserEmail}. Attempting to sync casing for RLS compatibility...`)
+            try {
+                // We attempt to update the agent's email to match the authenticated user's email casing exactly
+                // This is required because RLS policies often use case-sensitive comparison
+                const { error: updateError } = await supabase
+                    .from("Agentes")
+                    .update({ Email: currentUserEmail })
+                    .eq("idag", agentId)
+                
+                if (updateError) {
+                    console.error("[Agenda] Failed to sync email casing:", updateError)
+                } else {
+                    console.log("[Agenda] Email casing synced successfully.")
+                }
+            } catch (syncErr) {
+                 console.error("[Agenda] Exception during email sync:", syncErr)
+            }
+        }
     }
 
     try {
@@ -862,7 +941,7 @@ export default function AgendaPage() {
         fecha: selectedDateStr,
         hora_inicio: slot.hora_inicio,
         hora_fin: slot.hora_fin,
-        anuncio_id: slot.anuncio_id
+        anuncio_id: slot.anuncio_id ? Number(slot.anuncio_id) : null
       }))
 
       if (newSlots.length > 0) {
@@ -888,12 +967,42 @@ export default function AgendaPage() {
       setIsDialogOpen(false)
 
     } catch (err: any) {
-      console.error("Error saving agenda:", err)
+      console.error("Error saving agenda:", JSON.stringify(err, null, 2))
       let message = "No se pudieron guardar los cambios."
       
       // Check for missing column error (PGRST204 or specific message)
       if (err?.code === "PGRST204" || err?.message?.includes("anuncio_id")) {
         message = "Error de configuración: Falta la columna 'anuncio_id' en la base de datos. Por favor, ejecute el script de migración 013."
+      } else if (err?.code === "42501" || err?.message?.includes("policy")) {
+        const currentAgent = agentsList.find(a => a.idag === agentId)
+        message = `Error de permisos: Tu usuario (${currentUserEmail}) no coincide con el agente.`
+        
+        console.error(`[Agenda RLS Error] User: '${currentUserEmail}', Agent: '${currentAgent?.Email}'`)
+
+        // Attempt to auto-fix via Server Action
+        toast({
+             title: "Error de permisos detectado",
+             description: "Intentando corregir la configuración de tu cuenta automáticamente...",
+        })
+
+        try {
+            const fixResult = await fixUserPermissionsAction()
+            if (fixResult.success) {
+                toast({
+                    title: "Cuenta corregida",
+                    description: "Se han actualizado tus permisos. Intentando guardar de nuevo...",
+                    variant: "default"
+                })
+                // Retry save recursively (once) or just ask user to click again. 
+                // To avoid infinite loop, we won't call handleSave recursively here, 
+                // but we will tell the user to try again.
+                message = "Permisos corregidos. Por favor, haz clic en 'Guardar Cambios' de nuevo."
+            } else {
+                message = `No se pudo corregir automáticamente: ${fixResult.error}`
+            }
+        } catch (fixErr) {
+            console.error("Auto-fix failed:", fixErr)
+        }
       }
       
       toast({
@@ -956,7 +1065,7 @@ export default function AgendaPage() {
                     <User className="h-3.5 w-3.5 text-primary" />
                   </div>
                   <span className="font-medium truncate text-sm">
-                    {selectedAgent?.Nombre || "Seleccionar agente"}
+                    {selectedAgent?.Nombre || selectedAgent?.nombre || "Seleccionar agente"}
                   </span>
                 </div>
               </SelectTrigger>
@@ -964,7 +1073,7 @@ export default function AgendaPage() {
                 {agentsList.map(agent => (
                   <SelectItem key={agent.idag} value={agent.idag.toString()}>
                     <div className="flex flex-col items-start gap-0.5 py-0.5">
-                      <span className="font-medium text-sm leading-none">{agent.Nombre}</span>
+                      <span className="font-medium text-sm leading-none">{agent.Nombre || agent.nombre}</span>
                       <span className="text-xs text-muted-foreground">{agent.Email}</span>
                     </div>
                   </SelectItem>
@@ -1181,7 +1290,9 @@ export default function AgendaPage() {
                                         <SelectContent>
                                           <SelectItem value="unassigned">Cualquiera</SelectItem>
                                           {availableAnuncios.length > 0 ? (
-                                            availableAnuncios.map(ad => (
+                                            availableAnuncios
+                                              .filter(ad => !ad.Activacion || ad.Activacion === 'Activo')
+                                              .map(ad => (
                                               <SelectItem key={ad.ida} value={String(ad.ida)}>
                                                 {ad.Referencia} - {ad.Direccion}
                                               </SelectItem>
@@ -1200,8 +1311,11 @@ export default function AgendaPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-destructive/90"
-                                  onClick={() => handleRemoveSlot(index)}
+                                  className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground opacity-100 shadow-sm hover:bg-destructive/90 z-10"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleRemoveSlot(index)
+                                  }}
                                 >
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
@@ -1264,7 +1378,11 @@ export default function AgendaPage() {
                               {format(new Date(visit.fecha_de_visita), "HH:mm")}
                             </span>
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 w-full">
+                          <div 
+                            className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 w-full cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => handleOpenLeadDetail(visit)}
+                            title="Ver detalles del lead"
+                          >
                             <div className="flex items-center gap-2">
                               <User className={cn("h-4 w-4 shrink-0", completed ? "!text-black" : "text-muted-foreground")} />
                               <h4 className={cn("font-bold text-lg", completed && "!text-black")}>
@@ -1320,6 +1438,16 @@ export default function AgendaPage() {
                             title="Añadir feedback / resumen"
                           >
                             <FileText className={cn("h-4 w-4", visit.resumen_visita && "fill-current")} />
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9 transition-all shadow-sm text-muted-foreground border-muted-foreground/30 hover:border-red-500 hover:text-red-600 hover:bg-red-50"
+                            onClick={() => handleOpenCancelDialog(visit)}
+                            title="Cancelar visita"
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
@@ -1445,6 +1573,31 @@ export default function AgendaPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Cancelar Visita</DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de que deseas cancelar la visita con {visitToCancel?.Nombre}? Esta acción eliminará la fecha programada.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelDialogOpen(false)}>No cancelar</Button>
+            <Button variant="destructive" onClick={handleCancelVisit} disabled={saving}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Sí, cancelar visita
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <LeadDetailModal 
+        leadId={selectedLeadId} 
+        open={isLeadDetailModalOpen} 
+        onOpenChange={setIsLeadDetailModalOpen} 
+        onLeadUpdate={() => fetchAgentAndSchedule(false)}
+      />
     </div>
   )
 }

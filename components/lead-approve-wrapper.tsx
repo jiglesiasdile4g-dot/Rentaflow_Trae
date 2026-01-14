@@ -55,7 +55,7 @@ export function LeadApproveWrapper({ lead, updateLeadStatus, onLeadUpdated }: Le
                   console.log("[v0] Lead approved successfully")
                   toast({
                     title: "Candidato aprobado",
-                    description: "El estado ha sido cambiado a Aceptado y se ha enviado un correo de notificación.",
+                    description: "El estado ha sido cambiado a Aprobado y se ha enviado un correo de notificación.",
                   })
                 }
               }}

@@ -123,7 +123,8 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
 
       const adminFlag = perfil?.is_admin === true
       setIsAdmin(adminFlag)
-      setRole(perfil.role || (adminFlag ? "administrador" : "agente"))
+      // Force "administrador" role if adminFlag is true, ignoring DB role if conflicting
+      setRole(adminFlag ? "administrador" : (perfil.role || "agente"))
       const ownId = Number(perfil.inmobiliaria)
       setOwnInmobiliariaId(ownId)
       const savedRaw = adminFlag ? localStorage.getItem("rf_admin_selected_idi") : null

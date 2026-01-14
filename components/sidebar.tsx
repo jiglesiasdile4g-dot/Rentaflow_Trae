@@ -1,12 +1,13 @@
 "use client"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Home, Megaphone, Users, Info, User, Building2, Settings, Calendar, ChevronsLeft, Menu } from "lucide-react"
 import LogoutButton from "@/components/logout-button"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { APP_VERSION, APP_NAME } from "@/lib/version"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 
@@ -14,6 +15,7 @@ interface SidebarProps {
   user: {
     email?: string
     id: string
+    name?: string
   }
   collapsed?: boolean
   onToggle?: () => void
@@ -58,6 +60,23 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
   const supabase = createClient()
   const [inmos, setInmos] = useState<{ idi: number; Nombre: string }[]>([])
   const router = useRouter()
+  const [logoVersion, setLogoVersion] = useState<number>(0)
+  const [logoError, setLogoError] = useState(false)
+
+  const logoUrl = useMemo(() => {
+    if (!inmobiliariaId) return null
+    const { data } = supabase.storage.from('imagenes').getPublicUrl(`logos/${inmobiliariaId}-logo.png`)
+    return logoVersion ? `${data.publicUrl}?v=${logoVersion}` : data.publicUrl
+  }, [inmobiliariaId, supabase, logoVersion])
+
+  useEffect(() => {
+    const handleUpdate = () => {
+         setLogoVersion(Date.now())
+         setLogoError(false)
+    }
+    window.addEventListener('logo-updated', handleUpdate)
+    return () => window.removeEventListener('logo-updated', handleUpdate)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -78,15 +97,30 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
       <div 
         className={cn(
           "border-b border-border flex flex-col transition-colors", 
-          collapsed ? "p-2 items-center justify-center h-[88px]" : "p-4"
+          collapsed ? "p-2 items-center justify-center h-[88px]" : "p-6"
         )}
       >
         <div className="flex items-center justify-between w-full">
             {!collapsed ? (
               <>
-                <div className="flex flex-col overflow-hidden mr-2">
-                    <h1 className="text-lg font-semibold text-foreground truncate">{APP_NAME}</h1>
-                    <p className="text-xs text-muted-foreground">Versión {APP_VERSION}</p>
+                <div className="flex flex-col overflow-hidden mr-2 w-full relative">
+                    {logoUrl && !logoError ? (
+                        <div className="relative h-12 w-full max-w-[180px]">
+                            <Image 
+                                src={logoUrl} 
+                                alt={APP_NAME} 
+                                fill 
+                                className="object-contain object-left"
+                                onError={() => setLogoError(true)}
+                                unoptimized
+                            />
+                        </div>
+                    ) : (
+                        <>
+                            <h1 className="text-xl font-bold truncate text-primary tracking-tight">{APP_NAME}</h1>
+                            <p className="text-xs text-muted-foreground">Versión {APP_VERSION}</p>
+                        </>
+                    )}
                 </div>
                 <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onToggle}>
                     <ChevronsLeft className="h-4 w-4" />
@@ -174,7 +208,12 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
           <User className="h-4 w-4 text-muted-foreground mt-0.5" />
           {!collapsed && (
             <div className="flex flex-col min-w-0">
-              <span className="text-sm text-muted-foreground truncate" title={user.email}>{user.email}</span>
+              <span className="text-sm font-medium text-foreground truncate" title={user.name || user.email}>
+                {user.name || user.email}
+              </span>
+              {user.name && user.name !== user.email && (
+                  <span className="text-xs text-muted-foreground truncate" title={user.email}>{user.email}</span>
+              )}
               <div className="flex items-center gap-1.5 text-xs mt-0.5">
                 {role && <span className="font-medium text-foreground capitalize">{role}</span>}
                 {isAdmin && (

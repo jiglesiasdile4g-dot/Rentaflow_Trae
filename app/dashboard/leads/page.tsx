@@ -8,6 +8,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { getAgentsByIdi } from "@/app/actions/get-agents"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -25,7 +26,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Eye, Download, UploadCloud, IdCard, Image as ImageIcon, Tag, Trash, Calendar as CalendarIcon } from 'lucide-react'
+import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Eye, Download, UploadCloud, IdCard, Image as ImageIcon, Tag, Trash, Trash2, StickyNote, Calendar as CalendarIcon, History as HistoryIcon } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
 import { formatDate, cn } from "@/lib/utils"
 import { format } from "date-fns"
@@ -113,6 +114,14 @@ type Lead = {
   visita_completada?: string | boolean
   idag?: number | string | null
   origen?: string
+  status_history?: LeadHistoryEntry[]
+}
+
+export type LeadHistoryEntry = {
+  status: string
+  timestamp: string
+  agent_id?: string
+  agent_name?: string
 }
 
 interface Advertisement {
@@ -226,13 +235,19 @@ export default function LeadsPage() {
   const [isBulkSelectionMode, setIsBulkSelectionMode] = useState(false)
   const [bulkConfirmationOpen, setBulkConfirmationOpen] = useState(false)
   const [pendingBulkStatus, setPendingBulkStatus] = useState<Lead["Estado"] | null>(null)
+  
+  // Single status change confirmation state
+  const [singleStatusConfirmOpen, setSingleStatusConfirmOpen] = useState(false)
+  const [pendingSingleStatus, setPendingSingleStatus] = useState<{id: number, status: string} | null>(null)
 
   const [visitDateDialogOpen, setVisitDateDialogOpen] = useState(false)
   const [selectedLeadForVisit, setSelectedLeadForVisit] = useState<Lead | null>(null)
   const [newVisitDateDate, setNewVisitDateDate] = useState("")
   const [newVisitDateTime, setNewVisitDateTime] = useState("")
   const [selectedAgenteId, setSelectedAgenteId] = useState("")
+  const [isAgentSelectionOnly, setIsAgentSelectionOnly] = useState(false)
   const [agentes, setAgentes] = useState<any[]>([])
+  const [inlineNote, setInlineNote] = useState("")
 
   // State for agent availability
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
@@ -437,6 +452,82 @@ export default function LeadsPage() {
     fetchAvailability()
   }, [selectedAgenteId, newVisitDateDate, selectedLeadForVisit, advertisements])
 
+
+  const deleteLeadNoteEntry = async (index: number) => {
+    if (!selectedLead) return
+    const currentNotes = selectedLead.Observaciones || ""
+    const parts = splitNotes(currentNotes)
+    
+    const newParts = parts.filter((_, i) => i !== index)
+    const newNotes = newParts.map(p => `${p.header}\n${p.body}`).join("\n\n").trim()
+    
+    try {
+      const { error } = await supabase
+        .from("Clientes")
+        .update({ Observaciones: newNotes })
+        .eq("id", selectedLead.id)
+
+      if (error) throw error
+
+      const updatedLead = { ...selectedLead, Observaciones: newNotes }
+      setSelectedLead(updatedLead as Lead)
+      setLeads((prev) => prev.map(l => l.id === selectedLead.id ? updatedLead : l))
+      
+      toast({
+        title: "Nota eliminada",
+        description: "La entrada de nota ha sido eliminada.",
+      })
+    } catch (error) {
+      console.error("Error updating notes:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar las notas.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleAddLeadNote = async () => {
+    if (!selectedLead || !inlineNote.trim()) return
+
+    const now = new Date()
+    const dateStr = now.toLocaleDateString("es-ES", { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const timeStr = now.toLocaleTimeString("es-ES", { hour: '2-digit', minute: '2-digit' })
+    const userStr = "Usuario" 
+    
+    const newEntryHeader = `[${dateStr} ${timeStr} • ${userStr}]`
+    const newEntry = `${newEntryHeader}\n${inlineNote.trim()}`
+    
+    const currentNotes = selectedLead.Observaciones || ""
+    const updatedNotes = currentNotes ? `${newEntry}\n\n${currentNotes}` : newEntry
+
+    try {
+      const { error } = await supabase
+        .from("Clientes")
+        .update({ Observaciones: updatedNotes })
+        .eq("id", selectedLead.id)
+
+      if (error) throw error
+
+      const updatedLead = { ...selectedLead, Observaciones: updatedNotes }
+      setSelectedLead(updatedLead as Lead)
+      setLeads((prev) => prev.map(l => l.id === selectedLead.id ? updatedLead : l))
+      setInlineNote("") 
+      
+      toast({
+        title: "Nota añadida",
+        description: "La nota se ha guardado correctamente.",
+      })
+    } catch (error) {
+      console.error("Error adding note:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo añadir la nota.",
+        variant: "destructive",
+      })
+    }
+  }
+
   const [planLimit, setPlanLimit] = useState<number>(1000000)
   const [planResetAt, setPlanResetAt] = useState<Date | null>(null)
   const [totalEjecuciones, setTotalEjecuciones] = useState<number>(0)
@@ -457,42 +548,51 @@ export default function LeadsPage() {
   const [isDeletingLead, setIsDeletingLead] = useState(false)
   const [noteDialog, setNoteDialog] = useState<{ open: boolean; leadId: number; leadName: string; value: string; existing: string }>({ open: false, leadId: 0, leadName: "", value: "", existing: "" })
   const [currentAgentId, setCurrentAgentId] = useState<number | null>(null)
+  const [currentUser, setCurrentUser] = useState<{id: string, email: string} | null>(null)
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) {
+        setCurrentUser({ id: data.user.id, email: data.user.email || "" })
+      }
+    })
+  }, [])
 
   useEffect(() => {
     const fetchAgentId = async () => {
       if (role === "agente" && userEmail) {
-        const { data } = await supabase.from("Agentes").select("idag").eq("Email", userEmail).maybeSingle()
+        // Use ilike for case-insensitive email matching
+        const { data } = await supabase.from("Agentes").select("idag").ilike("Email", userEmail).maybeSingle()
         if (data) {
           setCurrentAgentId(data.idag)
         } else {
-          console.log("[RBAC] No matching agent found for email:", userEmail)
+          console.log("[RBAC] No matching agent found for email (checked with ilike):", userEmail)
+          // If no agent ID found, they will see only unassigned leads.
         }
       }
     }
     fetchAgentId()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, userEmail])
 
   const fetchAgentes = useCallback(async (inmobiliariaId: number, signal?: AbortSignal) => {
     try {
-      let query = supabase
-        .from("Agentes")
-        .select('idag, "Nombre", idi')
-        .eq("idi", inmobiliariaId.toString())
+      // Use server action to bypass RLS
+      const result = await getAgentsByIdi(inmobiliariaId)
+      const mappedData = result?.data || []
+      const error = result?.error
 
-      if (signal) query = query.abortSignal(signal)
-
-      const { data, error } = await query
-
-      if (error) throw error
-      console.log("[v0] fetchAgentes success, count:", data?.length)
-      setAgentes(data || [])
+      if (error) throw new Error(error.message || error)
+      
+      console.log("[v0] fetchAgentes success, count:", mappedData?.length)
+      setAgentes(mappedData || [])
     } catch (error: any) {
         if (error?.name !== 'AbortError' && !error?.message?.includes('Abort')) {
           console.error("[v0] Failed to fetch agentes:", error)
           setAgentes([])
         }
       }
-    }, [supabase])
+    }, [])
 
   useEffect(() => {
     if (inmobiliariaId) {
@@ -505,6 +605,7 @@ export default function LeadsPage() {
     return () => {
       console.log("[router] leads_unmount")
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -572,25 +673,20 @@ export default function LeadsPage() {
     })
   }
 
-  const splitNotes = (text: string) => {
-    const t = String(text || "")
-    const re = /^\[[^\]]+\]/gm
-    const indices: number[] = []
-    const entries: Array<{ header: string; body: string; raw: string }> = []
-    let m: RegExpExecArray | null
-    while ((m = re.exec(t)) !== null) {
-      indices.push(m.index)
-    }
-    for (let i = 0; i < indices.length; i++) {
-      const start = indices[i]
-      const end = i + 1 < indices.length ? indices[i + 1] : t.length
-      const segment = t.slice(start, end).replace(/^\n+|\n+$/g, "")
-      const headerMatch = segment.match(/^\[[^\]]+\]/)
-      const header = headerMatch ? headerMatch[0] : ""
-      const body = segment.replace(/^\[[^\]]+\]\s*/, "")
-      entries.push({ header, body, raw: segment })
-    }
-    return entries
+  const splitNotes = (text: string | undefined | null) => {
+    if (!text) return []
+    const t = String(text)
+    // Support both DD/MM/YYYY and YYYY-MM-DD formats
+    const parts = t.split(/(?=\[\d{2,4}[-\/]\d{2}[-\/]\d{2,4})/)
+    return parts
+      .map((p) => {
+        const match = p.match(/^(\[.*?\])([\s\S]*)/)
+        if (match) {
+          return { header: match[1], body: match[2].trim(), raw: p }
+        }
+        return { header: "", body: p.trim(), raw: p }
+      })
+      .filter((p) => p.body || p.header)
   }
 
   const deleteNoteEntry = async (idx: number) => {
@@ -867,6 +963,7 @@ export default function LeadsPage() {
     if (isDocsDialogOpen && selectedLead) {
       loadLeadDocsList()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDocsDialogOpen, selectedLead])
 
   const updateDocumentStatusFromNextcloud = async () => {
@@ -901,6 +998,7 @@ export default function LeadsPage() {
     if (selectedLead) {
       updateDocumentStatusFromNextcloud()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLead])
 
   useEffect(() => {
@@ -919,6 +1017,7 @@ export default function LeadsPage() {
         setLeads((prev) => prev.map((l) => (String(l.id) === String(selectedLead.id) ? { ...l, Estado: "Datos Completos" } : l)))
       })()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLead])
 
   useEffect(() => {
@@ -946,6 +1045,7 @@ export default function LeadsPage() {
       run()
       return () => controller.abort()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inmobiliariaId, inmobiliariaLoading])
 
   useEffect(() => {
@@ -971,6 +1071,7 @@ export default function LeadsPage() {
       run()
       return () => controller.abort()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inmobiliariaId, inmobiliariaLoading, currentAgentId])
 
   useEffect(() => {
@@ -1012,10 +1113,12 @@ export default function LeadsPage() {
         openLeadDetail(targetLead)
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leads, searchParams])
 
   useEffect(() => {
     filterLeads()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearchTerm, statusFilter, selectedAdvertisement, leads, advertisements])
 
   useEffect(() => {
@@ -1033,6 +1136,7 @@ export default function LeadsPage() {
       })
     }, 200)
     return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leads, selectedAdvertisement, advertisements])
 
   const calculateMetrics = () => {
@@ -1257,17 +1361,18 @@ export default function LeadsPage() {
 
       let dataQuery = supabase
         .from("Clientes")
-        .select("*")
+        .select("*, status_history")
         .order("created_at", { ascending: false })
+        .range(0, 4999)
         .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
 
-      if (role === "agente") {
+      if (role === "agente" && !isAdmin) {
         if (currentAgentId) {
           // Agentes ven sus leads asignados o los que no tienen asignación
           dataQuery = dataQuery.or(`idag.eq.${currentAgentId},idag.is.null`)
         } else {
           // Si no tiene ID de agente (configuración incompleta), mostrar solo unassigned como fallback
-          console.log("[RBAC] Agent has no ID, showing unassigned leads")
+          console.log("[RBAC] Agent has no ID (check email match), showing ONLY unassigned leads.")
           dataQuery = dataQuery.is("idag", null)
         }
       }
@@ -1696,45 +1801,91 @@ export default function LeadsPage() {
   }
 
   const updateLeadStatus = async (leadId: number, newStatus: string) => {
+    // Intercept "Visita Propuesta" to force dialog flow
+    if (newStatus === "Visita Propuesta") {
+      const lead = leads.find(l => String(l.id) === String(leadId))
+      if (lead) {
+          console.log("[v0] updateLeadStatus: Visita Propuesta selected. Opening dialog.")
+          setSelectedLeadForVisit(lead)
+          setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
+          setIsAgentSelectionOnly(true)
+          setVisitDateDialogOpen(true)
+      }
+      return // Stop here. Do not update Supabase yet.
+    }
+
+    // For other statuses, open confirmation dialog
+    setPendingSingleStatus({ id: leadId, status: newStatus })
+    setSingleStatusConfirmOpen(true)
+  }
+
+  const executeSingleStatusChange = async () => {
+    if (!pendingSingleStatus) return
+    const { id, status } = pendingSingleStatus
+
     try {
-      const { error } = await supabase.from("Clientes").update({ Estado: newStatus }).eq("id", leadId)
+      let lead = leads.find(l => String(l.id) === String(id))
+      // Fallback to selectedLead if not found in list
+      if (!lead && selectedLead && String(selectedLead.id) === String(id)) {
+          lead = selectedLead
+      }
+
+      const updateData: any = { Estado: status }
+
+      // History tracking
+      const historyEntry: LeadHistoryEntry = {
+        status: status,
+        timestamp: new Date().toISOString(),
+        agent_id: currentUser?.id,
+        agent_name: currentUser?.email
+      }
+
+      if (currentUser?.email && agentes.length > 0) {
+        const matched = agentes.find(a => a.Email === currentUser.email)
+        if (matched) historyEntry.agent_name = matched.Nombre || matched.nombre || matched.Email
+      }
+
+      const currentHistory = (lead?.status_history as LeadHistoryEntry[]) || []
+      const updatedHistory = [...currentHistory, historyEntry]
+      updateData.status_history = updatedHistory
+
+      // Visit cancellation logic
+      const previousStatuses = ["Datos Incompletos", "Datos Completos", "Necesidad de Aval", "Pedir Aval", "Aceptado"]
+      if (lead && lead.Estado === "Visita Propuesta" && previousStatuses.includes(status)) {
+         updateData.visita_completada = "cancelada"
+         updateData.fecha_de_visita = null
+      }
+
+      const { error } = await supabase.from("Clientes").update(updateData).eq("id", id)
 
       if (error) throw error
 
       // Update local state
-      setLeads(leads.map((lead) => (String(lead.id) === String(leadId) ? { ...lead, Estado: newStatus as Lead["Estado"] } : lead)))
+      setLeads(leads.map((l) => (String(l.id) === String(id) ? { ...l, ...updateData } : l)))
 
-      if (newStatus === "Visita Propuesta") {
-        try {
-          const lead = leads.find(l => String(l.id) === String(leadId))
-          if (lead) {
-            const currentAd = advertisements.find(a => 
-              a.Referencia === lead.Inmueble || 
-              a.Direccion === lead.Inmueble ||
-              (lead.Inmueble && a.Direccion && lead.Inmueble.includes(a.Direccion))
-            )
+      // Update selectedLead if it matches the modified lead
+      setSelectedLead((prev) => {
+        if (!prev) return prev
+        if (String(prev.id) !== String(id)) return prev
+        return { ...prev, ...updateData }
+      })
 
-            console.log("[v0] Calling n8n webhook from updateLeadStatus", { leadId, adId: currentAd?.ida })
-            
-            fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/proponer_visita", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                lead: { ...lead, Estado: newStatus },
-                anuncio: currentAd || null
-              }),
-            }).then(res => {
-              if (!res.ok) console.error("[v0] n8n webhook error:", res.status)
-            }).catch(e => console.error("[v0] n8n webhook error:", e))
-          }
-        } catch (e) {
-          console.error("[v0] Error preparing webhook in updateLeadStatus:", e)
-        }
-      }
+      toast({
+         title: "Estado actualizado",
+         description: `Estado cambiado a ${status === "Aceptado" ? "Aprobado" : status}`,
+      })
 
       console.log("[v0] Lead status updated successfully")
     } catch (err) {
       console.error("[v0] Error updating lead status:", err)
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el estado",
+        variant: "destructive",
+      })
+    } finally {
+      setSingleStatusConfirmOpen(false)
+      setPendingSingleStatus(null)
     }
   }
 
@@ -2136,24 +2287,66 @@ export default function LeadsPage() {
     const executeBulkStatusChange = async () => {
       if (!pendingBulkStatus) return
 
-      const { error } = await supabase.from("Clientes").update({ Estado: pendingBulkStatus }).in("id", selectedLeadIds)
+      const updateData: any = { Estado: pendingBulkStatus }
+      const targetStatuses = ["Datos Incompletos", "Datos Completos", "Necesidad de Aval", "Pedir Aval", "Aceptado"];
+      
+      if (targetStatuses.includes(pendingBulkStatus)) {
+        updateData.visita_completada = "cancelada"
+        updateData.fecha_de_visita = null
+      }
 
-      if (error) {
+      // History tracking
+      const historyEntry: LeadHistoryEntry = {
+        status: pendingBulkStatus,
+        timestamp: new Date().toISOString(),
+        agent_id: currentUser?.id,
+        agent_name: currentUser?.email
+      }
+
+      if (currentUser?.email && agentes.length > 0) {
+        const matched = agentes.find(a => a.Email === currentUser.email)
+        if (matched) historyEntry.agent_name = matched.Nombre || matched.nombre || matched.Email
+      }
+
+      // Perform updates individually to preserve history
+      const updates = selectedLeadIds.map(async (id) => {
+        const lead = leads.find(l => String(l.id) === String(id))
+        const currentHistory = (lead?.status_history as LeadHistoryEntry[]) || []
+        const updatedHistory = [...currentHistory, historyEntry]
+        
+        const rowUpdateData = { ...updateData, status_history: updatedHistory }
+        return supabase.from("Clientes").update(rowUpdateData).eq("id", id)
+      })
+
+      const results = await Promise.all(updates)
+      const hasError = results.some(r => r.error)
+
+      if (hasError) {
         toast({
           title: "Error",
-          description: "No se pudo actualizar el estado de los leads",
+          description: "No se pudo actualizar el estado de algunos leads",
           variant: "destructive",
         })
         return
       }
 
       setLeads((prevLeads) =>
-        prevLeads.map((lead) => (selectedLeadIds.includes(lead.id) ? { ...lead, Estado: pendingBulkStatus as Lead["Estado"] } : lead)),
+        prevLeads.map((lead) => {
+           if (selectedLeadIds.includes(lead.id)) {
+              const currentHistory = (lead.status_history as LeadHistoryEntry[]) || []
+              return { 
+                ...lead, 
+                ...updateData, 
+                status_history: [...currentHistory, historyEntry] 
+              }
+           }
+           return lead
+        }),
       )
 
       toast({
         title: "Estado actualizado",
-        description: `Se actualizó el estado de ${selectedLeadIds.length} lead(s) a ${pendingBulkStatus}`,
+        description: `Se actualizó el estado de ${selectedLeadIds.length} lead(s) a ${pendingBulkStatus === "Aceptado" ? "Aprobado" : pendingBulkStatus}`,
       })
 
       setSelectedLeadIds([])
@@ -2178,8 +2371,131 @@ export default function LeadsPage() {
       }
     }
 
+    const getFutureAvailability = async (agentId: number, lead: Lead, days = 7) => {
+      if (!agentId) return []
+      
+      const supabase = createClient()
+      const today = new Date()
+      const future = new Date(today)
+      future.setDate(today.getDate() + days)
+      
+      const startDateStr = today.toISOString().split('T')[0]
+      const endDateStr = future.toISOString().split('T')[0]
+
+      // 1. Get Agent Agenda (Available blocks)
+      const { data: agendaData } = await supabase
+        .from("Agendas")
+        .select("fecha, hora_inicio, hora_fin, anuncio_id")
+        .eq("agente_id", agentId)
+        .gte("fecha", startDateStr)
+        .lte("fecha", endDateStr)
+
+      // 2. Get Existing Visits (Busy blocks)
+      const { data: existingVisits } = await supabase
+        .from("Clientes")
+        .select("fecha_de_visita, Inmueble")
+        .eq("idag", agentId)
+        .gte("fecha_de_visita", `${startDateStr}T00:00:00`)
+        .lte("fecha_de_visita", `${endDateStr}T23:59:59`)
+
+      if (!agendaData) return []
+
+      // Group agenda by date
+      const slotsByDate: Record<string, string[]> = {}
+      
+      // Helper to determine target ad ID
+      let targetAnuncioId: string | null = null
+      if (lead.Inmueble) {
+         const ad = advertisements.find(a => 
+           a.Referencia === lead.Inmueble ||
+           a.Direccion === lead.Inmueble ||
+           (lead.Inmueble && a.Direccion && lead.Inmueble.includes(a.Direccion))
+         )
+         if (ad) targetAnuncioId = ad.ida
+      }
+
+      // Process each day
+      const uniqueDates = [...new Set(agendaData.map(a => a.fecha))]
+      
+      for (const date of uniqueDates) {
+        const dayAgenda = agendaData.filter(a => a.fecha === date)
+        const dayVisits = existingVisits?.filter(v => v.fecha_de_visita?.startsWith(date)) || []
+        
+        // Calculate busy ranges for this day
+        const busyRanges: { start: number, end: number }[] = []
+        dayVisits.forEach(v => {
+           if (v.fecha_de_visita) {
+              const start = new Date(v.fecha_de_visita).getTime()
+              // Find ad duration logic... reused from existing code
+              const visitAd = advertisements.find(a => 
+                a.Referencia === v.Inmueble || 
+                a.Direccion === v.Inmueble ||
+                (v.Inmueble && a.Direccion && v.Inmueble.includes(a.Direccion)) ||
+                (v.Inmueble && a.Referencia && v.Inmueble.includes(a.Referencia))
+              )
+              const dur = (visitAd?.Duracion_visita || 30) * 60000
+              const gap = (visitAd?.Gap_visita || 0) * 60000
+              busyRanges.push({ start, end: start + dur + gap })
+           }
+        })
+
+        const slots: string[] = []
+        dayAgenda.forEach(range => {
+           if (!range.hora_inicio || !range.hora_fin) return
+           // Filter by property specific agenda
+           if (range.anuncio_id && targetAnuncioId && range.anuncio_id !== targetAnuncioId) return
+
+           let start = range.hora_inicio.slice(0, 5)
+           const end = range.hora_fin.slice(0, 5)
+           let [h, m] = start.split(':').map(Number)
+           let currentMins = h * 60 + m
+           const [endH, endM] = end.split(':').map(Number)
+           const endMins = endH * 60 + endM
+
+           while (currentMins < endMins) {
+              const slotH = Math.floor(currentMins / 60)
+              const slotM = currentMins % 60
+              const timeStr = `${slotH.toString().padStart(2, '0')}:${slotM.toString().padStart(2, '0')}`
+              
+              // Check availability
+              // Current lead duration
+              let currentDur = 30 * 60000
+              let currentGap = 0
+              if (targetAnuncioId) {
+                  const ad = advertisements.find(a => a.ida === targetAnuncioId)
+                  if (ad) {
+                      currentDur = (ad.duracion_visita || ad.Duracion_visita || 30) * 60000
+                      currentGap = (ad.tiempo_entre_visitas || ad.Gap_visita || 0) * 60000
+                  }
+              }
+              const totalDur = currentDur + currentGap
+              const slotStart = new Date(`${date}T${timeStr}`).getTime()
+              const slotEnd = slotStart + totalDur
+              
+              const isBusy = busyRanges.some(r => (slotStart < r.end && slotEnd > r.start))
+              
+              if (!isBusy) {
+                  slots.push(timeStr)
+              }
+
+              currentMins += 5 // Step 5 mins
+           }
+        })
+        
+        if (slots.length > 0) {
+            slotsByDate[date] = [...new Set(slots)].sort()
+        }
+      }
+      
+      return Object.entries(slotsByDate).map(([date, slots]) => ({ date, slots }))
+    }
+
     const handleReprogramVisit = async () => {
-      if (!selectedLeadForVisit || !newVisitDateDate || !newVisitDateTime) return
+      if (!selectedLeadForVisit) return
+      
+      // Validate dates only if NOT in agent-only mode
+      if (!isAgentSelectionOnly && (!newVisitDateDate || !newVisitDateTime)) return
+      
       if (!selectedAgenteId) {
         toast({
           title: "Agente requerido",
@@ -2196,8 +2512,10 @@ export default function LeadsPage() {
         isoDate = `${year}-${month}-${day}`
       }
 
-      // Check for collision with other visits
-      const proposedTimeStart = new Date(`${isoDate}T${newVisitDateTime}`).getTime()
+      // If NOT agent-only selection, check for collision
+      if (!isAgentSelectionOnly) {
+        // Check for collision with other visits
+        const proposedTimeStart = new Date(`${isoDate}T${newVisitDateTime}`).getTime()
       
       const collision = leads.find(lead => {
         // Skip current lead
@@ -2232,147 +2550,170 @@ export default function LeadsPage() {
         })
         return
       }
+      }
 
-      console.log("[v0] handleReprogramVisit started. Lead:", selectedLeadForVisit)
-      console.log("[v0] Lead ID type:", typeof selectedLeadForVisit.id, "Value:", selectedLeadForVisit.id)
+      console.log("[v0] handleReprogramVisit started. Lead:", selectedLeadForVisit.id)
 
       try {
         const supabase = createClient()
         
-        const d = new Date(`${isoDate}T${newVisitDateTime}`)
-        const off = d.getTimezoneOffset()
-        const sign = off <= 0 ? "+" : "-"
-        const hh = String(Math.floor(Math.abs(off) / 60)).padStart(2, "0")
-        const mm = String(Math.abs(off) % 60).padStart(2, "0")
-        const offset = `${sign}${hh}:${mm}`
-        const valueWithOffset = `${isoDate}T${newVisitDateTime}:00${offset}`
-        const updateData: any = {
-          fecha_de_visita: valueWithOffset,
-          visita_completada: "visita propuesta",
+        let updateData: any = {
           Estado: "Visita Propuesta",
           idag: selectedAgenteId ? Number(selectedAgenteId) : null,
         }
 
+        // History tracking
+        const historyEntry: LeadHistoryEntry = {
+          status: "Visita Propuesta",
+          timestamp: new Date().toISOString(),
+          agent_id: currentUser?.id,
+          agent_name: currentUser?.email
+        }
+  
+        if (currentUser?.email && agentes.length > 0) {
+          const matched = agentes.find(a => a.Email === currentUser.email)
+          if (matched) historyEntry.agent_name = matched.Nombre || matched.nombre || matched.Email
+        }
+  
+        const currentHistory = (selectedLeadForVisit.status_history as LeadHistoryEntry[]) || []
+        const updatedHistory = [...currentHistory, historyEntry]
+        updateData.status_history = updatedHistory
+
+        if (!isAgentSelectionOnly && newVisitDateDate && newVisitDateTime) {
+          const d = new Date(`${isoDate}T${newVisitDateTime}`)
+          const off = d.getTimezoneOffset()
+          const sign = off <= 0 ? "+" : "-"
+          const hh = String(Math.floor(Math.abs(off) / 60)).padStart(2, "0")
+          const mm = String(Math.abs(off) % 60).padStart(2, "0")
+          const offset = `${sign}${hh}:${mm}`
+          const valueWithOffset = `${isoDate}T${newVisitDateTime}:00${offset}`
+          
+          updateData.fecha_de_visita = valueWithOffset
+          updateData.visita_completada = "visita propuesta"
+        } else if (isAgentSelectionOnly) {
+          // If agent only, clear the visit date
+          updateData.fecha_de_visita = null
+          // Also clear visita_completada to avoid inconsistent state
+          updateData.visita_completada = null
+        }
+
         console.log("[v0] Sending update to Supabase. Data:", updateData)
 
-        let updateSuccess = false
-        let data: any[] | null = null
-        let error: any = null
-
-        // Strategy 1: Update by 'id'
-        console.log("[v0] Attempt 1: Updating by 'id' =", selectedLeadForVisit.id)
-        const res1 = await supabase
+        // Robust update strategy using ID
+        const { data, error } = await supabase
           .from("Clientes")
           .update(updateData)
           .eq("id", selectedLeadForVisit.id)
           .select()
+
+        if (error) {
+            console.error("Supabase update error:", error)
+            throw error
+        }
         
-        if (res1.data && res1.data.length > 0) {
-            updateSuccess = true
-            data = res1.data
-            console.log("[v0] Update successful by 'id'")
-        } else {
-            console.warn("[v0] Update by 'id' failed (0 rows). Error:", res1.error)
-            error = res1.error
-        }
+        // Log success
+        console.log("[v0] Update successful", data)
 
-        // Strategy 2: Update by 'IDC' or 'idc' if 'id' failed
-        if (!updateSuccess) {
-            const idcValue = (selectedLeadForVisit as any).IDC || (selectedLeadForVisit as any).idc
-            if (idcValue) {
-                console.log("[v0] Attempt 2: Updating by 'IDC' =", idcValue)
-                const res2 = await supabase
-                    .from("Clientes")
-                    .update(updateData)
-                    .eq("IDC", idcValue)
-                    .select()
-                
-                if (res2.data && res2.data.length > 0) {
-                    updateSuccess = true
-                    data = res2.data
-                    console.log("[v0] Update successful by 'IDC'")
-                } else {
-                     console.warn("[v0] Update by 'IDC' failed. Error:", res2.error)
-                     
-                     // Strategy 3: Try lowercase 'idc' column
-                     console.log("[v0] Attempt 3: Updating by 'idc' (lowercase column) =", idcValue)
-                     const res3 = await supabase
-                        .from("Clientes")
-                        .update(updateData)
-                        .eq("idc", idcValue)
-                        .select()
-                     
-                     if (res3.data && res3.data.length > 0) {
-                         updateSuccess = true
-                         data = res3.data
-                         console.log("[v0] Update successful by 'idc'")
-                     } else {
-                         console.warn("[v0] Update by 'idc' failed. Error:", res3.error)
-                     }
-                }
-            }
-        }
+        // Trigger Webhook if status is "Visita Propuesta"
+        // (Logic moved to async block below to avoid double sending and UI blocking)
 
-        if (!updateSuccess) {
-            console.error("[v0] All update attempts failed.")
-            throw new Error("No se pudo actualizar el lead (No se encontraron registros coincidentes para ID/IDC). Revisa la consola para más detalles.")
-        }
 
-      toast({
-        title: "Fecha de visita actualizada",
-        description: "La fecha de visita se ha reprogramado correctamente.",
-      })
-
-      // Optimistically update local state to prevent reversion
-      const updatedLead = {
-        ...selectedLeadForVisit,
-        fecha_de_visita: valueWithOffset,
-        Estado: "Visita Propuesta",
-        idag: selectedAgenteId ? Number(selectedAgenteId) : (selectedLeadForVisit as any).idag,
-      } as any
-
-      setLeads((prev) => prev.map((l) => (l.id === selectedLeadForVisit.id ? { ...l, ...updatedLead } : l)))
-      
-      if (updateData.Estado === "Visita Propuesta") {
-        try {
-            const currentAd = advertisements.find(a => 
-              a.Referencia === selectedLeadForVisit.Inmueble || 
-              a.Direccion === selectedLeadForVisit.Inmueble ||
-              (selectedLeadForVisit.Inmueble && a.Direccion && selectedLeadForVisit.Inmueble.includes(a.Direccion))
-            )
-
-            console.log("[v0] Calling n8n webhook from handleReprogramVisit", { leadId: selectedLeadForVisit.id })
-            
-            fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/proponer_visita", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                lead: updatedLead,
-                anuncio: currentAd || null
-              }),
-            }).then(res => { if(!res.ok) console.error("Webhook error") }).catch(e => console.error("Webhook error", e))
-        } catch(e) { console.error("Error calling webhook", e) }
-      }
-
-      // Update selectedLead panel immediately
-      setSelectedLead((prev) => {
-          if (!prev) return prev
-          if (prev.id !== selectedLeadForVisit!.id) return prev
-          return {
-            ...prev,
-            fecha_de_visita: valueWithOffset,
-            Estado: "Visita Propuesta",
-            idag: Number(selectedAgenteId),
-          }
+        toast({
+          title: isAgentSelectionOnly ? "Agente asignado" : "Fecha de visita actualizada",
+          description: isAgentSelectionOnly 
+            ? "Se ha asignado el agente y cambiado el estado a Visita Propuesta."
+            : "La fecha de visita se ha reprogramado correctamente.",
         })
 
-      // Fetch leads in background to confirm
-      // fetchLeads()
-      
-      setVisitDateDialogOpen(false)
-      setSelectedLeadForVisit(null)
-      setNewVisitDateDate("")
-      setNewVisitDateTime("")
+        // Optimistically update local state
+        const updatedLead = {
+          ...selectedLeadForVisit,
+          ...updateData,
+          idag: selectedAgenteId ? Number(selectedAgenteId) : (selectedLeadForVisit as any).idag,
+        } as any
+
+        setLeads((prev) => prev.map((l) => (l.id === selectedLeadForVisit.id ? { ...l, ...updatedLead } : l)))
+        
+        // Update selectedLead panel immediately
+        setSelectedLead((prev) => {
+            if (!prev) return prev
+            if (prev.id !== selectedLeadForVisit.id) return prev
+            return {
+              ...prev,
+              ...updatedLead
+            }
+        })
+
+        // Refresh data from server to ensure consistency
+        setTimeout(() => {
+            fetchLeads()
+        }, 500)
+        
+        if (updateData.Estado === "Visita Propuesta") {
+            // Async webhook call (fire and forget)
+            (async () => {
+                try {
+                    const currentAd = advertisements.find(a => 
+                      a.Referencia === selectedLeadForVisit.Inmueble || 
+                      a.Direccion === selectedLeadForVisit.Inmueble ||
+                      (selectedLeadForVisit.Inmueble && a.Direccion && selectedLeadForVisit.Inmueble.includes(a.Direccion))
+                    )
+
+                    const assignedAgent = agentes.find(a => String(a.idag) === String(selectedAgenteId))
+                    
+                    // Calculate future slots
+                    const futureSlots = await getFutureAvailability(Number(selectedAgenteId), selectedLeadForVisit)
+
+                    const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
+                    const bookingLink = origin ? `${origin}/agendar-visita?leadId=${selectedLeadForVisit.id}` : `https://aces-dashboard.vercel.app/agendar-visita?leadId=${selectedLeadForVisit.id}`
+                    
+                    // Fetch Inmobiliaria data
+                    let inmobiliariaData = null
+                    if (inmobiliariaId) {
+                        const { data: inmoData } = await supabase
+                           .from("Inmobiliarias")
+                           .select("*")
+                           .eq("idi", inmobiliariaId)
+                           .single()
+                        inmobiliariaData = inmoData
+                    }
+
+                    console.log("[v0] Triggering Webhook...")
+                    
+                    const payload = {
+                      "Nombre de lead": `${selectedLeadForVisit.Nombre || ''} ${selectedLeadForVisit.Apellidos || ''}`.trim(),
+                      "Agente Asignado": assignedAgent || { idag: selectedAgenteId },
+                      "Inmueble/Anuncio": currentAd || { Referencia: selectedLeadForVisit.Inmueble },
+                      "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
+                      "Inmobiliaria": inmobiliariaData || null,
+                      "Firma": (inmobiliariaData as any)?.firma_html || "",
+                      "Franjas/Huecos libres": futureSlots,
+                      "Link de Agendamiento": bookingLink,
+                      ...selectedLeadForVisit,
+                      ...updateData
+                    }
+
+                    // Use API route instead of Server Action to avoid CORS/Network issues
+                    const response = await fetch("/api/proponer-visita", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload)
+                    })
+                    const result = await response.json()
+
+                    if (!result.success) {
+                        console.error("Webhook failed:", result.error)
+                    } else {
+                        console.log("Webhook sent successfully")
+                    }
+                } catch(e) { console.error("Error calling webhook", e) }
+            })()
+        }
+
+        setVisitDateDialogOpen(false)
+        setSelectedLeadForVisit(null)
+        setNewVisitDateDate("")
+        setNewVisitDateTime("")
       } catch (error) {
         console.error("[v0] Error updating visit date:", error)
         toast({
@@ -2764,7 +3105,7 @@ export default function LeadsPage() {
                     <SelectItem value="all">Todos los estados</SelectItem>
                     {availableStatuses.map((status) => (
                       <SelectItem key={status} value={status}>
-                        {status === "Pedir Aval" ? "Aval Pedido" : status === "Visita Propuesta" ? "Visita Propuesta" : status}
+                        {status === "Pedir Aval" ? "Aval Pedido" : status === "Visita Propuesta" ? "Visita Propuesta" : status === "Aceptado" ? "Aprobado" : status}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -2849,7 +3190,7 @@ export default function LeadsPage() {
                                 Rechazado
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => updateBulkLeadStatus("Aceptado")}>
-                                Aceptado
+                                Aprobado
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => updateBulkLeadStatus("Descartado")}>
                                 Descartado
@@ -3051,6 +3392,7 @@ export default function LeadsPage() {
                                                         setNewVisitDateDate("")
                                                         setNewVisitDateTime("12:00")
                                                       }
+                                                      setIsAgentSelectionOnly(false)
                                                       setVisitDateDialogOpen(true)
                                                     }}
                                                   >
@@ -3138,8 +3480,10 @@ export default function LeadsPage() {
                                             <span>{formatDate(lead.created_at)}</span>
                                           </div>
                                         </div>
-                                      </div>
+                                        
+
                                     </div>
+                                  </div>
 
                                     {/* Quick Actions */}
                                     <TooltipProvider>
@@ -3515,6 +3859,7 @@ export default function LeadsPage() {
                                                       setNewVisitDateDate("")
                                                       setNewVisitDateTime("12:00")
                                                     }
+                                                    setIsAgentSelectionOnly(false)
                                                     setVisitDateDialogOpen(true)
                                                   }}
                                                 >
@@ -3582,8 +3927,10 @@ export default function LeadsPage() {
                                           <span>{formatDate(lead.created_at)}</span>
                                         </div>
                                       </div>
-                                      </div>
+                                      
+
                                     </div>
+                                  </div>
 
                                     {/* Quick Actions */}
                                     <TooltipProvider>
@@ -3851,6 +4198,7 @@ export default function LeadsPage() {
                         updateLeadStatus={updateLeadStatus}
                         onLeadUpdated={(updatedLead) => setSelectedLead(updatedLead)}
                       />
+
                     </div>
                   </div>
                 </div>
@@ -4251,79 +4599,7 @@ export default function LeadsPage() {
                               </div>
                               <div style={{ flex: "2" }}></div>
                             </div>
-                            <div style={{ display: "flex", gap: "1.5rem" }}>
-                              {isEditingPersonalInfo || ((selectedLead as any).Observaciones || (selectedLead as any).Obsevaciones) ? (
-                                <div style={{ flex: "1", minWidth: 0 }} className="bg-muted/50 dark:bg-input/30 border rounded-md p-3">
-                                  <div className="text-xs text-muted-foreground font-medium mb-1.5">
-                                    Anotaciones
-                                  </div>
-                                  <div className="mt-0.5">
-                                    <Button
-                                      size="sm"
-                                      className="h-8 mt-1.5 bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 border-0 shadow-sm"
-                                      onClick={() => openNoteDialog(selectedLead)}
-                                    >
-                                      Notas
-                                    </Button>
-                                  </div>
-                                  {isEditingPersonalInfo ? (
-                                    <Textarea
-                                      rows={3}
-                                      value={editFormData.Observaciones || editFormData.Obsevaciones || ""}
-                                      onChange={(e) => setEditFormData({ ...editFormData, Observaciones: e.target.value })}
-                                      placeholder="Notas sobre el candidato..."
-                                      className="text-sm mt-2"
-                                    />
-                                  ) : (
-                                    <div className="mt-2 space-y-2">
-                                      {(() => {
-                                        const rawText = (selectedLead as any).Observaciones || (selectedLead as any).Obsevaciones || "";
-                                        const notes = splitNotes(rawText);
-                                        
-                                        if (notes.length === 0 && rawText.trim()) {
-                                           return (
-                                             <div className="text-sm not-italic text-foreground whitespace-pre-wrap">
-                                               {rawText}
-                                             </div>
-                                           );
-                                        }
 
-                                        return notes.map((n, idx) => {
-                                          const cleanHeader = n.header.replace(/^\[|\]$/g, "")
-                                          const [dateStr, userStr] = cleanHeader.includes(" • ")
-                                            ? cleanHeader.split(" • ")
-                                            : [cleanHeader, null]
-                                          
-                                          return (
-                                            <div key={idx} className="bg-background/50 rounded-md p-2.5 border border-border/50 text-sm shadow-sm">
-                                              <div className="flex flex-col gap-0.5 mb-2 pb-2 border-b border-border/40">
-                                                <span className="text-[11px] font-semibold text-primary/80 tracking-tight">{dateStr}</span>
-                                                {userStr && (
-                                                  <span className="text-[10px] text-muted-foreground flex items-center gap-1.5 bg-muted/50 w-fit px-1.5 py-0.5 rounded-full">
-                                                    <User className="h-3 w-3" /> {userStr}
-                                                  </span>
-                                                )}
-                                              </div>
-                                              <div className="whitespace-pre-wrap leading-relaxed text-foreground/90">{n.body}</div>
-                                            </div>
-                                          )
-                                        });
-                                      })()}
-                                    </div>
-                                  )}
-                                </div>
-                              ) : (
-                                <div style={{ flex: "1", minWidth: 0 }}>
-                                  <Button
-                                    size="sm"
-                                    className="h-8 mt-1.5 bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 border-0 shadow-sm"
-                                    onClick={() => openNoteDialog(selectedLead)}
-                                  >
-                                    Notas
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
                           </div>
                         </div>
                       )}
@@ -5091,76 +5367,17 @@ export default function LeadsPage() {
                         </div>
                       )}
 
-                      {/* Visit Information */}
-                      <div className="border border-border rounded-lg p-5">
-                        <div className="flex gap-4 flex-wrap items-stretch">
+                      <div className="space-y-4">
+                        <div className="flex gap-4">
                           {/* Status Card */}
-                          <div className="flex-1 min-w-[150px] max-w-[220px] flex flex-col">
-                            <div className="text-xs font-semibold uppercase tracking-wider mb-3 pl-1">Estado</div>
+                          <div className="border border-border rounded-lg p-3 flex-1 flex flex-col">
+                            <div className="text-xs font-semibold uppercase tracking-wider mb-2 pl-1">Estado</div>
                             <Select
                               value={selectedLead.Estado || "Pendiente"}
-                              onValueChange={async (val) => {
-                                const value = val as Lead["Estado"]
-                                try {
-                                  const { error } = await supabase
-                                    .from("Clientes")
-                                    .update({ Estado: value })
-                                    .eq("id", selectedLead.id)
-
-                                  if (error) throw error
-
-                                  setSelectedLead({ ...selectedLead, Estado: value })
-                                  setLeads((prev) =>
-                                    prev.map((l) => (l.id === selectedLead.id ? { ...l, Estado: value } : l))
-                                  )
-
-                                  // Call n8n webhook if status is "Visita Propuesta"
-                                  if (value === "Visita Propuesta") {
-                                    try {
-                                      const currentAd = advertisements.find(a => 
-                                        a.Referencia === selectedLead.Inmueble || 
-                                        a.Direccion === selectedLead.Inmueble ||
-                                        (selectedLead.Inmueble && a.Direccion && selectedLead.Inmueble.includes(a.Direccion))
-                                      )
-
-                                      console.log("[v0] Calling n8n webhook for Visita Propuesta", { leadId: selectedLead.id, adId: currentAd?.ida })
-                                      
-                                      fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/proponer_visita", {
-                                        method: "POST",
-                                        headers: {
-                                          "Content-Type": "application/json",
-                                        },
-                                        body: JSON.stringify({
-                                          lead: { ...selectedLead, Estado: value },
-                                          anuncio: currentAd || null
-                                        }),
-                                      }).then(res => {
-                                        if (!res.ok) console.error("[v0] n8n webhook returned error:", res.status)
-                                        else console.log("[v0] n8n webhook called successfully")
-                                      }).catch(err => {
-                                        console.error("[v0] Error calling n8n webhook:", err)
-                                      })
-                                    } catch (webhookError) {
-                                      console.error("[v0] Error preparing n8n webhook:", webhookError)
-                                    }
-                                  }
-
-                                  toast({
-                                    title: "Estado actualizado",
-                                    description: `El estado ha sido cambiado a ${value}`,
-                                  })
-                                } catch (err) {
-                                  console.error("Error updating status:", err)
-                                  toast({
-                                    title: "Error",
-                                    description: "No se pudo actualizar el estado",
-                                    variant: "destructive",
-                                  })
-                                }
-                              }}
+                              onValueChange={(value) => updateLeadStatus(Number(selectedLead.id), value)}
                             >
-                              <SelectTrigger
-                                className="w-full flex-1 p-4 border-2 rounded-lg flex flex-col items-center justify-center gap-2 hover:opacity-90 transition-all focus:ring-0 shadow-sm"
+                              <SelectTrigger 
+                                className="w-full h-auto flex-1 p-4 border-2 rounded-lg flex flex-col items-center justify-center gap-2 hover:opacity-90 transition-all focus:ring-0 shadow-sm outline-none [&>svg]:hidden"
                                 style={{
                                   backgroundColor: getStatusColors(selectedLead.Estado).bg,
                                   borderColor: getStatusColors(selectedLead.Estado).border,
@@ -5175,7 +5392,7 @@ export default function LeadsPage() {
                                       Datos<br />Completos
                                     </>
                                   ) : (
-                                    selectedLead.Estado || "Pendiente"
+                                    selectedLead.Estado === "Aceptado" ? "Aprobado" : (selectedLead.Estado || "Pendiente")
                                   )}
                                 </div>
                                 
@@ -5193,29 +5410,55 @@ export default function LeadsPage() {
                                     })}
                                   </div>
                                 )}
+                                
+                                <div 
+                                  className="text-[10px] uppercase tracking-wider opacity-60 mt-2 font-medium"
+                                  style={{ color: getStatusColors(selectedLead.Estado).text }}
+                                >
+                                  Click para cambiar el estado
+                                </div>
+
+                                {(selectedLead.status_history && selectedLead.status_history.length > 0) && (() => {
+                                  const last = selectedLead.status_history[selectedLead.status_history.length - 1]
+                                  return (
+                                    <div className="mt-2 pt-2 border-t w-full text-center" style={{ borderColor: getStatusColors(selectedLead.Estado).border + "40" }}>
+                                      <div className="text-[10px] flex flex-col items-center justify-center gap-0.5" style={{ color: getStatusColors(selectedLead.Estado).text }}>
+                                        <span className="font-semibold">
+                                          {(() => {
+                                              try {
+                                                  return new Date(last.timestamp).toLocaleString("es-ES", {
+                                                      day: "2-digit",
+                                                      month: "2-digit",
+                                                      year: "numeric",
+                                                      hour: "2-digit",
+                                                      minute: "2-digit"
+                                                  })
+                                              } catch { return "" }
+                                          })()}
+                                        </span>
+                                        <span className="opacity-80">
+                                          Por: {(last.agent_name?.split('@')[0] === "Sistema" || !last.agent_name) ? "RaF" : last.agent_name.split('@')[0]}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )
+                                })()}
                               </SelectTrigger>
-                              <SelectContent>
-                                {availableStatuses.length > 0 ? (
-                                  availableStatuses.map((status) => (
-                                    <SelectItem key={status} value={status}>
-                                      {status}
-                                    </SelectItem>
-                                  ))
-                                ) : (
-                                  <>
-                                    <SelectItem value="Pendiente">Pendiente</SelectItem>
-                                    <SelectItem value="Datos Completos">Datos Completos</SelectItem>
-                                    <SelectItem value="Visita Propuesta">Visita Propuesta</SelectItem>
-                                    <SelectItem value="Validado">Validado</SelectItem>
-                                    <SelectItem value="Descartado">Descartado</SelectItem>
-                                  </>
-                                )}
+                              <SelectContent className="z-[99999] max-h-[300px]">
+                                {(availableStatuses.length > 0 ? availableStatuses : [
+                                  "Pendiente", "Datos Completos", "Visita Propuesta", "Validado", "Descartado", "Aceptado"
+                                ]).map((status) => (
+                                  <SelectItem key={status} value={status}>
+                                    {status === "Aceptado" ? "Aprobado" : status}
+                                  </SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                           </div>
 
-                          <div className="flex-1 min-w-[150px] flex flex-col">
-                            <h2 className="text-xs font-semibold uppercase tracking-wider mb-3 pl-1">Información de la visita</h2>
+                          {/* Visit Information - Full Width */}
+                          <div className="border border-border rounded-lg p-3 flex-1 flex flex-col">
+                            <h2 className="text-xs font-semibold uppercase tracking-wider mb-2 pl-1">Información de la visita</h2>
                             <div 
                               className="w-full flex-1 p-4 border-2 rounded-lg flex flex-col justify-between"
                               style={{
@@ -5265,7 +5508,7 @@ export default function LeadsPage() {
                                       <option value="unassigned" className="text-gray-500 font-normal">Sin asignar</option>
                                       {agentes.map((agente) => (
                                         <option key={agente.idag} value={String(agente.idag)} className="text-black font-normal">
-                                          {agente.Nombre}
+                                          {agente.Nombre || agente.nombre}
                                         </option>
                                       ))}
                                     </select>
@@ -5316,6 +5559,7 @@ export default function LeadsPage() {
                                         setNewVisitDateDate("")
                                         setNewVisitDateTime("12:00")
                                       }
+                                      setIsAgentSelectionOnly(false)
                                       setVisitDateDialogOpen(true)
                                     }}
                                   >
@@ -5336,6 +5580,47 @@ export default function LeadsPage() {
                                   )}
                               </div>
                             </div>
+                          </div>
+                        </div>
+
+                        {/* Communications - Moved Here */}
+                        <div className="border rounded-lg bg-card flex flex-col h-[300px] w-full shrink-0">
+                          <div className="p-4 border-b flex justify-between items-center bg-muted/20">
+                            <div className="flex items-center gap-2">
+                              <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                              <h3 className="font-semibold text-sm">Comunicaciones</h3>
+                            </div>
+                            <Badge variant="secondary" className="text-xs">{communications.length}</Badge>
+                          </div>
+                          <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                            {communications.length > 0 ? (
+                              communications.map((comm) => (
+                                <Card 
+                                  key={comm.id} 
+                                  className={`border-l-4 cursor-pointer hover:bg-muted/50 transition-colors ${comm.source === "whatsapp" ? "border-l-emerald-500" : "border-l-blue-500"}`}
+                                  onClick={() => openCommunicationDetail(comm)}
+                                >
+                                  <div className="p-3 space-y-1">
+                                    <div className="flex justify-between items-start">
+                                      <div className="flex items-center gap-1.5">
+                                        {comm.source === "whatsapp" ? <Phone className="h-3 w-3 text-emerald-600" /> : <Mail className="h-3 w-3 text-blue-600" />}
+                                        <span className="font-medium text-xs">{comm.source === "whatsapp" ? "WhatsApp" : "Email"}</span>
+                                      </div>
+                                      <span className="text-[10px] text-muted-foreground">{new Date(comm.created_at).toLocaleDateString()}</span>
+                                    </div>
+                                    <p className="text-xs font-medium truncate">{comm.Subject || (comm.source === "whatsapp" ? "Mensaje" : "Sin asunto")}</p>
+                                    <p className="text-xs text-muted-foreground line-clamp-2">
+                                      {(comm.Mensaje || comm.Text || "Sin contenido").replace(/<[^>]*>?/gm, '')}
+                                    </p>
+                                  </div>
+                                </Card>
+                              ))
+                            ) : (
+                              <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-50 space-y-2">
+                                <MessageSquare className="h-8 w-8" />
+                                <p className="text-xs">No hay comunicaciones</p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -5382,81 +5667,76 @@ export default function LeadsPage() {
                         </CardContent>
                       </Card>
 
-                      {/* Comunicaciones */}
-                      <div className="border border-border rounded-lg p-5 flex-1 min-h-[300px]">
-                        <div className="flex items-center justify-between mb-4">
-                          <h2 className="text-sm font-semibold m-0">Comunicaciones</h2>
-                          <button disabled className="px-3 py-1 text-xs bg-muted text-muted-foreground rounded cursor-not-allowed opacity-50 pointer-events-none relative z-[1100]">
-                            Agregar
-                          </button>
+                      {/* Anotaciones */}
+                      <div className="border rounded-lg bg-card flex flex-col h-[400px] w-full shrink-0 shadow-sm overflow-hidden">
+                        <div className="p-3 border-b flex justify-between items-center bg-muted/30">
+                          <div className="flex items-center gap-2">
+                            <StickyNote className="h-4 w-4 text-primary" />
+                            <h3 className="font-semibold text-sm">Anotaciones</h3>
+                          </div>
+                          <Badge variant="secondary" className="text-[10px] h-5 bg-background border shadow-sm">
+                            {selectedLead.Observaciones ? splitNotes(selectedLead.Observaciones).length : 0}
+                          </Badge>
                         </div>
-
-                        {communications.length > 0 ? (
-                          <div className="flex flex-col gap-3 max-h-[400px] overflow-y-auto">
-                            {communications.map((comm) => {
-                              const isSent = isCommunicationSent(comm)
-                              const isWhatsApp = comm.source === "whatsapp"
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
+                          {selectedLead.Observaciones && splitNotes(selectedLead.Observaciones).length > 0 ? (
+                            splitNotes(selectedLead.Observaciones).map((n, idx) => {
+                              const cleanHeader = n.header.replace(/^\[|\]$/g, "")
+                              const [dateStr, userStr] = cleanHeader.includes(" • ")
+                                ? cleanHeader.split(" • ")
+                                : [cleanHeader, null]
                               return (
-                                <Card
-                                  key={comm.id}
-                                  onClick={() => { if (planInactive) return; openCommunicationDetail(comm) }}
-                                  className={`p-0 transition-all ${planInactive ? "pointer-events-none opacity-50 cursor-not-allowed" : "cursor-pointer"} ${isWhatsApp ? "border-l-4 border-emerald-500" : isSent ? "border-l-4 border-blue-500" : "border-l-4 border-amber-500"} hover:bg-muted/30`}
-                                >
-                                  <CardHeader className="pt-2 pb-2">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-base leading-none scale-125">
-                                          {isWhatsApp ? (
-                                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                                              <path d="M13.333 2.66667C12.6663 2 11.9997 1.99999 11.333 1.99999H4.66634C3.33301 1.99999 2.66634 2.66666 2.66634 3.99999V11.3333C2.66634 12.6667 3.33301 13.3333 4.66634 13.3333H11.333C12.6663 13.3333 13.333 12.6667 13.333 11.3333V3.99999C13.333 3.33333 13.333 3.33333 13.333 2.66667Z" fill="#25D366"/>
-                                              <path d="M10.8867 9.67333C10.62 9.94 9.95333 10.2067 9.62 10.2067C9.28667 10.2067 8.68667 10.0733 7.75333 9.28667C6.88667 8.56667 6.35333 7.78 6.22 7.44667C6.15333 7.31333 6.02 7.11333 6.02 6.91333C6.02 6.78 6.08667 6.64667 6.15333 6.51333C6.35333 6.18 6.68667 5.91333 7.08667 5.78C7.28667 5.71333 7.42 5.78 7.48667 5.91333C7.62 6.18 7.82 6.58 7.88667 6.71333C7.95333 6.84667 8.02 6.91333 8.15333 6.91333C8.28667 6.91333 8.35333 6.91333 8.48667 6.78C8.75333 6.51333 9.08667 6.11333 9.35333 5.78C9.55333 5.51333 9.75333 5.58 9.88667 5.64667C10.02 5.71333 10.62 6.04667 10.62 6.04667C10.7533 6.11333 10.82 6.18 10.8867 6.31333C10.9533 6.38 10.9533 6.91333 10.62 7.58C10.3533 8.18 10.1533 8.31333 10.02 8.44667C9.88667 8.58 9.75333 8.64667 9.62 8.78C9.48667 8.91333 9.55333 9.01333 9.62 9.14667C9.68667 9.28 9.95333 9.67333 10.0867 9.80667C10.22 9.94 10.3533 10.0733 10.4867 10.14C10.62 10.2067 10.7533 10.2067 10.82 10.14C10.8867 10.0733 10.9533 9.94 11.02 9.80667C11.1533 9.54 11.3533 8.94 11.42 8.78C11.4867 8.62 11.62 8.58 11.7533 8.51333C11.8867 8.44667 12.3533 8.24667 12.5533 8.11333C12.82 7.91333 12.9533 7.84667 13.02 7.78C13.0867 7.71333 13.1533 7.58 13.02 7.38C12.8867 7.18 12.22 6.04667 12.02 5.71333C11.8867 5.51333 11.7533 5.51333 11.62 5.51333C11.4867 5.51333 11.3533 5.51333 11.22 5.51333C11.0867 5.51333 10.8867 5.58 10.7533 5.78C10.62 5.98 10.1533 6.58 10.02 6.78C9.88667 6.98 9.75333 7.04667 9.55333 6.91333C9.35333 6.78 8.75333 6.51333 8.08667 5.91333C7.55333 5.44667 7.15333 4.91333 7.02 4.71333C6.88667 4.51333 6.75333 4.58 6.62 4.58C6.48667 4.58 6.28667 4.58 6.08667 4.58C5.88667 4.58 5.62 4.64667 5.42 4.91333C5.22 5.18 4.55333 5.91333 4.55333 7.04667C4.55333 8.18 5.35333 9.24667 5.48667 9.44667C5.62 9.64667 6.88667 11.6733 9.02 12.54C9.55333 12.74 9.95333 12.74 10.2867 12.74C10.62 12.74 11.0867 12.6067 11.42 12.34C11.82 12.0067 12.02 11.54 12.0867 11.14C12.1533 10.8067 12.02 10.54 11.8867 10.34C11.7533 10.14 11.5533 9.94 11.42 9.80667C11.2867 9.67333 11.1533 9.80667 11.02 9.94C10.8867 10.0733 10.6867 10.34 10.5533 10.4733C10.42 10.6067 10.2867 10.6733 10.1533 10.54C10.02 10.4067 9.55333 9.94 9.42 9.80667C9.28667 9.67333 9.42 9.54 9.55333 9.40667C9.68667 9.27333 9.82 9.14 9.95333 9.00667C10.0867 8.87333 10.22 8.74 10.3533 8.87333C10.4867 9.00667 10.82 9.34 10.9533 9.47333C11.0867 9.60667 11.22 9.67333 11.3533 9.80667C11.4867 9.94 11.4867 10.0733 11.42 10.14C11.3533 10.2067 11.1533 10.4067 10.8867 10.54Z" fill="white"/>
-                                            </svg>
-                                          ) : isSent ? "📤" : "📥"}
-                                        </span>
-                                        <Badge
-                                          variant={isWhatsApp ? "feature" : isSent ? "docs" : "refactor"}
-                                          className="text-[11px] px-2 py-0.5 rounded-full"
-                                        >
-                                          {isWhatsApp ? "WhatsApp" : isSent ? "Enviado" : "Recibido"}
-                                        </Badge>
+                                <div key={idx} className="bg-background border border-border/50 rounded-xl p-3 text-xs shadow-sm hover:shadow-md transition-all duration-200 group relative">
+                                  <div className="flex justify-between items-start mb-2.5 pb-2 border-b border-border/30">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 border border-primary/5">
+                                        <User className="h-3.5 w-3.5 text-primary" />
                                       </div>
-                                      <span className="text-[0.7rem] text-muted-foreground">
-                                        {new Date(comm.created_at).toLocaleDateString("es-ES")}
-                                      </span>
+                                      <div className="flex flex-col">
+                                        <span className="font-semibold text-foreground text-[11px]">{userStr || "Usuario"}</span>
+                                        <span className="text-[10px] text-muted-foreground">{dateStr}</span>
+                                      </div>
                                     </div>
-                                    {(() => {
-                                      const title = isWhatsApp
-                                        ? getWhatsAppTitleAndBody(comm.Mensaje || "").title
-                                        : (comm.Subject || "Sin asunto")
-                                      return <CardTitle className="text-sm font-semibold">{title}</CardTitle>
-                                    })()}
-                                  </CardHeader>
-                                  <CardContent className="pt-0 pb-4">
-                                    {(() => {
-                                      const body = isWhatsApp
-                                        ? getWhatsAppTitleAndBody(comm.Mensaje || "").body || "Sin mensaje"
-                                        : (comm.Mensaje || "")
-                                      return <div className="text-xs text-foreground truncate">{body}</div>
-                                    })()}
-                                  </CardContent>
-                                  <CardFooter className="pt-0">
-                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                      {isWhatsApp ? <Phone className="h-3 w-3" /> : <Mail className="h-3 w-3" />}
-                                      <span className="truncate max-w-[200px]">
-                                        {isWhatsApp ? comm.to || comm.From || "" : comm.to || ""}
-                                      </span>
-                                    </div>
-                                  </CardFooter>
-                                </Card>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 text-muted-foreground hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity -mr-1 -mt-1"
+                                      onClick={() => deleteLeadNoteEntry(idx)}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                  <div className="pl-1">
+                                    <p className="whitespace-pre-wrap text-foreground/90 leading-relaxed font-normal">{n.body}</p>
+                                  </div>
+                                </div>
                               )
-                            })}
-                          </div>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center h-[calc(100%_-_3rem)] text-center">
-                            <div className="text-5xl">💬</div>
-                            <p className="text-sm text-muted-foreground m-0">Sin comunicaciones</p>
-                          </div>
-                        )}
+                            })
+                          ) : (
+                            <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-40 space-y-3">
+                              <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                                <StickyNote className="h-6 w-6" />
+                              </div>
+                              <p className="text-xs font-medium">No hay anotaciones registradas</p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="p-3 border-t bg-background space-y-2">
+                          <Textarea
+                            value={inlineNote}
+                            onChange={(e) => setInlineNote(e.target.value)}
+                            placeholder="Escribe una nota..."
+                            className="min-h-[60px] text-xs resize-none bg-muted/30 focus-visible:ring-1 focus-visible:bg-background transition-colors"
+                          />
+                          <Button
+                            size="sm"
+                            className="w-full h-7 text-xs"
+                            onClick={handleAddLeadNote}
+                            disabled={!inlineNote.trim()}
+                          >
+                            Añadir Nota
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -5666,7 +5946,7 @@ export default function LeadsPage() {
                           <SelectItem value="Validado">Validado</SelectItem>
                           <SelectItem value="Completado">Completado</SelectItem>
                           <SelectItem value="Rechazado">Rechazado</SelectItem>
-                          <SelectItem value="Aceptado">Aceptado</SelectItem>
+                          <SelectItem value="Aceptado">Aprobado</SelectItem>
                           <SelectItem value="Descartado">Descartado</SelectItem>
                           {/* Added 'Datos Completos' and 'Datos Incompletos' to the select options */}
                           <SelectItem value="Datos Completos">Datos Completos</SelectItem>
@@ -5989,11 +6269,17 @@ export default function LeadsPage() {
         <Dialog open={visitDateDialogOpen} onOpenChange={setVisitDateDialogOpen}>
           <DialogContent className="z-[30000]">
             <DialogHeader>
-              <DialogTitle>{selectedLeadForVisit?.fecha_de_visita ? "Reprogramar Visita" : "Programar Visita"}</DialogTitle>
+              <DialogTitle>
+                {isAgentSelectionOnly 
+                  ? "Asignar Agente" 
+                  : (selectedLeadForVisit?.fecha_de_visita ? "Reprogramar Visita" : "Programar Visita")}
+              </DialogTitle>
               <DialogDescription>
-                {selectedLeadForVisit?.fecha_de_visita
-                  ? "Selecciona una nueva fecha y hora para la visita del lead."
-                  : "Selecciona la fecha y hora para la visita del lead."}
+                {isAgentSelectionOnly
+                  ? "Selecciona un agente para gestionar la visita propuesta."
+                  : (selectedLeadForVisit?.fecha_de_visita
+                      ? "Selecciona una nueva fecha y hora para la visita del lead."
+                      : "Selecciona la fecha y hora para la visita del lead.")}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -6005,6 +6291,21 @@ export default function LeadsPage() {
                   Estado: <span className="font-semibold text-blue-600">Visita Propuesta</span>
                 </p>
               </div>
+
+              <div className="flex items-center space-x-2 py-2">
+                <Checkbox 
+                  id="agent-only" 
+                  checked={isAgentSelectionOnly} 
+                  onCheckedChange={(checked) => setIsAgentSelectionOnly(checked as boolean)} 
+                />
+                <label
+                  htmlFor="agent-only"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Solo asignar agente (sin fecha)
+                </label>
+              </div>
+
               <div className="space-y-2">
                 <label htmlFor="visit-agent" className="text-sm font-medium">
                   Seleccionar Agente
@@ -6027,6 +6328,8 @@ export default function LeadsPage() {
                   ))}
                 </select>
               </div>
+
+              {!isAgentSelectionOnly && (
               <div className="space-y-2">
                 <label htmlFor="visit-date" className="text-sm font-medium">
                   {selectedLeadForVisit?.fecha_de_visita ? "Nueva fecha y hora de visita" : "Fecha y hora de visita"}
@@ -6123,6 +6426,7 @@ export default function LeadsPage() {
                   </div>
                 </div>
               </div>
+              )}
             </div>
             <div className="flex justify-between">
               {selectedLeadForVisit?.fecha_de_visita ? (
@@ -6145,7 +6449,7 @@ export default function LeadsPage() {
                 }}>
                   Cerrar
                 </Button>
-                <Button onClick={handleReprogramVisit} disabled={!newVisitDateDate || !newVisitDateTime || !selectedAgenteId}>
+                <Button onClick={handleReprogramVisit} disabled={isAgentSelectionOnly ? !selectedAgenteId : (!newVisitDateDate || !newVisitDateTime || !selectedAgenteId)}>
                   Guardar
                 </Button>
               </div>
@@ -6611,6 +6915,48 @@ export default function LeadsPage() {
           </div>
         </DialogContent>
       </Dialog>
+      
+      <AlertDialog open={bulkConfirmationOpen} onOpenChange={setBulkConfirmationOpen}>
+        <AlertDialogContent className="z-[30000]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar cambio de estado masivo</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que quieres cambiar el estado de {selectedLeadIds.length} leads a "{pendingBulkStatus === "Aceptado" ? "Aprobado" : pendingBulkStatus}"?
+              Esta acción activará notificaciones automáticas y otros procesos asociados a estos leads.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+               setBulkConfirmationOpen(false)
+               setPendingBulkStatus(null)
+            }}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={executeBulkStatusChange}>Confirmar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={singleStatusConfirmOpen} onOpenChange={setSingleStatusConfirmOpen}>
+        <AlertDialogContent className="z-[30000]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Estás seguro de cambiar el estado?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cambiar el estado a "{pendingSingleStatus?.status === "Aceptado" ? "Aprobado" : pendingSingleStatus?.status}" activará notificaciones automáticas y otros procesos asociados a este lead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+               setSingleStatusConfirmOpen(false)
+               setPendingSingleStatus(null)
+            }}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={executeSingleStatusChange}>Confirmar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       </>
     )
   }

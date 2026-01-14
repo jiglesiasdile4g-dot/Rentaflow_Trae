@@ -21,18 +21,20 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
 import { 
   createAgentAction, 
-  updateRoleAction, 
+  toggleRoleAction, 
   toggleActiveAction, 
   deleteAgentAction, 
   toggleAgentFunctionsAction, 
-  resendUserConfirmationAction 
+  resendUserConfirmationAction,
+  updateUserDetailsAction
 } from "./actions"
-
+import { LogoUpload } from "./logo-upload"
 import { UserActions } from "./user-actions"
 
 export default async function ConfiguracionPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const searchParams = await props.searchParams
   const supabase = await createClient()
+  const admin = createAdminClient()
 
   const {
     data: { user },
@@ -47,7 +49,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
   let userRoleLabel = "Usuario"
   let agentCount = 0
   let planIdNum = 0
-  let usersList: Array<{ id?: any; usuario: string; is_admin: boolean; role?: string; activo?: boolean | null; has_agent_record?: boolean }> = []
+  let usersList: Array<{ id?: any; usuario: string; nombre?: string; telefono?: string; is_admin: boolean; role?: string; activo?: boolean | null; has_agent_record?: boolean }> = []
   let currentIdi: number | null = null
   let debugItems: Array<{ label: string; value: string }> = []
   const addDebug = (label: string, value: any) => {
@@ -56,7 +58,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
   async function fetchPerfilesByIdi(client: any, idi: number, log?: (label: string, value: any) => void) {
     // Standard fetch (numeric idi)
     try {
-      const { data, error } = await client.from("Perfiles").select("*").eq("inmobiliaria", idi)
+      const { data, error } = await client.from("Perfiles").select("idp, created_at, usuario, inmobiliaria, is_admin, role, es_agente, nombre, telefono").eq("inmobiliaria", idi)
       if (!error && data) {
         if (log) log("fetch_result", `found ${data.length}`)
         if (data.length > 0) {
@@ -70,18 +72,27 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
     }
     return []
   }
+  let perfil: any = null
+  let perfilError: any = null
+
   try {
-    const { data: perfil, error: perfilError } = await supabase
+    // Use admin client to bypass RLS policies for permission check
+    const result = await admin
       .from("Perfiles")
-      .select("inmobiliaria, is_admin")
-      .eq("usuario", user.email)
+      .select("inmobiliaria, is_admin, nombre, telefono, role")
+      .ilike("usuario", user.email ?? "")
       .limit(1)
       .maybeSingle()
+    
+    perfil = result.data
+    perfilError = result.error
 
     if (perfilError) {
       console.log("[v0] Error fetching profile:", perfilError)
     } else if (perfil && perfil.inmobiliaria) {
-      userRoleLabel = perfil?.is_admin === true ? "Administrador" : "Usuario"
+      const roleStr = String(perfil.role || "").toLowerCase()
+      const isAdmin = perfil.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
+      userRoleLabel = isAdmin ? "Administrador" : "Usuario"
       let reqIdi: number | null = null
       try {
         const spIdiRaw =
@@ -105,7 +116,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
       // Now fetch the inmobiliaria details using the ID
       const { data: inmobiliaria, error: inmobiliariaError } = await supabase
         .from("Inmobiliarias")
-        .select("*")
+        .select("*, pagina_web") // Explicit request for pagina_web
         .eq("idi", currentIdi as any)
         .limit(1)
         .maybeSingle()
@@ -129,7 +140,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
       // Fetch active agents map
       const { data: activeAgents, error: activeAgentsError } = await supabase
         .from("Agentes")
-        .select("Email")
+        .select("Email, Nombre, Telefono")
         .eq("idi", currentIdi as any)
       
       if (activeAgentsError) {
@@ -138,16 +149,33 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
           console.log("[v0] Active agents found:", activeAgents?.length, activeAgents)
       }
       
-      const activeAgentEmails = new Set((activeAgents || []).map((a: any) => (a.Email || "").toLowerCase()))
-      console.log("[v0] Active agent emails set:", Array.from(activeAgentEmails))
+      const activeAgentEmails = new Map((activeAgents || []).map((a: any) => [
+        (a.Email || "").toLowerCase(), 
+        { nombre: a.Nombre, telefono: a.Telefono }
+      ]))
+      console.log("[v0] Active agent emails set:", Array.from(activeAgentEmails.keys()))
 
       usersList = (perfilesData || []).map((p: any) => {
         const uEmail = String(p?.usuario || p?.Usuario || "").toLowerCase()
-        const hasRecord = activeAgentEmails.has(uEmail)
+        const agentData = activeAgentEmails.get(uEmail)
+        const hasRecord = !!agentData
         console.log(`[v0] User: ${uEmail}, Has Agent Record: ${hasRecord}`)
+        
+        let nombre = String(p?.nombre || p?.Nombre || "")
+        let telefono = String(p?.telefono || p?.Telefono || "")
+
+        if (!nombre && agentData?.nombre) {
+            nombre = agentData.nombre
+        }
+        if (!telefono && agentData?.telefono) {
+            telefono = String(agentData.telefono)
+        }
+
         return {
-            id: p?.id, // Get ID
+            id: p?.idp || p?.id, // Get ID
             usuario: String(p?.usuario || p?.Usuario || ""),
+            nombre,
+            telefono,
             is_admin: p?.is_admin === true || p?.Is_admin === true,
             role: String(p?.role || p?.Role || "agente").toLowerCase(),
             activo: typeof p?.activo === "boolean" ? !!p?.activo : 
@@ -164,11 +192,23 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
   addDebug("users_list_final_count", usersList.length)
   addDebug("agent_count_final", agentCount)
 
-
-
-
-
-
+  // Check for existing logo
+  let currentLogoUrl = null
+  if (currentIdi) {
+    try {
+        const admin = createAdminClient()
+        const { data: files } = await admin.storage.from("imagenes").list("logos", {
+            search: `${currentIdi}-logo.png`
+        })
+        
+        if (files && files.length > 0) {
+            const { data: { publicUrl } } = supabase.storage.from("imagenes").getPublicUrl(`logos/${currentIdi}-logo.png`)
+            currentLogoUrl = `${publicUrl}?v=${new Date(files[0].updated_at || Date.now()).getTime()}`
+        }
+    } catch (e) {
+        console.error("Error checking logo:", e)
+    }
+  }
 
   const sp = searchParams || undefined
   const createUserStatus = typeof sp?.createUser === "string" ? sp?.createUser : undefined
@@ -338,7 +378,12 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
             )}
             {userRoleLabel !== "Administrador" && (
               <Alert variant="destructive" className="py-2">
-                <AlertDescription className="text-xs">Solo administradores pueden gestionar usuarios</AlertDescription>
+                <AlertDescription className="text-xs">
+                  Solo administradores pueden gestionar usuarios. <br/>
+                  <span className="opacity-70 text-[10px]">
+                    Debug: {user.email} | R: {perfil?.role ?? 'N/A'} | A: {String(perfil?.is_admin)} | Err: {perfilError?.message || 'None'}
+                  </span>
+                </AlertDescription>
               </Alert>
             )}
             {userRoleLabel === "Administrador" && (
@@ -378,7 +423,9 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                   <table className="w-full text-xs">
                     <thead className="bg-muted/50 sticky top-0 z-10">
                       <tr className="border-b">
+                        <th className="h-8 px-3 text-left align-middle font-medium text-muted-foreground">Nombre</th>
                         <th className="h-8 px-3 text-left align-middle font-medium text-muted-foreground">Correo</th>
+                        <th className="h-8 px-3 text-left align-middle font-medium text-muted-foreground">Teléfono</th>
                         <th className="h-8 px-3 text-left align-middle font-medium text-muted-foreground w-[100px]">Rol</th>
                         <th className="h-8 px-3 text-left align-middle font-medium text-muted-foreground w-[80px]">Estado</th>
                         <th className="h-8 px-3 text-right align-middle font-medium text-muted-foreground w-[40px]"></th>
@@ -387,13 +434,16 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                     <tbody>
                       {usersList.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="p-3 text-center text-muted-foreground">
+                          <td colSpan={6} className="p-3 text-center text-muted-foreground">
                             No hay usuarios
                           </td>
                         </tr>
                       ) : (
                         usersList.map((u) => (
                           <tr key={u.usuario} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                            <td className="p-2 px-3 align-middle font-medium max-w-[150px] truncate" title={u.nombre}>
+                                {u.nombre || "-"}
+                            </td>
                             <td className="p-2 px-3 align-middle font-medium max-w-[150px]" title={u.usuario}>
                               <div className="flex flex-col gap-1">
                                 <span className="truncate">
@@ -406,6 +456,9 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                                     </Badge>
                                 )}
                               </div>
+                            </td>
+                            <td className="p-2 px-3 align-middle font-medium whitespace-nowrap">
+                                {u.telefono || "-"}
                             </td>
                             <td className="p-2 px-3 align-middle">
                               <Badge 
@@ -431,11 +484,12 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                               <UserActions
                                 user={u}
                                 idi={Number(currentIdi)}
-                                toggleRoleAction={updateRoleAction}
+                                toggleRoleAction={toggleRoleAction}
                                 toggleActiveAction={toggleActiveAction}
                                 deleteAgentAction={deleteAgentAction}
                                 resendUserConfirmationAction={resendUserConfirmationAction}
                                 toggleAgentFunctionsAction={toggleAgentFunctionsAction}
+                                updateUserDetailsAction={updateUserDetailsAction}
                               />
                             </td>
                           </tr>
@@ -463,17 +517,34 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
           </CardContent>
         </Card>
 
-        {/* Appearance Settings */}
+        {/* Appearance & Personalization Settings */}
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
               <Palette className="h-5 w-5 text-muted-foreground" />
-              <CardTitle>Apariencia</CardTitle>
+              <CardTitle>Apariencia y Personalización</CardTitle>
             </div>
-            <CardDescription>Personaliza la interfaz del dashboard</CardDescription>
+            <CardDescription>Personaliza la interfaz y la identidad visual</CardDescription>
           </CardHeader>
-          <CardContent>
-            <AppearanceSettings />
+          <CardContent className="space-y-6">
+            {inmobiliariaData && (userRoleLabel === "Administrador" || userRoleLabel === "Supervisor") && (
+               <>
+                 <div className="flex flex-col gap-4">
+                    <div className="space-y-0.5">
+                        <Label>Logo de la empresa</Label>
+                        <p className="text-sm text-muted-foreground">Sube tu logo para personalizar la barra lateral</p>
+                    </div>
+                    <LogoUpload inmobiliariaId={currentIdi!} currentLogoUrl={currentLogoUrl} />
+                 </div>
+                 <Separator />
+               </>
+            )}
+            <AppearanceSettings 
+              idi={currentIdi ?? undefined} 
+              initialSignature={(inmobiliariaData as any)?.firma_html} 
+              initialWebsite={(inmobiliariaData as any)?.pagina_web}
+              canEdit={!!inmobiliariaData && (userRoleLabel === "Administrador" || userRoleLabel === "Supervisor")}
+            />
           </CardContent>
         </Card>
 

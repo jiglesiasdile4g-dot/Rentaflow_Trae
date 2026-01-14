@@ -1,8 +1,18 @@
 "use client"
 
 import { useState } from "react"
-import { MoreVertical, Trash2, ShieldCheck, UserCheck, Power, PowerOff, Mail, Loader2, UserPlus, UserMinus } from "lucide-react"
+import { MoreVertical, Trash2, ShieldCheck, UserCheck, Power, PowerOff, Mail, Loader2, UserPlus, UserMinus, Edit } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,17 +41,20 @@ interface UserActionsProps {
   user: {
     id?: any
     usuario: string
+    nombre?: string
+    telefono?: string
     is_admin: boolean
     activo?: boolean | null
     role?: string
     has_agent_record?: boolean
   }
   idi: number
-  toggleRoleAction: (formData: FormData) => Promise<void>
-  toggleActiveAction: (formData: FormData) => Promise<void>
-  deleteAgentAction: (formData: FormData) => Promise<void>
-  resendUserConfirmationAction: (formData: FormData) => Promise<void>
-  toggleAgentFunctionsAction?: (formData: FormData) => Promise<void>
+  toggleRoleAction: (formData: FormData) => Promise<void | any>
+  toggleActiveAction: (formData: FormData) => Promise<void | any>
+  deleteAgentAction: (formData: FormData) => Promise<void | any>
+  resendUserConfirmationAction: (formData: FormData) => Promise<void | any>
+  toggleAgentFunctionsAction?: (formData: FormData) => Promise<void | any>
+  updateUserDetailsAction?: (formData: FormData) => Promise<void | any>
 }
 
 export function UserActions({
@@ -51,12 +64,16 @@ export function UserActions({
   toggleActiveAction,
   deleteAgentAction,
   resendUserConfirmationAction,
-  toggleAgentFunctionsAction
+  toggleAgentFunctionsAction,
+  updateUserDetailsAction
 }: UserActionsProps) {
   const [loading, setLoading] = useState(false)
   const [showDeleteAlert, setShowDeleteAlert] = useState(false)
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [editName, setEditName] = useState(user.nombre || "")
+  const [editPhone, setEditPhone] = useState(user.telefono || "")
 
-  const handleAction = async (action: (fd: FormData) => Promise<void>, extraData: Record<string, string> = {}) => {
+  const handleAction = async (action: (fd: FormData) => Promise<any>, extraData: Record<string, string> = {}) => {
     try {
       setLoading(true)
       const formData = new FormData()
@@ -89,6 +106,18 @@ export function UserActions({
         <DropdownMenuContent align="end">
           <DropdownMenuLabel>Acciones</DropdownMenuLabel>
           
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.preventDefault()
+              setShowEditDialog(true)
+            }}
+            disabled={loading}
+            className="cursor-pointer"
+          >
+            <Edit className="mr-2 h-4 w-4" />
+            <span>Editar detalles</span>
+          </DropdownMenuItem>
+
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               {user.is_admin ? (
@@ -209,6 +238,69 @@ export function UserActions({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar detalles de usuario</DialogTitle>
+            <DialogDescription>
+              Actualiza el nombre y teléfono de {user.usuario}
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (!updateUserDetailsAction) return
+              
+              try {
+                  setLoading(true)
+                  const formData = new FormData()
+                  formData.append("email", user.usuario)
+                  formData.append("idi", String(idi))
+                  if (user.id) formData.append("id", String(user.id))
+                  formData.append("name", editName)
+                  formData.append("phone", editPhone)
+                  
+                  await updateUserDetailsAction(formData)
+                  setShowEditDialog(false)
+              } catch (error) {
+                  console.error("Error updating user details:", error)
+              } finally {
+                  setLoading(false)
+              }
+            }}
+            className="space-y-4 py-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="name">Nombre</Label>
+              <Input 
+                  id="name" 
+                  value={editName} 
+                  onChange={(e) => setEditName(e.target.value)} 
+                  placeholder="Nombre completo" 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">Teléfono</Label>
+              <Input 
+                  id="phone" 
+                  value={editPhone} 
+                  onChange={(e) => setEditPhone(e.target.value)} 
+                  placeholder="+56 9 ..." 
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowEditDialog(false)} disabled={loading}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Guardar cambios
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

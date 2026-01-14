@@ -11,6 +11,7 @@ interface SidebarLayoutProps {
   user: {
     email?: string
     id: string
+    name?: string
   }
   children: React.ReactNode
 }

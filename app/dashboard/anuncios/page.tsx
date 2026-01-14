@@ -26,7 +26,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
-import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink, Copy } from 'lucide-react'
+import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink, Copy, History as HistoryIcon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { loadStripe, type Stripe as StripeJS } from "@stripe/stripe-js"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
@@ -786,7 +786,7 @@ export default function AnunciosPage() {
       // Filtramos agentes por la inmobiliaria (idi se almacena como string)
       let query = supabase
         .from("Agentes")
-        .select("idag, \"Nombre\", idi")
+        .select("idag, Nombre, nombre, idi")
         .eq("idi", inmobiliariaId.toString()); // Convertir a string para coincidir con la BD
       
       if (signal) query = query.abortSignal(signal)
@@ -1120,7 +1120,7 @@ export default function AnunciosPage() {
 
     let query = supabase
       .from("Clientes")
-      .select("*")
+      .select("*, Agentes(Nombre), status_history")
       .ilike("Inmueble", anuncioRef)
       .order("created_at", { ascending: false })
 
@@ -1147,7 +1147,7 @@ export default function AnunciosPage() {
     ) // Use createBrowserClient here
     const { data, error } = await supabase
       .from("Clientes")
-      .select("*")
+      .select("*, Agentes(Nombre), status_history")
       .eq("idi", anuncioId) // Assuming 'idi' is the foreign key to Anuncios
       .eq("Estado", "Datos Completos")
       .order("created_at", { ascending: false })
@@ -2331,7 +2331,24 @@ export default function AnunciosPage() {
 
   const handleProgramarVisitaUpdate = async (leadId: string) => {
     try {
-      const { error } = await supabase.from("Clientes").update({ Estado: "Programar visita" }).eq("IDC", leadId)
+      // History tracking setup
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: leadData } = await supabase.from("Clientes").select("status_history").eq("IDC", leadId).single()
+      
+      const currentHistory = (leadData?.status_history as any[]) || []
+      const historyEntry = {
+        status: "Programar visita",
+        timestamp: new Date().toISOString(),
+        agent_id: user?.id,
+        agent_name: user?.email || "Sistema"
+      }
+      
+      const updatedHistory = [...currentHistory, historyEntry]
+
+      const { error } = await supabase.from("Clientes").update({ 
+        Estado: "Programar visita",
+        status_history: updatedHistory
+      }).eq("IDC", leadId)
 
       if (error) {
         console.log("[v0] Error updating lead status:", error)
@@ -3604,6 +3621,35 @@ export default function AnunciosPage() {
     }
 
     try {
+      // Fetch user and agent details for history
+      const { data: { user } } = await supabase.auth.getUser()
+      let agentName = user?.email || "Sistema"
+      
+      // Try to find the name of the CURRENT USER in Agentes table
+      if (user?.email) {
+          const { data: currentUserAgent } = await supabase
+            .from("Agentes")
+            .select("Nombre, nombre")
+            .eq("Email", user.email)
+            .single()
+          if (currentUserAgent) {
+             agentName = currentUserAgent.Nombre || currentUserAgent.nombre || user.email
+          }
+      }
+
+      // Fetch current history
+      const { data: currentLead } = await supabase.from("Clientes").select("status_history").eq("id", visitDateDialog.leadId).single()
+      const currentHistory = (currentLead?.status_history as any[]) || []
+      
+      const historyEntry = {
+          status: "Visita Propuesta",
+          timestamp: new Date().toISOString(),
+          agent_id: user?.id,
+          agent_name: agentName
+      }
+      
+      const updatedHistory = [...currentHistory, historyEntry]
+
       const localDateTime = `${visitDateDialog.selectedDate}T${visitDateDialog.selectedTime}`
       const d = new Date(localDateTime)
       const off = d.getTimezoneOffset()
@@ -3617,6 +3663,8 @@ export default function AnunciosPage() {
         .update({
               fecha_de_visita: valueWithOffset,
               idag: visitDateDialog.selectedAgenteId ? Number(visitDateDialog.selectedAgenteId) : null,
+              Estado: "Visita Propuesta",
+              status_history: updatedHistory
             })
         .eq("id", visitDateDialog.leadId)
 
@@ -3628,6 +3676,59 @@ export default function AnunciosPage() {
           variant: "destructive",
         })
       } else {
+        // Trigger webhook
+        try {
+          const existingLead = completosLeads.find((l: any) => String(l.id) === String(visitDateDialog.leadId))
+          const currentAd = anunciosCards.find((a) => 
+             (existingLead?.Inmueble && a.referencia === existingLead.Inmueble) || 
+             (existingLead?.Inmueble && a.direccion === existingLead.Inmueble)
+          )
+
+          // Fetch agent details
+          const { data: agentData } = await supabase
+             .from("Agentes")
+             .select("*")
+             .eq("idag", visitDateDialog.selectedAgenteId)
+             .single()
+
+          const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
+          const bookingLink = `${origin}/agendar-visita?leadId=${visitDateDialog.leadId}`
+
+          // Fetch Inmobiliaria data
+          let inmobiliariaData = null
+          if (inmobiliariaId) {
+             const { data: inmoData } = await supabase
+                .from("Inmobiliarias")
+                .select("*")
+                .eq("idi", inmobiliariaId)
+                .single()
+             inmobiliariaData = inmoData
+          }
+
+          const payload = {
+            "Nombre de lead": `${existingLead?.Nombre || ''} ${existingLead?.Apellidos || ''}`.trim(),
+            "Agente Asignado": agentData || { idag: visitDateDialog.selectedAgenteId },
+            "Inmueble/Anuncio": currentAd || { Referencia: existingLead?.Inmueble },
+            "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
+            "Inmobiliaria": inmobiliariaData || null,
+            "Firma": (inmobiliariaData as any)?.firma_html || "",
+            "Link de Agendamiento": bookingLink,
+            ...existingLead,
+            fecha_de_visita: valueWithOffset,
+            idag: visitDateDialog.selectedAgenteId ? Number(visitDateDialog.selectedAgenteId) : null,
+            Estado: "Visita Propuesta"
+          }
+
+          fetch("/api/proponer-visita", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          }).catch(e => console.error("Error calling webhook proxy", e))
+
+        } catch (webhookErr) {
+          console.error("Error preparing webhook payload:", webhookErr)
+        }
+
         toast({
           title: "Éxito",
           description: `Visita programada para ${new Date(visitDateDialog.selectedDate).toLocaleString("es-ES")}`,
@@ -4310,6 +4411,27 @@ export default function AnunciosPage() {
                                     {lead.Ingresos && (
                                       <p className="text-xs text-muted-foreground mt-1">Ingresos: {lead.Ingresos}€</p>
                                     )}
+                                    <div className="flex items-center gap-1.5 mt-1 text-xs">
+                                      {lead.status_history && lead.status_history.length > 0 ? (
+                                        <>
+                                          <HistoryIcon className="h-3 w-3 text-muted-foreground shrink-0" />
+                                          <span className="text-muted-foreground">
+                                            {new Date(lead.status_history[lead.status_history.length - 1].timestamp).toLocaleString("es-ES", {
+                                              day: "2-digit",
+                                              month: "2-digit",
+                                              year: "2-digit",
+                                              hour: "2-digit",
+                                              minute: "2-digit"
+                                            })} • {lead.status_history[lead.status_history.length - 1].agent_name?.split('@')[0] || "Sistema"}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <HistoryIcon className="h-3 w-3 text-gray-400 shrink-0" />
+                                          <span className="text-gray-400">Sin historial</span>
+                                        </>
+                                      )}
+                                    </div>
                                     {lead.fecha_de_visita && (
                                       <p className="text-xs font-medium text-blue-700 mt-1">
                                         📅 {new Date(lead.fecha_de_visita).toLocaleString("es-ES", {
@@ -5518,6 +5640,14 @@ export default function AnunciosPage() {
                         {lead.Ingresos && (
                           <p className="text-xs text-muted-foreground">Ingresos: {lead.Ingresos}€</p>
                         )}
+                        {lead.status_history && lead.status_history.length > 0 && (
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+                            <HistoryIcon className="h-3 w-3" />
+                            <span>
+                              {new Date(lead.status_history[lead.status_history.length - 1].timestamp).toLocaleDateString()} • {lead.status_history[lead.status_history.length - 1].agent_name?.split('@')[0] || "Sistema"}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -5798,7 +5928,7 @@ export default function AnunciosPage() {
                   <option value="">Sin asignar</option>
                   {agentes.map((agente) => (
               <option key={agente.idag} value={String(agente.idag)}>
-                {agente.Nombre}
+                {agente.Nombre || agente.nombre}
               </option>
             ))}
                 </select>
