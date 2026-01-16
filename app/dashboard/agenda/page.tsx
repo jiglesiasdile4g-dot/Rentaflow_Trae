@@ -115,7 +115,7 @@ export default function AgendaPage() {
 
   const { toast } = useToast()
   const supabase = createClient()
-  const { inmobiliariaId } = useInmobiliaria()
+  const { inmobiliariaId, inmobiliariaNombre } = useInmobiliaria()
 
   // Helper to safely parse dates
   const safeDate = (dateStr: string | null | undefined): Date | null => {
@@ -688,6 +688,11 @@ export default function AgendaPage() {
           : "La visita ha vuelto al estado pendiente.",
         className: newStatus ? "bg-green-600 text-white border-none" : ""
       })
+
+      if (newStatus) {
+        console.log("Opening feedback dialog for completed visit", visit.id)
+        handleOpenFeedbackDialog({ ...visit, visita_completada: true })
+      }
       
       // 4. Background Validation
       // REMOVED: fetchAgentAndSchedule(false)
@@ -855,6 +860,63 @@ export default function AgendaPage() {
         .eq("id", visitToCancel.id)
 
       if (error) throw error
+
+      // Call webhook
+      try {
+        console.log("Preparing cancellation webhook payload...")
+        
+        // Fetch additional data
+        let inmobiliariaData = null
+        if (inmobiliariaId) {
+             const { data } = await supabase.from("Inmobiliarias").select("*").eq("idi", inmobiliariaId).single()
+             inmobiliariaData = data
+        }
+
+        const currentAd = availableAnuncios.find(a => 
+            (visitToCancel.Inmueble && a.Referencia === visitToCancel.Inmueble) ||
+            (visitToCancel.Inmueble && a.Direccion === visitToCancel.Inmueble)
+        )
+        
+        // Fetch full lead data to ensure we have email etc.
+        const { data: fullLead } = await supabase.from("Clientes").select("*").eq("id", visitToCancel.id).single()
+
+        // Fetch Agent Data
+        let agentData = null
+        if (fullLead?.idag) {
+            const { data } = await supabase.from("Agentes").select("*").eq("idag", fullLead.idag).single()
+            agentData = data
+        }
+
+        const cancelPayload = {
+            "Nombre de lead": `${fullLead?.Nombre || visitToCancel.Nombre} ${fullLead?.Apellidos || visitToCancel.Apellidos || ''}`.trim(),
+            "Inmueble/Anuncio": currentAd || { Referencia: visitToCancel.Inmueble },
+            "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
+            "Inmobiliaria": inmobiliariaData || null,
+            "Firma": (inmobiliariaData as any)?.firma_html || "",
+            "Agente Asignado": agentData,
+            "Agente Email": agentData?.Email,
+            "Fecha Visita": visitToCancel.fecha_de_visita ? visitToCancel.fecha_de_visita.split("T")[0] : null,
+            "Hora Visita": visitToCancel.fecha_de_visita ? visitToCancel.fecha_de_visita.split("T")[1]?.substring(0,5) : null,
+            "Fecha Completa": visitToCancel.fecha_de_visita,
+            "Motivo": "Cancelado por agente",
+            ...fullLead,
+            ...visitToCancel, 
+            visita_completada: "cancelada",
+            fecha_de_visita: null
+        }
+
+        const { status_history, ...webhookPayload } = cancelPayload as any
+
+        await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/cancelacion_visita_por_agente", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(webhookPayload),
+        })
+      } catch (webhookError) {
+        console.error("Error calling cancel webhook:", webhookError)
+      }
 
       toast({
         title: "Visita cancelada",

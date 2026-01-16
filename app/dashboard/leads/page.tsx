@@ -2683,14 +2683,32 @@ export default function LeadsPage() {
                     const payload = {
                       "Nombre de lead": `${selectedLeadForVisit.Nombre || ''} ${selectedLeadForVisit.Apellidos || ''}`.trim(),
                       "Agente Asignado": assignedAgent || { idag: selectedAgenteId },
+                      "Agente Email": assignedAgent?.Email || null,
                       "Inmueble/Anuncio": currentAd || { Referencia: selectedLeadForVisit.Inmueble },
                       "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
                       "Inmobiliaria": inmobiliariaData || null,
                       "Firma": (inmobiliariaData as any)?.firma_html || "",
                       "Franjas/Huecos libres": futureSlots,
                       "Link de Agendamiento": bookingLink,
+                      "Fecha Visita": newVisitDateDate || null,
+                      "Hora Visita": newVisitDateTime || null,
+                      "Fecha Completa": updateData.fecha_de_visita || null,
                       ...selectedLeadForVisit,
                       ...updateData
+                    }
+
+                    // Call new confirmation webhook
+                    try {
+                        console.log("Attempting to call confirmation webhook from leads page with rich payload...")
+                        const { status_history, ...webhookPayload } = payload as any
+                        const webhookResponse = await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/confirmacion_visita", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(webhookPayload)
+                        })
+                        console.log("Confirmation webhook response status:", webhookResponse.status)
+                    } catch (err) {
+                        console.error("Error calling confirmation webhook:", err)
                     }
 
                     // Use API route instead of Server Action to avoid CORS/Network issues
@@ -2738,6 +2756,54 @@ export default function LeadsPage() {
           .eq("id", selectedLeadForVisit.id)
 
         if (error) throw error
+
+        // Call cancel webhook
+        try {
+            console.log("Preparing cancellation webhook payload in leads/page...")
+
+            let inmobiliariaData = null
+            if (inmobiliariaId) {
+                 const { data } = await supabase.from("Inmobiliarias").select("*").eq("idi", inmobiliariaId).single()
+                 inmobiliariaData = data
+            }
+
+            let agentData = null
+            if (selectedLeadForVisit.idag) {
+                 const { data } = await supabase.from("Agentes").select("*").eq("idag", selectedLeadForVisit.idag).single()
+                 agentData = data
+            }
+
+            const currentAd = advertisements.find(a => 
+                (selectedLeadForVisit.Inmueble && a.Referencia === selectedLeadForVisit.Inmueble) ||
+                (selectedLeadForVisit.Inmueble && a.Direccion === selectedLeadForVisit.Inmueble)
+            )
+
+            const cancelPayload = {
+                "Nombre de lead": `${selectedLeadForVisit.Nombre || ''} ${selectedLeadForVisit.Apellidos || ''}`.trim(),
+                "Inmueble/Anuncio": currentAd || { Referencia: selectedLeadForVisit.Inmueble },
+                "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
+                "Inmobiliaria": inmobiliariaData || null,
+                "Firma": (inmobiliariaData as any)?.firma_html || "",
+                "Agente Asignado": agentData,
+                "Agente Email": agentData?.Email,
+                "Fecha Visita": selectedLeadForVisit.fecha_de_visita ? selectedLeadForVisit.fecha_de_visita.split("T")[0] : null,
+                "Hora Visita": selectedLeadForVisit.fecha_de_visita ? selectedLeadForVisit.fecha_de_visita.split("T")[1]?.substring(0,5) : null,
+                "Fecha Completa": selectedLeadForVisit.fecha_de_visita,
+                "Motivo": "Cancelado por agente",
+                ...selectedLeadForVisit,
+                visita_completada: "cancelada",
+                fecha_de_visita: null
+            }
+
+            const { status_history, ...webhookPayload } = cancelPayload as any
+            await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/cancelacion_visita_por_agente", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(webhookPayload)
+            })
+        } catch (webhookError) {
+            console.error("Error calling cancel webhook:", webhookError)
+        }
 
         toast({
           title: "Visita cancelada",

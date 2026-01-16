@@ -19,7 +19,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { 
   User, Building, Phone, Mail, Euro, FileText, Calendar, 
   MapPin, MessageSquare, Clock, Check, X, Copy, Loader2,
-  Trash2, ExternalLink, RefreshCw, Edit, Plus, Upload, Eye, CalendarIcon, StickyNote, History as HistoryIcon
+  Trash2, ExternalLink, RefreshCw, Edit, Plus, Upload, Eye, CalendarIcon, StickyNote
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
@@ -114,6 +114,7 @@ export function LeadDetailModal({
 }: LeadDetailModalProps) {
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(false)
+  const { inmobiliariaId, inmobiliariaNombre } = useInmobiliaria()
   const [communications, setCommunications] = useState<Communication[]>([])
   const [commsLoading, setCommsLoading] = useState(false)
   const [selectedCommunication, setSelectedCommunication] = useState<Communication | null>(null)
@@ -179,7 +180,6 @@ export function LeadDetailModal({
 
   const { toast } = useToast()
   const supabase = createClient()
-  const { inmobiliariaId, inmobiliariaNombre } = useInmobiliaria()
 
   useEffect(() => {
     const getUser = async () => {
@@ -1009,6 +1009,8 @@ export function LeadDetailModal({
            : "La fecha de visita se ha reprogramado correctamente.",
       })
 
+
+
       // Trigger Webhook if status is "Visita Propuesta"
       if (updateData.Estado === "Visita Propuesta") {
         const assignedAgent = agentes.find(a => String(a.idag) === String(selectedAgenteId))
@@ -1034,13 +1036,30 @@ export function LeadDetailModal({
         const payload = {
           "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
           "Agente Asignado": assignedAgent || null,
+          "Agente Email": assignedAgent?.Email || null,
           "Inmueble/Anuncio": currentAd || null,
           "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
           "Inmobiliaria": inmobiliariaData || null,
           "Firma": (inmobiliariaData as any)?.firma_html || "",
           "Link de Agendamiento": bookingLink,
+          "Fecha Visita": newVisitDateDate || null,
+          "Hora Visita": newVisitDateTime || null,
+          "Fecha Completa": updateData.fecha_de_visita || null,
           ...lead,
           ...updateData
+        }
+
+        // Call confirmation webhook with rich payload
+        try {
+            console.log("Calling confirmation webhook with rich payload...")
+            const { status_history, ...webhookPayload } = payload as any
+            await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/confirmacion_visita", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(webhookPayload)
+            })
+        } catch(err) {
+            console.error("Error calling confirmation webhook:", err)
         }
 
         fetch("/api/proponer-visita", {
@@ -1085,6 +1104,54 @@ export function LeadDetailModal({
 
       if (error) throw error
 
+      // Call cancellation webhook
+      try {
+        console.log("Calling cancellation webhook from modal...")
+        let inmobiliariaData = null
+        if (inmobiliariaId) {
+             const { data } = await supabase.from("Inmobiliarias").select("*").eq("idi", inmobiliariaId).single()
+             inmobiliariaData = data
+        }
+
+        let agentData = null
+        if (lead.idag) {
+             const { data } = await supabase.from("Agentes").select("*").eq("idag", lead.idag).single()
+             agentData = data
+        }
+
+        const currentAd = advertisements.find(a => 
+            (lead.Inmueble && a.Referencia === lead.Inmueble) ||
+            (lead.Inmueble && a.Direccion === lead.Inmueble)
+        )
+
+        const cancelPayload = {
+            "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
+            "Inmueble/Anuncio": currentAd || { Referencia: lead.Inmueble },
+            "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
+            "Inmobiliaria": inmobiliariaData || null,
+            "Firma": (inmobiliariaData as any)?.firma_html || "",
+            "Agente Asignado": agentData,
+            "Agente Email": agentData?.Email,
+            "Fecha Visita": lead.fecha_de_visita ? lead.fecha_de_visita.split("T")[0] : null,
+            "Hora Visita": lead.fecha_de_visita ? lead.fecha_de_visita.split("T")[1]?.substring(0,5) : null,
+            "Fecha Completa": lead.fecha_de_visita,
+            "Motivo": "Cancelado por agente",
+            ...lead,
+            visita_completada: "cancelada",
+            fecha_de_visita: null
+        }
+
+        const { status_history, ...webhookPayload } = cancelPayload as any
+        await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/cancelacion_visita_por_agente", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(webhookPayload)
+        })
+
+      } catch (webhookError) {
+        console.error("Error calling cancel webhook:", webhookError)
+      }
+
       toast({
         title: "Visita cancelada",
         description: "La visita se ha cancelado correctamente.",
@@ -1113,16 +1180,30 @@ export function LeadDetailModal({
 
   const openVisitDialog = () => {
     if (!lead) return
+    console.log("Opening visit dialog for lead:", lead.id)
     setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
+    
     if (lead.fecha_de_visita) {
-      const d = new Date(lead.fecha_de_visita)
-      const yyyy = d.getFullYear()
-      const mm = String(d.getMonth() + 1).padStart(2, "0")
-      const dd = String(d.getDate()).padStart(2, "0")
-      const hh = String(d.getHours()).padStart(2, "0")
-      const min = String(d.getMinutes()).padStart(2, "0")
-      setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
-      setNewVisitDateTime(`${hh}:${min}`)
+      try {
+        const d = new Date(lead.fecha_de_visita)
+        if (!isNaN(d.getTime())) {
+          const yyyy = d.getFullYear()
+          const mm = String(d.getMonth() + 1).padStart(2, "0")
+          const dd = String(d.getDate()).padStart(2, "0")
+          const hh = String(d.getHours()).padStart(2, "0")
+          const min = String(d.getMinutes()).padStart(2, "0")
+          setNewVisitDateDate(`${yyyy}-${mm}-${dd}`)
+          setNewVisitDateTime(`${hh}:${min}`)
+        } else {
+          console.error("Invalid date:", lead.fecha_de_visita)
+          setNewVisitDateDate("")
+          setNewVisitDateTime("12:00")
+        }
+      } catch (e) {
+        console.error("Error parsing date:", e)
+        setNewVisitDateDate("")
+        setNewVisitDateTime("12:00")
+      }
     } else {
       setNewVisitDateDate("")
       setNewVisitDateTime("12:00")
@@ -1342,39 +1423,7 @@ export function LeadDetailModal({
                         </SelectContent>
                       </Select>
                      </div>
-                     <div className="mt-3 flex justify-end w-full">
-                      {(lead.status_history && lead.status_history.length > 0) ? (() => {
-                       const last = lead.status_history[lead.status_history.length - 1]
-                       return (
-                           <div className="flex items-center justify-end gap-2 text-xs bg-blue-50 px-3 py-1.5 rounded-md border border-blue-100 w-full max-w-[200px]" title="Último cambio de estado">
-                               <HistoryIcon className="h-4 w-4 text-blue-600" />
-                               <div className="text-right leading-tight">
-                                   <span className="font-semibold text-blue-900 block">
-                                       {(() => {
-                                           try {
-                                               return new Date(last.timestamp).toLocaleString("es-ES", {
-                                                   day: "2-digit",
-                                                   month: "2-digit",
-                                                   year: "numeric",
-                                                   hour: "2-digit",
-                                                   minute: "2-digit"
-                                               })
-                                           } catch { return "Fecha inválida" }
-                                       })()}
-                                   </span>
-                                   <span className="block text-[11px] text-blue-700">
-                                       Por: {(last.agent_name?.split('@')[0] === "Sistema" || !last.agent_name) ? "RaF" : last.agent_name.split('@')[0]}
-                                   </span>
-                               </div>
-                           </div>
-                       )
-                    })() : (
-                       <div className="flex items-center justify-end gap-2 text-xs bg-gray-100 px-3 py-1.5 rounded-md border border-gray-200 opacity-80" title="Sin historial de cambios">
-                           <HistoryIcon className="h-4 w-4 text-gray-500" />
-                           <span className="text-gray-600 font-medium">Sin cambios registrados</span>
-                       </div>
-                    )}
-                    </div>
+
                    </div>
                    {onDeleteClick && (
                       <Button variant="ghost" size="icon" onClick={() => onDeleteClick(lead)}>
@@ -1468,6 +1517,7 @@ export function LeadDetailModal({
                                 </div>
                                 <div className="flex items-end">
                                    <Button 
+                                     type="button"
                                      variant="default" 
                                      size="sm" 
                                      className="h-8 text-xs bg-black text-white hover:bg-black/90 border-0"
@@ -1886,7 +1936,7 @@ export function LeadDetailModal({
 
             {/* Documents Dialog */}
             <Dialog open={isDocsDialogOpen} onOpenChange={setIsDocsDialogOpen}>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-md z-[70000]">
                     <DialogHeader>
                         <DialogTitle>Gestionar documentos</DialogTitle>
                         <DialogDescription>Subir y gestionar documentos del lead</DialogDescription>
@@ -1956,7 +2006,7 @@ export function LeadDetailModal({
 
             {/* Visit Date Dialog */}
             <Dialog open={visitDateDialogOpen} onOpenChange={setVisitDateDialogOpen}>
-              <DialogContent className="z-[600]">
+              <DialogContent className="z-[70000]">
                 <DialogHeader>
                   <DialogTitle>Reprogramar Visita</DialogTitle>
                   <DialogDescription>
@@ -2069,7 +2119,7 @@ export function LeadDetailModal({
             </Dialog>
 
             <AlertDialog open={isCancelConfirmOpen} onOpenChange={setIsCancelConfirmOpen}>
-              <AlertDialogContent className="z-[700]">
+              <AlertDialogContent className="z-[70001]">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Confirmar cancelación</AlertDialogTitle>
                   <AlertDialogDescription>

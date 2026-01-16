@@ -2941,34 +2941,39 @@ export default function AnunciosPage() {
 
       console.log("[v0] New anuncio object with agency IDI:", newAnuncio)
 
-      const { data, error } = await createAnuncioAction(newAnuncio)
+      const result = await createAnuncioAction(newAnuncio)
+      console.log("[v0] createAnuncioAction result:", result)
+
+      if (!result) {
+        throw new Error("No se recibió respuesta del servidor")
+      }
+
+      const { data, error } = result
 
       if (error) {
         // Handle error string returned by server action
-        const errorMessage = typeof error === 'string' ? error : (error as any).message || 'Error desconocido';
+        let errorMessage = 'Error desconocido';
+        if (typeof error === 'string') {
+            errorMessage = error;
+        } else if (typeof error === 'object' && error !== null) {
+            errorMessage = (error as any).message || JSON.stringify(error);
+        }
+
         console.log("[v0] Error creating anuncio:", errorMessage)
         
         // If it's a permission error, show it and return
-        if (errorMessage.includes("No tienes permisos")) {
+        if (errorMessage.includes("No tienes permisos") || errorMessage.includes("No tienes autorización")) {
              toast({
-                title: "Error",
+                title: "Error de Permisos",
                 description: errorMessage,
                 variant: "destructive",
             })
             return
         }
 
-        // Fallback logic for other errors (keep existing fallback logic if desired, or remove if server action is robust)
-        // For now, I will assume the server action handles the main insertion. 
-        // If the server action fails, we probably shouldn't try a fallback on the client that might also fail or bypass checks.
-        // However, the original code had a fallback. 
-        // Given we want to RESTRICT agents, we should NOT have a client-side fallback that hits Supabase directly unless we are sure it respects RLS.
-        // But RLS might not be set up for this specific check, hence the server action.
-        // So, I will REMOVE the fallback to ensure security.
-        
         toast({
-            title: "Error",
-            description: `No se pudo crear el anuncio: ${errorMessage}`,
+            title: "Error al crear anuncio",
+            description: errorMessage,
             variant: "destructive",
         })
         return
