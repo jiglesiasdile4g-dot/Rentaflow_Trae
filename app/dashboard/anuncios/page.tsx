@@ -786,7 +786,7 @@ export default function AnunciosPage() {
       // Filtramos agentes por la inmobiliaria (idi se almacena como string)
       let query = supabase
         .from("Agentes")
-        .select("idag, Nombre, nombre, idi")
+        .select("idag, Nombre, idi")
         .eq("idi", inmobiliariaId.toString()); // Convertir a string para coincidir con la BD
       
       if (signal) query = query.abortSignal(signal)
@@ -800,7 +800,12 @@ export default function AnunciosPage() {
       }
       
       if (!signal?.aborted) {
-        setAgentes(data || []);
+        // Map to ensure compatibility with components expecting lowercase 'nombre'
+        const mappedData = (data || []).map((agent: any) => ({
+          ...agent,
+          nombre: agent.Nombre
+        }))
+        setAgentes(mappedData);
       }
       
     } catch (error: any) {
