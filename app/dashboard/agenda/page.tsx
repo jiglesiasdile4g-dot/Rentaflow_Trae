@@ -910,7 +910,7 @@ export default function AgendaPage() {
 
         const { status_history, ...webhookPayload } = cancelPayload as any
 
-        await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/cancelacion_visita_por_agente", {
+        await fetch("/api/cancelar-visita-agente", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
