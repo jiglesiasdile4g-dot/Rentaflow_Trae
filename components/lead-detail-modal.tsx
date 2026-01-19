@@ -22,7 +22,7 @@ import {
   Trash2, ExternalLink, RefreshCw, Edit, Plus, Upload, Eye, CalendarIcon, StickyNote
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { cn } from "@/lib/utils"
+import { cn, formatDateTime, formatWebhookDate } from "@/lib/utils"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
@@ -1033,6 +1033,8 @@ export function LeadDetailModal({
            inmobiliariaData = inmoData
         }
 
+        const { date: formattedDate, time: formattedTime } = formatWebhookDate(updateData.fecha_de_visita)
+
         const payload = {
           "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
           "Agente Asignado": assignedAgent || null,
@@ -1042,30 +1044,19 @@ export function LeadDetailModal({
           "Inmobiliaria": inmobiliariaData || null,
           "Firma": (inmobiliariaData as any)?.firma_html || "",
           "Link de Agendamiento": bookingLink,
-          "Fecha Visita": newVisitDateDate || null,
-          "Hora Visita": newVisitDateTime || null,
+          "Fecha Visita": formattedDate,
+          "Hora Visita": formattedTime,
           "Fecha Completa": updateData.fecha_de_visita || null,
           ...lead,
           ...updateData
         }
 
-        // Call confirmation webhook with rich payload
-        try {
-            console.log("Calling confirmation webhook with rich payload...")
-            const { status_history, ...webhookPayload } = payload as any
-            await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/confirmacion_visita", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(webhookPayload)
-            })
-        } catch(err) {
-            console.error("Error calling confirmation webhook:", err)
-        }
-
+        const { status_history, ...webhookPayload } = payload as any
+        
         fetch("/api/proponer-visita", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(webhookPayload)
         }).catch(e => console.error("Error calling webhook proxy", e))
       }
 
@@ -1124,7 +1115,12 @@ export function LeadDetailModal({
             (lead.Inmueble && a.Direccion === lead.Inmueble)
         )
 
+        const { date: formattedDate, time: formattedTime } = formatWebhookDate(lead.fecha_de_visita)
+
+        const bookingLink = `${typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''}/agendar-visita?leadId=${lead.id}`
+
         const cancelPayload = {
+            "Link de Agendamiento": bookingLink,
             "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
             "Inmueble/Anuncio": currentAd || { Referencia: lead.Inmueble },
             "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
@@ -1132,8 +1128,8 @@ export function LeadDetailModal({
             "Firma": (inmobiliariaData as any)?.firma_html || "",
             "Agente Asignado": agentData,
             "Agente Email": agentData?.Email,
-            "Fecha Visita": lead.fecha_de_visita ? lead.fecha_de_visita.split("T")[0] : null,
-            "Hora Visita": lead.fecha_de_visita ? lead.fecha_de_visita.split("T")[1]?.substring(0,5) : null,
+            "Fecha Visita": formattedDate,
+            "Hora Visita": formattedTime,
             "Fecha Completa": lead.fecha_de_visita,
             "Motivo": "Cancelado por agente",
             ...lead,
@@ -1142,7 +1138,7 @@ export function LeadDetailModal({
         }
 
         const { status_history, ...webhookPayload } = cancelPayload as any
-        await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/cancelacion_visita_por_agente", {
+        await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/cancelacion_visita_por_agente", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(webhookPayload)
@@ -1379,6 +1375,10 @@ export function LeadDetailModal({
                         <Badge variant="outline" className="text-xs font-normal">
                           ID: {lead.id}
                         </Badge>
+                      </span>
+                      <span className="h-3 w-[1px] bg-border mx-1" />
+                      <span className="text-xs text-muted-foreground">
+                        Fecha Entrada: {lead.created_at ? formatDateTime(lead.created_at) : "N/A"}
                       </span>
                     </div>
                   </div>

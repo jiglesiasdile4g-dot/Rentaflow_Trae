@@ -76,6 +76,8 @@ export async function createAgentAction(formData: FormData) {
     
     const idi = Number(formData.get("idi"))
     const email = String(formData.get("newEmail")).toLowerCase().trim()
+    const name = String(formData.get("newName") || "").trim() || email.split('@')[0]
+    const phone = String(formData.get("newPhone") || "").trim()
 
     if (!email || !email.includes("@")) {
         redirect(`/dashboard/configuracion?createUser=error&msg=${encodeURIComponent("Email inválido")}`)
@@ -83,10 +85,11 @@ export async function createAgentAction(formData: FormData) {
 
     try {
         // 1. Invite user via Supabase Auth
-        // Redirect to a page that handles password setup or just dashboard
         const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
         const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`
         
+        console.log(`[createAgentAction] Inviting ${email} to idi ${idi}`)
+
         const { data: authData, error: authError } = await admin.auth.admin.inviteUserByEmail(email, {
             redirectTo: redirectUrl
         })
@@ -96,30 +99,55 @@ export async function createAgentAction(formData: FormData) {
             throw new Error(authError.message)
         }
 
-        // 2. Create profile entry if not exists (usually trigger handles this but we want to be sure)
-        // Check if profile exists
+        console.log("[createAgentAction] Invite sent successfully")
+
+        // 2. Create profile entry if not exists
         const found = await findProfileAndColumns(admin, email, idi)
         
         if (!found) {
-            // Create profile manually if needed (though Auth trigger should handle basic creation)
-            // But we need to set 'inmobiliaria' and 'role'
-            // Since we can't easily insert into Perfiles without knowing columns structure for sure (case sensitivity),
-            // we assume standard lowercase.
+            console.log("[createAgentAction] Profile not found. Creating manual profile...")
+            
+            // Try inserting with lowercase first (standard)
             const { error: insertError } = await admin.from("Perfiles").insert({
                 usuario: email,
                 inmobiliaria: idi,
                 role: "agente",
                 is_admin: false,
-                activo: true
+                es_agente: true,
+                nombre: name, // Use provided name
+                telefono: phone // Use provided phone
             })
             
             if (insertError) {
-                console.error("Error creating profile:", insertError)
-                // Try with Capitalized if failed?
+                console.error("[createAgentAction] Error creating profile (lowercase):", insertError)
+                
+                // Fallback: Try Capitalized if the error suggests column issues
+                if (insertError.code === '42703') { // Undefined column
+                     console.log("[createAgentAction] Retrying with capitalized columns...")
+                     const { error: insertError2 } = await admin.from("Perfiles").insert({
+                        Usuario: email,
+                        Inmobiliaria: idi,
+                        Role: "agente",
+                        Is_admin: false,
+                        Es_agente: true,
+                        Nombre: name,
+                        Telefono: phone
+                    })
+                    
+                    if (insertError2) {
+                         console.error("[createAgentAction] Error creating profile (Capitalized):", insertError2)
+                         throw new Error("No se pudo crear el perfil del usuario (DB Error)")
+                    } else {
+                        console.log("[createAgentAction] Profile created with capitalized columns")
+                    }
+                } else {
+                     throw new Error(`Error al crear perfil: ${insertError.message}`)
+                }
+            } else {
+                console.log("[createAgentAction] Profile created successfully")
             }
         } else {
-            // Update existing profile to link to this inmobiliaria if not already?
-            // Assuming 1 user = 1 inmobiliaria for now based on schema
+            console.log("[createAgentAction] Profile already exists")
         }
 
         // 3. Create Agent record
@@ -155,10 +183,11 @@ export async function deleteAgentAction(formData: FormData) {
         // Delete from Perfiles
         const found = await findProfileAndColumns(admin, email, idi)
         if (found) {
+            const idField = found.profile.id ? "id" : "idp"
             await admin
                 .from("Perfiles")
                 .delete()
-                .eq("id", found.profile.id)
+                .eq(idField, found.profile[idField])
         }
 
         // Delete from Agentes
@@ -182,13 +211,17 @@ export async function toggleActiveAction(formData: FormData) {
     const found = await findProfileAndColumns(admin, email, idi)
     if (!found) return
 
-    const currentActive = found.profile.activo !== false // Default true if null
+    // Determine correct active column (es_agente) and id field
+    const activeCol = found.columns.u === 'Usuario' ? 'Es_agente' : 'es_agente'
+    const idField = found.profile.id ? "id" : "idp"
+    
+    const currentActive = found.profile[activeCol] !== false // Default true if null/undefined
     const newActive = !currentActive
 
     await admin
         .from("Perfiles")
-        .update({ [found.columns.u === 'usuario' ? 'activo' : 'Activo']: newActive })
-        .eq("id", found.profile.id)
+        .update({ [activeCol]: newActive })
+        .eq(idField, found.profile[idField])
 
     revalidatePath("/dashboard/configuracion")
 }
@@ -232,10 +265,11 @@ export async function toggleRoleAction(formData: FormData) {
     }
 
     // Handle case sensitivity for columns if needed, but Perfiles seems standard mostly
+    const idField = found.profile.id ? "id" : "idp"
     await admin
         .from("Perfiles")
         .update(updates)
-        .eq("id", found.profile.id)
+        .eq(idField, found.profile[idField])
 
     revalidatePath("/dashboard/configuracion")
 }
@@ -335,6 +369,10 @@ export async function updateUserDetailsAction(formData: FormData) {
     const p = found.profile
     console.log(`[updateUserDetailsAction] Perfil encontrado. Keys:`, Object.keys(p))
 
+    // Determine correct ID field
+    const idField = p.id ? "id" : "idp"
+    console.log(`[updateUserDetailsAction] Using ID field: ${idField} = ${p[idField]}`)
+
     // Update Perfiles
     // Intentaremos ser exhaustivos: actualizaremos tanto camelCase como PascalCase si existen,
     // o forzaremos 'nombre'/'telefono' (minúsculas) que es lo estándar post-migración.
@@ -361,7 +399,7 @@ export async function updateUserDetailsAction(formData: FormData) {
         const { error, data } = await admin
             .from("Perfiles")
             .update(updates)
-            .eq("id", found.profile.id)
+            .eq(idField, p[idField])
             .select() // Select para confirmar que devolvió algo
 
         if (error) {
@@ -384,12 +422,12 @@ export async function updateUserDetailsAction(formData: FormData) {
                 const { error: error2 } = await admin
                     .from("Perfiles")
                     .update(altUpdates)
-                    .eq("id", found.profile.id)
+                    .eq(idField, p[idField])
                 
                 if (error2) {
-                     console.error(`[updateUserDetailsAction] Falló el segundo intento:`, error2)
+                    console.error(`[updateUserDetailsAction] Falló el segundo intento:`, error2)
                 } else {
-                     console.log(`[updateUserDetailsAction] Segundo intento exitoso!`)
+                    console.log(`[updateUserDetailsAction] Segundo intento exitoso!`)
                 }
             } else {
                 throw error

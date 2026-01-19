@@ -2,15 +2,15 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
-import { getBookingData, confirmVisit } from "@/app/actions/booking"
+import { getBookingData, confirmVisit, cancelVisit } from "@/app/actions/booking"
 import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Calendar as CalendarIcon, Clock, MapPin, User, CheckCircle } from "lucide-react"
+import { Loader2, Calendar as CalendarIcon, Clock, MapPin, User, CheckCircle, AlertCircle, XCircle, RefreshCw } from "lucide-react"
 import { format, addDays, isSameDay } from "date-fns"
 import { es } from "date-fns/locale"
-import { cn } from "@/lib/utils"
+import { cn, formatWebhookDate } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
 
 type Lead = {
@@ -62,8 +62,12 @@ function AgendarVisitaContent() {
   const [agentName, setAgentName] = useState<string>("")
   const [agentEmail, setAgentEmail] = useState<string>("")
   const [inmobiliaria, setInmobiliaria] = useState<any>(null)
+  
+  const [isRescheduling, setIsRescheduling] = useState(false)
+    const [isCancelled, setIsCancelled] = useState(false)
+    const [isCancelling, setIsCancelling] = useState(false)
 
-  // Remove client-side supabase
+    // Remove client-side supabase
   // const supabase = createClient()
 
   useEffect(() => {
@@ -96,11 +100,11 @@ function AgendarVisitaContent() {
           setAgentName(agent.Nombre)
           if (agent.Email) setAgentEmail(agent.Email)
         }
-        setAdvertisement(adData)
+        setAdvertisement(adData || null)
         if (inmoData) setInmobiliaria(inmoData)
 
         // Calculate Availability locally using data fetched from server
-        calculateAvailability(agenda || [], existingVisits || [], allAds || [], adData)
+        calculateAvailability(agenda || [], existingVisits || [], allAds || [], adData || null)
 
       } catch (err: any) {
         console.error("Error fetching data:", err)
@@ -226,6 +230,42 @@ function AgendarVisitaContent() {
         const offset = `${sign}${hh}:${mm}`
         const valueWithOffset = `${dateTimeStr}${offset}`
 
+        // If rescheduling, trigger cancellation webhook for the previous visit
+        if (lead.fecha_de_visita) {
+            try {
+                 const { status_history, ...leadWithoutStatusHistory } = lead as any
+                 const { date: formattedDate, time: formattedTime } = formatWebhookDate(lead.fecha_de_visita)
+
+                 const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
+                 const bookingLink = `${origin}/agendar-visita?leadId=${lead.id}`
+
+                 const payload = {
+                    "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
+                    "Agente Asignado": agentName || null,
+                    "Agente Email": agentEmail || null,
+                    "Direccion de inmueble": advertisement?.Direccion || lead.Inmueble,
+                    "Direccion": advertisement?.Direccion || lead.Inmueble,
+                    "Inmueble/Anuncio": advertisement || { Referencia: lead.Inmueble },
+                    "Inmobiliaria": inmobiliaria || null,
+                    "Firma": (inmobiliaria as any)?.firma_html || "",
+                    "Link de Agendamiento": bookingLink,
+                    "Fecha Visita": formattedDate,
+                    "Hora Visita": formattedTime,
+                    "Fecha Completa": lead.fecha_de_visita,
+                    ...leadWithoutStatusHistory
+                }
+
+                fetch("/api/cancelar-visita", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                }).catch(e => console.error("Error calling cancellation webhook during reschedule", e))
+
+            } catch (err) {
+                 console.error("Error preparing cancellation webhook during reschedule:", err)
+            }
+        }
+
         // Use Server Action
         const result = await confirmVisit(lead.id, valueWithOffset)
 
@@ -234,21 +274,32 @@ function AgendarVisitaContent() {
         // Trigger Confirmation Webhook
         try {
             const { status_history, ...leadWithoutStatusHistory } = lead as any
+            
+            const { date: formattedDate, time: formattedTime } = formatWebhookDate(valueWithOffset)
+
+            const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
+            const bookingLink = `${origin}/agendar-visita?leadId=${lead.id}`
 
             const payload = {
                 "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
                 "Agente Asignado": agentName || null,
                 "Agente Email": agentEmail || null,
+                "Link de Agendamiento": bookingLink,
+                "Direccion de inmueble": advertisement?.Direccion || lead.Inmueble,
                 "Inmueble/Anuncio": advertisement || { Referencia: lead.Inmueble },
                 "Inmobiliaria": inmobiliaria || null,
                 "Firma": (inmobiliaria as any)?.firma_html || "",
-                "Fecha Visita": dateStr,
-                "Hora Visita": selectedSlot,
+                "Fecha Visita": formattedDate,
+                "Hora Visita": formattedTime,
                 "Fecha Completa": valueWithOffset,
                 ...leadWithoutStatusHistory
             }
 
-            fetch("/api/confirmar-visita", {
+            // Determine if it's a reschedule or new booking
+            const isReschedule = !!lead.fecha_de_visita
+            const endpoint = isReschedule ? "/api/reprogramar-visita" : "/api/confirmar-visita"
+
+            fetch(endpoint, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
@@ -259,6 +310,7 @@ function AgendarVisitaContent() {
         }
 
         setSuccess(true)
+        setLead({ ...lead, fecha_de_visita: valueWithOffset })
         toast({
             title: "Visita agendada",
             description: "Tu visita ha sido confirmada correctamente.",
@@ -273,6 +325,72 @@ function AgendarVisitaContent() {
         })
     } finally {
         setSubmitting(false)
+    }
+  }
+
+  const handleCancel = async () => {
+    if (!lead) return
+    setIsCancelling(true)
+    try {
+        const result = await cancelVisit(lead.id)
+        if (result.error) throw new Error(result.error)
+        
+        // Trigger Cancellation Webhook
+        try {
+             const { status_history, ...leadWithoutStatusHistory } = lead as any
+             const { date: formattedDate, time: formattedTime } = formatWebhookDate(lead.fecha_de_visita)
+
+             const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
+             const bookingLink = `${origin}/agendar-visita?leadId=${lead.id}`
+
+             const payload = {
+                "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
+                "Agente Asignado": agentName || null,
+                "Agente Email": agentEmail || null,
+                "Direccion de inmueble": advertisement?.Direccion || lead.Inmueble,
+                "Direccion": advertisement?.Direccion || lead.Inmueble,
+                "Inmueble/Anuncio": advertisement || { Referencia: lead.Inmueble },
+                "Inmobiliaria": inmobiliaria || null,
+                "Firma": (inmobiliaria as any)?.firma_html || "",
+                "Link de Agendamiento": bookingLink,
+                "Fecha Visita": formattedDate,
+                "Hora Visita": formattedTime,
+                "Fecha Completa": lead.fecha_de_visita,
+                ...leadWithoutStatusHistory
+            }
+
+            fetch("/api/cancelar-visita", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            }).catch(e => console.error("Error calling webhook proxy", e))
+
+        } catch (webhookErr) {
+            console.error("Error preparing webhook payload:", webhookErr)
+        }
+
+        toast({
+            title: "Visita anulada",
+            description: "La visita ha sido cancelada correctamente.",
+        })
+
+        // Update local state to show cancellation confirmation
+        setLead({ ...lead, fecha_de_visita: undefined })
+        setIsRescheduling(false)
+        setSuccess(false)
+        setSelectedDate(undefined)
+        setSelectedSlot(null)
+        setIsCancelled(true)
+        
+    } catch (err: any) {
+        console.error("Error cancelling visit:", err)
+        toast({
+            title: "Error",
+            description: "No se pudo anular la visita.",
+            variant: "destructive",
+        })
+    } finally {
+        setIsCancelling(false)
     }
   }
 
@@ -292,6 +410,45 @@ function AgendarVisitaContent() {
                     <CardTitle className="text-red-600">Enlace no válido</CardTitle>
                     <CardDescription>{error}</CardDescription>
                 </CardHeader>
+            </Card>
+        </div>
+    )
+  }
+
+  if (isCancelled) {
+    return (
+        <div className="flex items-center justify-center min-h-screen bg-gray-50 p-4">
+            <Card className="w-full max-w-md border-slate-200 text-center">
+                <CardHeader>
+                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
+                        <XCircle className="h-8 w-8 text-red-600" />
+                    </div>
+                    <CardTitle className="text-2xl text-slate-900">Visita Cancelada</CardTitle>
+                    <CardDescription className="text-lg">
+                        Tu visita ha sido anulada correctamente.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <p className="text-slate-600 font-medium mb-4">
+                        ¿Deseas agendar una nueva visita para otro momento?
+                    </p>
+                </CardContent>
+                <CardFooter className="flex flex-col gap-3 pb-6">
+                    <Button 
+                        onClick={() => setIsCancelled(false)}
+                        className="w-full bg-primary hover:bg-primary/90 text-white gap-2"
+                    >
+                        <RefreshCw className="h-4 w-4" />
+                        Sí, agendar otra visita
+                    </Button>
+                    <Button 
+                        onClick={() => window.location.href = inmobiliaria?.pagina_web || 'https://acesalquiler.com'}
+                        variant="outline"
+                        className="w-full"
+                    >
+                        No, salir
+                    </Button>
+                </CardFooter>
             </Card>
         </div>
     )
@@ -331,10 +488,32 @@ function AgendarVisitaContent() {
                         </div>
                     )}
                 </CardContent>
-                <CardFooter className="flex justify-center pt-2 pb-6">
+                <CardFooter className="flex flex-col gap-3 pt-2 pb-6">
+                    <div className="flex w-full flex-col sm:flex-row gap-3">
+                         <Button 
+                            onClick={() => {
+                                setSuccess(false)
+                                setIsRescheduling(true)
+                            }} 
+                            variant="outline"
+                            className="flex-1 gap-2 border-slate-300"
+                         >
+                            <RefreshCw className="h-4 w-4" />
+                            Reprogramar
+                         </Button>
+                         <Button 
+                            onClick={handleCancel} 
+                            variant="destructive" 
+                            className="flex-1 gap-2"
+                            disabled={isCancelling}
+                         >
+                            {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                            Anular
+                         </Button>
+                    </div>
                     <Button 
                         onClick={() => window.location.href = inmobiliaria?.pagina_web || 'https://acesalquiler.com'}
-                        className="w-full bg-slate-900 hover:bg-slate-800 text-white"
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white mt-2"
                     >
                         Salir
                     </Button>
@@ -402,6 +581,73 @@ function AgendarVisitaContent() {
             </CardContent>
         </Card>
 
+        {lead?.fecha_de_visita && !isRescheduling && !success ? (
+             <Card className="border-l-4 border-l-blue-600 shadow-md">
+                 <CardHeader>
+                     <div className="flex items-center gap-2 text-blue-600 mb-2">
+                         <CalendarIcon className="h-6 w-6" />
+                         <span className="font-semibold uppercase tracking-wider text-sm">Visita Programada</span>
+                     </div>
+                     <CardTitle className="text-2xl">Ya tienes una visita agendada</CardTitle>
+                     <CardDescription>
+                         Aquí puedes ver los detalles de tu cita. Si necesitas cambiarla o cancelarla, usa los botones de abajo.
+                     </CardDescription>
+                 </CardHeader>
+                 <CardContent className="space-y-6">
+                     <div className="flex flex-col md:flex-row gap-6 p-4 bg-slate-50 rounded-lg border">
+                         <div className="flex items-center gap-3">
+                             <div className="bg-white p-2 rounded-full shadow-sm">
+                                 <CalendarIcon className="h-6 w-6 text-slate-700" />
+                             </div>
+                             <div>
+                                 <p className="text-sm text-slate-500 font-medium">Fecha</p>
+                                 <p className="text-lg font-bold text-slate-900 capitalize">
+                                     {format(new Date(lead.fecha_de_visita), "EEEE d 'de' MMMM", { locale: es })}
+                                 </p>
+                             </div>
+                         </div>
+                         <div className="flex items-center gap-3">
+                             <div className="bg-white p-2 rounded-full shadow-sm">
+                                 <Clock className="h-6 w-6 text-slate-700" />
+                             </div>
+                             <div>
+                                 <p className="text-sm text-slate-500 font-medium">Hora</p>
+                                 <p className="text-lg font-bold text-slate-900">
+                                     {format(new Date(lead.fecha_de_visita), "HH:mm")}
+                                 </p>
+                             </div>
+                         </div>
+                     </div>
+                 </CardContent>
+                 <CardFooter className="flex flex-col sm:flex-row gap-3 pt-2">
+                     <Button 
+                        onClick={() => setIsRescheduling(true)} 
+                        className="w-full sm:w-auto gap-2"
+                     >
+                        <RefreshCw className="h-4 w-4" />
+                        Reprogramar Visita
+                     </Button>
+                     <Button 
+                        onClick={handleCancel} 
+                        variant="destructive" 
+                        className="w-full sm:w-auto gap-2"
+                        disabled={isCancelling}
+                     >
+                        {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                        Anular Cita
+                     </Button>
+                 </CardFooter>
+             </Card>
+        ) : (
+        <>
+            {isRescheduling && (
+                <div className="flex justify-end">
+                    <Button variant="ghost" onClick={() => setIsRescheduling(false)} className="text-slate-500 gap-1">
+                        <XCircle className="h-4 w-4" /> Cancelar Reprogramación
+                    </Button>
+                </div>
+            )}
+            
         {/* Date Selection */}
         <div className="space-y-4">
             <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
@@ -522,6 +768,8 @@ function AgendarVisitaContent() {
         
         {/* Spacer for mobile fixed footer */}
         <div className="h-24 md:hidden"></div>
+        </>
+        )}
 
       </div>
     </div>

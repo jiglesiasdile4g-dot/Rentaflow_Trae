@@ -28,7 +28,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Eye, Download, UploadCloud, IdCard, Image as ImageIcon, Tag, Trash, Trash2, StickyNote, Calendar as CalendarIcon, History as HistoryIcon } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
-import { formatDate, cn } from "@/lib/utils"
+import { formatDate, formatDateTime, cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import React from "react" // Imported React
@@ -2697,25 +2697,12 @@ export default function LeadsPage() {
                       ...updateData
                     }
 
-                    // Call new confirmation webhook
-                    try {
-                        console.log("Attempting to call confirmation webhook from leads page with rich payload...")
-                        const { status_history, ...webhookPayload } = payload as any
-                        const webhookResponse = await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/confirmacion_visita", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(webhookPayload)
-                        })
-                        console.log("Confirmation webhook response status:", webhookResponse.status)
-                    } catch (err) {
-                        console.error("Error calling confirmation webhook:", err)
-                    }
-
                     // Use API route instead of Server Action to avoid CORS/Network issues
+                    const { status_history, ...webhookPayload } = payload as any
                     const response = await fetch("/api/proponer-visita", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(payload)
+                        body: JSON.stringify(webhookPayload)
                     })
                     const result = await response.json()
 
@@ -2778,7 +2765,11 @@ export default function LeadsPage() {
                 (selectedLeadForVisit.Inmueble && a.Direccion === selectedLeadForVisit.Inmueble)
             )
 
+            const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
+            const bookingLink = origin ? `${origin}/agendar-visita?leadId=${selectedLeadForVisit.id}` : `https://aces-dashboard.vercel.app/agendar-visita?leadId=${selectedLeadForVisit.id}`
+
             const cancelPayload = {
+                "Link de Agendamiento": bookingLink,
                 "Nombre de lead": `${selectedLeadForVisit.Nombre || ''} ${selectedLeadForVisit.Apellidos || ''}`.trim(),
                 "Inmueble/Anuncio": currentAd || { Referencia: selectedLeadForVisit.Inmueble },
                 "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
@@ -2796,7 +2787,7 @@ export default function LeadsPage() {
             }
 
             const { status_history, ...webhookPayload } = cancelPayload as any
-            await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/cancelacion_visita_por_agente", {
+            await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/cancelacion_visita_por_agente", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(webhookPayload)
@@ -3543,7 +3534,7 @@ export default function LeadsPage() {
                                           </div>
                                           <div className="flex items-center gap-1 text-muted-foreground">
                                             <Clock className="h-3 w-3" />
-                                            <span>{formatDate(lead.created_at)}</span>
+                                            <span>{formatDateTime(lead.created_at)}</span>
                                           </div>
                                         </div>
                                         
@@ -3989,9 +3980,9 @@ export default function LeadsPage() {
                                           </span>
                                         </div>
                                         <div className="flex items-center gap-1 text-muted-foreground">
-                                          <Clock className="h-3 w-3" />
-                                          <span>{formatDate(lead.created_at)}</span>
-                                        </div>
+                                            <Clock className="h-3 w-3" />
+                                            <span>{formatDateTime(lead.created_at)}</span>
+                                          </div>
                                       </div>
                                       
 
@@ -4201,7 +4192,7 @@ export default function LeadsPage() {
                   <div className="flex items-baseline gap-4 flex-wrap">
                     <h1 className="text-2xl font-bold m-0">{selectedLead.Nombre || "Sin nombre"}</h1>
                     <span className="text-sm text-muted-foreground font-normal">| {selectedLead.Inmueble || "Sin inmueble"}</span>
-                    <span className="text-xs text-muted-foreground ml-2">Fecha Entrada: {selectedLead.created_at ? formatDate(selectedLead.created_at) : "N/A"}</span>
+                    <span className="text-xs text-muted-foreground ml-2">Fecha Entrada: {selectedLead.created_at ? formatDateTime(selectedLead.created_at) : "N/A"}</span>
                     {selectedLead.origen && (
                       <Badge variant="secondary" className="text-xs ml-2 flex items-center gap-1">
                         <Tag className="h-3 w-3" />

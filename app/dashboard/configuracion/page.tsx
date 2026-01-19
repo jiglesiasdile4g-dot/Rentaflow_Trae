@@ -30,6 +30,7 @@ import {
 } from "./actions"
 import { LogoUpload } from "./logo-upload"
 import { UserActions } from "./user-actions"
+import { UserProfileForm } from "./user-profile-form"
 
 export default async function ConfiguracionPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const searchParams = await props.searchParams
@@ -148,6 +149,81 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
       } else {
           console.log("[v0] Active agents found:", activeAgents?.length, activeAgents)
       }
+
+      // AUTO-FIX: Check for agents without profile and create them
+      if (activeAgents && activeAgents.length > 0) {
+        const profileEmails = new Set(perfilesData.map((p: any) => String(p.usuario || p.Usuario || "").toLowerCase()))
+        
+        // Deduplicate activeAgents by email first
+        const uniqueActiveAgents = activeAgents.reduce((acc: any[], current: any) => {
+            const email = (current.Email || "").toLowerCase()
+            if (!acc.some((item: any) => (item.Email || "").toLowerCase() === email)) {
+                acc.push(current)
+            }
+            return acc
+        }, [])
+
+        const missingAgents = uniqueActiveAgents.filter((a: any) => a.Email && !profileEmails.has(String(a.Email).toLowerCase()))
+        
+        if (missingAgents.length > 0) {
+            console.log(`[v0] Found ${missingAgents.length} agents without profile. Attempting auto-fix...`)
+            const admin = createAdminClient()
+            
+            for (const agent of missingAgents) {
+                const email = String(agent.Email).toLowerCase()
+                if (profileEmails.has(email)) continue // Skip if already processed in this loop
+
+                const name = agent.Nombre || email.split('@')[0]
+                const phone = agent.Telefono || ""
+                
+                try {
+                    // Try insert with correct columns (es_agente instead of activo)
+                    // First try lowercase standard
+                    const { data: newProfile, error: insertError } = await admin.from("Perfiles").insert({
+                        usuario: email,
+                        inmobiliaria: currentIdi,
+                        role: "agente",
+                        is_admin: false,
+                        es_agente: true,
+                        nombre: name,
+                        telefono: phone
+                    }).select().single()
+
+                    if (insertError) {
+                        console.error(`[v0] Failed to auto-create profile for ${email} (lowercase):`, insertError)
+                        
+                        // Retry with Capitalized columns if error suggests it (or just always try as fallback)
+                        if (insertError.code === '42703') { // Undefined column
+                            console.log(`[v0] Retrying auto-create for ${email} with Capitalized columns...`)
+                            const { data: newProfile2, error: insertError2 } = await admin.from("Perfiles").insert({
+                                Usuario: email,
+                                Inmobiliaria: currentIdi,
+                                Role: "agente",
+                                Is_admin: false,
+                                Es_agente: true,
+                                Nombre: name,
+                                Telefono: phone
+                            }).select().single()
+                            
+                            if (insertError2) {
+                                console.error(`[v0] Failed to auto-create profile for ${email} (Capitalized):`, insertError2)
+                            } else if (newProfile2) {
+                                perfilesData.push(newProfile2)
+                                profileEmails.add(email)
+                                console.log(`[v0] Auto-created profile for ${email} (Capitalized)`)
+                            }
+                        }
+                    } else if (newProfile) {
+                        perfilesData.push(newProfile)
+                        profileEmails.add(email)
+                        console.log(`[v0] Auto-created profile for ${email}`)
+                    }
+                } catch (e) {
+                    console.error(`[v0] Exception auto-creating profile for ${email}:`, e)
+                }
+            }
+        }
+      }
       
       const activeAgentEmails = new Map((activeAgents || []).map((a: any) => [
         (a.Email || "").toLowerCase(), 
@@ -155,7 +231,17 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
       ]))
       console.log("[v0] Active agent emails set:", Array.from(activeAgentEmails.keys()))
 
-      usersList = (perfilesData || []).map((p: any) => {
+      // Deduplicate perfilesData for display
+      const uniquePerfilesMap = new Map();
+      (perfilesData || []).forEach((p: any) => {
+          const email = String(p.usuario || p.Usuario || "").toLowerCase();
+          if (email && !uniquePerfilesMap.has(email)) {
+              uniquePerfilesMap.set(email, p);
+          }
+      });
+      const uniquePerfiles = Array.from(uniquePerfilesMap.values());
+
+      usersList = uniquePerfiles.map((p: any) => {
         const uEmail = String(p?.usuario || p?.Usuario || "").toLowerCase()
         const agentData = activeAgentEmails.get(uEmail)
         const hasRecord = !!agentData
@@ -242,11 +328,13 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
             <CardDescription>Información básica de tu cuenta</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Correo Electrónico</Label>
-              <Input id="email" type="email" value={user.email || ""} disabled className="bg-muted" />
-              <p className="text-xs text-muted-foreground">El correo electrónico no se puede modificar</p>
-            </div>
+            <UserProfileForm 
+                email={user.email || ""} 
+                initialName={perfil?.nombre || perfil?.Nombre || ""} 
+                initialPhone={perfil?.telefono || perfil?.Telefono || ""} 
+                idi={Number(currentIdi)} 
+                userRoleLabel={userRoleLabel}
+            />
             {(!user.email_confirmed_at || String(user.email_confirmed_at || "").trim() === "") && (
               <div className="space-y-2">
                 <Alert variant="destructive">
@@ -333,9 +421,9 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Invitar nuevo usuario</DialogTitle>
+                      <DialogTitle>Nuevo Usuario</DialogTitle>
                       <DialogDescription>
-                        Ingresa el correo del nuevo agente. Se le enviará una invitación para unirse.
+                        Invita a un nuevo usuario a tu equipo. Recibirá un correo para configurar su contraseña.
                       </DialogDescription>
                     </DialogHeader>
                     <form action={createAgentAction} className="space-y-4 py-4">
@@ -343,6 +431,14 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                       <div className="space-y-2">
                         <Label htmlFor="newEmail">Correo electrónico</Label>
                         <Input id="newEmail" name="newEmail" type="email" placeholder="agente@ejemplo.com" required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="newName">Nombre Completo</Label>
+                        <Input id="newName" name="newName" type="text" placeholder="Juan Pérez" required />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="newPhone">Teléfono</Label>
+                        <Input id="newPhone" name="newPhone" type="tel" placeholder="+34 600 000 000" />
                       </div>
                       <DialogFooter>
                         <Button type="submit" disabled={!canCreateAgents}>

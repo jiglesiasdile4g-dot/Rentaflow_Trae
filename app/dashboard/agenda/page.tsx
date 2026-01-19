@@ -26,7 +26,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { cn } from "@/lib/utils"
+import { cn, formatWebhookDate } from "@/lib/utils"
 import { fixUserPermissionsAction } from "@/app/actions/user-config"
 import { LeadDetailModal } from "@/components/lead-detail-modal"
 
@@ -887,7 +887,10 @@ export default function AgendaPage() {
             agentData = data
         }
 
+        const { date: formattedDate, time: formattedTime } = formatWebhookDate(visitToCancel.fecha_de_visita)
+        const bookingLink = `${typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''}/agendar-visita?leadId=${visitToCancel.id}`
         const cancelPayload = {
+            "Link de Agendamiento": bookingLink,
             "Nombre de lead": `${fullLead?.Nombre || visitToCancel.Nombre} ${fullLead?.Apellidos || visitToCancel.Apellidos || ''}`.trim(),
             "Inmueble/Anuncio": currentAd || { Referencia: visitToCancel.Inmueble },
             "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
@@ -895,8 +898,8 @@ export default function AgendaPage() {
             "Firma": (inmobiliariaData as any)?.firma_html || "",
             "Agente Asignado": agentData,
             "Agente Email": agentData?.Email,
-            "Fecha Visita": visitToCancel.fecha_de_visita ? visitToCancel.fecha_de_visita.split("T")[0] : null,
-            "Hora Visita": visitToCancel.fecha_de_visita ? visitToCancel.fecha_de_visita.split("T")[1]?.substring(0,5) : null,
+            "Fecha Visita": formattedDate,
+            "Hora Visita": formattedTime,
             "Fecha Completa": visitToCancel.fecha_de_visita,
             "Motivo": "Cancelado por agente",
             ...fullLead,
@@ -907,7 +910,7 @@ export default function AgendaPage() {
 
         const { status_history, ...webhookPayload } = cancelPayload as any
 
-        await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook-test/cancelacion_visita_por_agente", {
+        await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/cancelacion_visita_por_agente", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

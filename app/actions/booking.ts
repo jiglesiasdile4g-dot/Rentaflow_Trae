@@ -58,7 +58,9 @@ export async function getBookingData(leadId: string) {
     // 3. Fetch Advertisement (Inmueble)
     let advertisement = null
     if (lead.Inmueble) {
-      const { data: ads } = await supabase.from("Anuncios").select("*")
+      const { data: ads } = await supabase.from("Anuncios")
+        .select("ida, Referencia, Direccion, Duracion_visita, Gap_visita, duracion_visita, tiempo_entre_visitas, Activacion")
+      
       if (ads) {
         advertisement = ads.find((a: any) => 
           a.Referencia === lead.Inmueble || 
@@ -139,4 +141,66 @@ export async function confirmVisit(leadId: string, visitDate: string) {
     console.error("Error confirming visit:", err)
     return { error: "No se pudo agendar la visita." }
   }
+}
+
+export async function rescheduleVisit(leadId: string, newDate: string) {
+    console.log("[Booking Action] rescheduleVisit called", { leadId, newDate })
+    const supabase = createAdminClient()
+    
+    try {
+      const { data, error } = await supabase
+        .from("Clientes")
+        .update({
+          fecha_de_visita: newDate,
+          visita_completada: "reprogramada"
+        })
+        .eq("id", leadId)
+        .select()
+  
+      if (error) {
+        console.error("[Booking Action] Update failed:", error)
+        throw error
+      }
+  
+      console.log("[Booking Action] Update success. Rows affected:", data?.length)
+      
+      if (!data || data.length === 0) {
+          return { error: "No se encontró el cliente para actualizar." }
+      }
+  
+      return { success: true }
+    } catch (err: any) {
+      console.error("Error rescheduling visit:", err)
+      return { error: "No se pudo reprogramar la visita." }
+    }
+}
+
+export async function cancelVisit(leadId: string) {
+    console.log("[Booking Action] cancelVisit called", { leadId })
+    const supabase = createAdminClient()
+    
+    try {
+      const { data, error } = await supabase
+        .from("Clientes")
+        .update({
+          visita_completada: "cancelada",
+          fecha_de_visita: null
+        })
+        .eq("id", leadId)
+        .select()
+  
+      if (error) {
+        console.error("[Booking Action] Cancel failed:", error)
+        throw error
+      }
+  
+      if (!data || data.length === 0) {
+          return { error: "No se encontró el cliente para cancelar." }
+      }
+  
+      return { success: true }
+    } catch (err: any) {
+      console.error("Error canceling visit:", err)
+      return { error: "No se pudo cancelar la visita." }
+    }
 }
