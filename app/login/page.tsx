@@ -56,7 +56,7 @@ export default function LoginPage() {
             <LogIn className="h-12 w-12 text-primary" />
           </div>
           <CardTitle className="text-2xl">Iniciar Sesión</CardTitle>
-          <CardDescription>Ingresa a tu cuenta del Dashboard Básico Alfa</CardDescription>
+          <CardDescription>Bienvenido a la gestion de tus leads</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
