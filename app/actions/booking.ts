@@ -175,6 +175,36 @@ export async function rescheduleVisit(leadId: string, newDate: string) {
     }
 }
 
+export async function proposeVisit(leadId: string, proposedDate: string) {
+  console.log("[Booking Action] proposeVisit called", { leadId, proposedDate })
+  const supabase = createAdminClient()
+  
+  try {
+    const { data, error } = await supabase
+      .from("Clientes")
+      .update({
+        fecha_de_visita: proposedDate,
+        visita_completada: "visita propuesta"
+      })
+      .eq("id", leadId)
+      .select()
+
+    if (error) {
+      console.error("[Booking Action] Propose failed:", error)
+      throw error
+    }
+
+    if (!data || data.length === 0) {
+        return { error: "No se encontró el cliente para actualizar." }
+    }
+
+    return { success: true }
+  } catch (err: any) {
+    console.error("Error proposing visit:", err)
+    return { error: "No se pudo proponer la visita." }
+  }
+}
+
 export async function cancelVisit(leadId: string) {
     console.log("[Booking Action] cancelVisit called", { leadId })
     const supabase = createAdminClient()

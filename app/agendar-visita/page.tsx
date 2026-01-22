@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
-import { getBookingData, confirmVisit, cancelVisit } from "@/app/actions/booking"
+import { getBookingData, confirmVisit, cancelVisit, proposeVisit } from "@/app/actions/booking"
 import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -12,6 +12,8 @@ import { format, addDays, isSameDay } from "date-fns"
 import { es } from "date-fns/locale"
 import { cn, formatWebhookDate } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
+import { generateSlotCandidates, isOverlapping } from "@/lib/agenda-utils"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
 type Lead = {
   id: string
@@ -42,7 +44,9 @@ type AgendaItem = {
   fecha: string
   hora_inicio: string
   hora_fin: string
-  anuncio_id?: string
+  anuncio_id?: string | number | null
+  duracion?: number | null
+  gap?: number | null
 }
 
 function AgendarVisitaContent() {
@@ -61,11 +65,20 @@ function AgendarVisitaContent() {
   const [advertisement, setAdvertisement] = useState<Advertisement | null>(null)
   const [agentName, setAgentName] = useState<string>("")
   const [agentEmail, setAgentEmail] = useState<string>("")
+  const [agent, setAgent] = useState<any>(null)
   const [inmobiliaria, setInmobiliaria] = useState<any>(null)
   
   const [isRescheduling, setIsRescheduling] = useState(false)
     const [isCancelled, setIsCancelled] = useState(false)
     const [isCancelling, setIsCancelling] = useState(false)
+    const [isExpanded, setIsExpanded] = useState(false)
+    
+    // Proposal state
+    const [isProposing, setIsProposing] = useState(false)
+    const [proposalDate, setProposalDate] = useState<Date | undefined>(undefined)
+    const [proposalTime, setProposalTime] = useState<string>("")
+    const [submittingProposal, setSubmittingProposal] = useState(false)
+    const [proposalSuccess, setProposalSuccess] = useState(false)
 
     // Remove client-side supabase
   // const supabase = createClient()
@@ -99,6 +112,7 @@ function AgendarVisitaContent() {
         if (agent) {
           setAgentName(agent.Nombre)
           if (agent.Email) setAgentEmail(agent.Email)
+          setAgent(agent)
         }
         setAdvertisement(adData || null)
         if (inmoData) setInmobiliaria(inmoData)
@@ -125,6 +139,13 @@ function AgendarVisitaContent() {
 
     const slotsByDate: Record<string, string[]> = {}
     const uniqueDates = [...new Set(agendaData.map((a: AgendaItem) => a.fecha))]
+
+    // Map ads for utils
+    const mappedAds = allAds?.map((a: any) => ({
+        ida: a.ida,
+        duracion_visita: a.Duracion_visita || a.duracion_visita,
+        tiempo_entre_visitas: a.Gap_visita || a.tiempo_entre_visitas
+    })) || []
 
     for (const date of uniqueDates) {
         const dayAgenda = agendaData.filter((a: AgendaItem) => a.fecha === date)
@@ -156,53 +177,42 @@ function AgendarVisitaContent() {
             }
         })
 
-        const slots: string[] = []
-        
-        dayAgenda.forEach((range: AgendaItem) => {
-            if (!range.hora_inicio || !range.hora_fin) return
-            // Filter by property specific agenda if applicable
-            if (range.anuncio_id && currentAd && range.anuncio_id !== currentAd.ida) return
+        // Filter agenda items relevant to currentAd
+        const relevantSlots = dayAgenda.filter((range: AgendaItem) => {
+             if (!range.hora_inicio || !range.hora_fin) return false
+             // Filter by property specific agenda if applicable
+             if (range.anuncio_id && currentAd && String(range.anuncio_id) !== String(currentAd.ida)) return false
+             return true
+        })
 
-            let start = range.hora_inicio.slice(0, 5)
-            const end = range.hora_fin.slice(0, 5)
-            let [h, m] = start.split(':').map(Number)
-            let currentMins = h * 60 + m
-            const [endH, endM] = end.split(':').map(Number)
-            const endMins = endH * 60 + endM
+        // Determine defaults from currentAd (or system defaults 20/5)
+        const defaultDur = currentAd ? (currentAd.Duracion_visita || currentAd.duracion_visita || 20) : 20
+        const defaultGap = currentAd ? (currentAd.Gap_visita || currentAd.tiempo_entre_visitas || 5) : 5
 
-            while (currentMins < endMins) {
-                const slotH = Math.floor(currentMins / 60)
-                const slotM = currentMins % 60
-                const timeStr = `${slotH.toString().padStart(2, '0')}:${slotM.toString().padStart(2, '0')}`
+        // Generate candidates using centralized logic
+        const candidates = generateSlotCandidates(relevantSlots, mappedAds, defaultDur, defaultGap)
 
-                // Check availability
-                let currentDur = 30 * 60000
-                let currentGap = 0
-                if (currentAd) {
-                    currentDur = (currentAd.Duracion_visita || currentAd.duracion_visita || 30) * 60000
-                    currentGap = (currentAd.Gap_visita || currentAd.tiempo_entre_visitas || 0) * 60000
-                }
-                
-                const totalDur = currentDur + currentGap
-                const slotStart = new Date(`${date}T${timeStr}`).getTime()
-                const slotEnd = slotStart + totalDur
+        const validSlots: string[] = []
+        const now = new Date()
 
-                const isBusy = busyRanges.some(r => (slotStart < r.end && slotEnd > r.start))
+        candidates.forEach(candidate => {
+            // Note: candidate.time is "HH:MM"
+            const slotStart = new Date(`${date}T${candidate.time}`).getTime()
+            
+            // Total duration blocked by this slot (visit + gap)
+            const totalDur = (candidate.duration + candidate.gap) * 60000
+            const slotEnd = slotStart + totalDur
 
-                // Also check if slot is in the past (if date is today)
-                const now = new Date()
-                const isPast = new Date(`${date}T${timeStr}`).getTime() < now.getTime()
+            const isBusy = busyRanges.some(r => isOverlapping(slotStart, slotEnd, r.start, r.end))
+            const isPast = new Date(`${date}T${candidate.time}`).getTime() < now.getTime()
 
-                if (!isBusy && !isPast) {
-                    slots.push(timeStr)
-                }
-
-                currentMins += 15 
+            if (!isBusy && !isPast) {
+                validSlots.push(candidate.time)
             }
         })
 
-        if (slots.length > 0) {
-            slotsByDate[date] = [...new Set(slots)].sort()
+        if (validSlots.length > 0) {
+            slotsByDate[date] = [...new Set(validSlots)].sort()
         }
     }
 
@@ -241,7 +251,7 @@ function AgendarVisitaContent() {
 
                  const payload = {
                     "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
-                    "Agente Asignado": agentName || null,
+                    "Agente Asignado": agent || (agentName ? { Nombre: agentName, Email: agentEmail } : null),
                     "Agente Email": agentEmail || null,
                     "Direccion de inmueble": advertisement?.Direccion || lead.Inmueble,
                     "Direccion": advertisement?.Direccion || lead.Inmueble,
@@ -282,7 +292,7 @@ function AgendarVisitaContent() {
 
             const payload = {
                 "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
-                "Agente Asignado": agentName || null,
+                "Agente Asignado": agent || (agentName ? { Nombre: agentName, Email: agentEmail } : null),
                 "Agente Email": agentEmail || null,
                 "Link de Agendamiento": bookingLink,
                 "Direccion de inmueble": advertisement?.Direccion || lead.Inmueble,
@@ -292,7 +302,8 @@ function AgendarVisitaContent() {
                 "Fecha Visita": formattedDate,
                 "Hora Visita": formattedTime,
                 "Fecha Completa": valueWithOffset,
-                ...leadWithoutStatusHistory
+                ...leadWithoutStatusHistory,
+                fecha_de_visita: valueWithOffset
             }
 
             // Determine if it's a reschedule or new booking
@@ -345,7 +356,7 @@ function AgendarVisitaContent() {
 
              const payload = {
                 "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
-                "Agente Asignado": agentName || null,
+                "Agente Asignado": agent || (agentName ? { Nombre: agentName, Email: agentEmail } : null),
                 "Agente Email": agentEmail || null,
                 "Direccion de inmueble": advertisement?.Direccion || lead.Inmueble,
                 "Direccion": advertisement?.Direccion || lead.Inmueble,
@@ -394,6 +405,81 @@ function AgendarVisitaContent() {
     }
   }
 
+  const handlePropose = async () => {
+    if (!lead || !proposalDate || !proposalTime) return
+    setSubmittingProposal(true)
+
+    try {
+        const dateStr = format(proposalDate, "yyyy-MM-dd")
+        const dateTimeStr = `${dateStr}T${proposalTime}:00`
+        
+        // Handle timezone offset
+        const d = new Date(dateTimeStr)
+        const off = d.getTimezoneOffset()
+        const sign = off <= 0 ? "+" : "-"
+        const hh = String(Math.floor(Math.abs(off) / 60)).padStart(2, "0")
+        const mm = String(Math.abs(off) % 60).padStart(2, "0")
+        const offset = `${sign}${hh}:${mm}`
+        const valueWithOffset = `${dateTimeStr}${offset}`
+
+        // Update DB via Server Action
+        const result = await proposeVisit(lead.id, valueWithOffset)
+        if (result.error) throw new Error(result.error)
+
+        // Trigger Webhook
+        try {
+            const { status_history, ...leadWithoutStatusHistory } = lead as any
+            const { date: formattedDate, time: formattedTime } = formatWebhookDate(valueWithOffset)
+            
+            const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
+            const bookingLink = `${origin}/agendar-visita?leadId=${lead.id}`
+
+            const payload = {
+                "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
+                "Agente Asignado": agent || (agentName ? { Nombre: agentName, Email: agentEmail } : null),
+                "Agente Email": agentEmail || null,
+                "Direccion de inmueble": advertisement?.Direccion || lead.Inmueble,
+                "Direccion": advertisement?.Direccion || lead.Inmueble,
+                "Inmueble/Anuncio": advertisement || { Referencia: lead.Inmueble },
+                "Inmobiliaria": inmobiliaria || null,
+                "Nombre Inmobiliaria": inmobiliaria?.nombre_inmobiliaria || "Sin nombre",
+                "Firma": (inmobiliaria as any)?.firma_html || "",
+                "Link de Agendamiento": bookingLink,
+                "Fecha Visita": formattedDate,
+                "Hora Visita": formattedTime,
+                "Fecha Completa": valueWithOffset,
+                ...leadWithoutStatusHistory,
+                fecha_de_visita: valueWithOffset
+            }
+
+            fetch("/api/proponer-visita", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            }).catch(e => console.error("Error calling proposal webhook", e))
+
+        } catch (webhookErr) {
+            console.error("Error preparing proposal webhook:", webhookErr)
+        }
+
+        setProposalSuccess(true)
+        toast({
+            title: "Propuesta enviada",
+            description: "El agente revisará tu propuesta y te confirmará la disponibilidad.",
+        })
+
+    } catch (err: any) {
+        console.error("Error proposing visit:", err)
+        toast({
+            title: "Error",
+            description: "No se pudo enviar la propuesta. Inténtalo de nuevo.",
+            variant: "destructive",
+        })
+    } finally {
+        setSubmittingProposal(false)
+    }
+  }
+
   if (loading) {
     return (
         <div className="flex items-center justify-center min-h-screen bg-gray-50" suppressHydrationWarning>
@@ -410,6 +496,47 @@ function AgendarVisitaContent() {
                     <CardTitle className="text-red-600">Enlace no válido</CardTitle>
                     <CardDescription>{error}</CardDescription>
                 </CardHeader>
+            </Card>
+        </div>
+    )
+  }
+
+  if (proposalSuccess) {
+    return (
+        <div className="flex items-center justify-center min-h-screen bg-gray-50 p-4">
+            <Card className="w-full max-w-md border-blue-200 text-center">
+                <CardHeader>
+                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
+                        <Clock className="h-8 w-8 text-blue-600" />
+                    </div>
+                    <CardTitle className="text-2xl text-blue-800">¡Propuesta Enviada!</CardTitle>
+                    <CardDescription className="text-lg">
+                        Hemos notificado al agente tu propuesta para:
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="rounded-lg bg-slate-50 p-6 shadow-sm">
+                        <div className="flex items-center justify-center gap-2 text-xl font-semibold text-slate-900">
+                            <CalendarIcon className="h-5 w-5 text-slate-500" />
+                            {proposalDate && format(proposalDate, "d 'de' MMMM", { locale: es })}
+                        </div>
+                        <div className="mt-2 flex items-center justify-center gap-2 text-2xl font-bold text-primary">
+                            <Clock className="h-6 w-6" />
+                            {proposalTime}
+                        </div>
+                    </div>
+                    <p className="text-sm text-slate-500">
+                        El agente revisará la disponibilidad y te confirmará lo antes posible.
+                    </p>
+                </CardContent>
+                <CardFooter className="flex flex-col gap-3 pt-2 pb-6">
+                    <Button 
+                        onClick={() => window.location.href = inmobiliaria?.pagina_web || 'https://acesalquiler.com'}
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white"
+                    >
+                        Salir
+                    </Button>
+                </CardFooter>
             </Card>
         </div>
     )
@@ -667,6 +794,8 @@ function AgendarVisitaContent() {
                                 onClick={() => {
                                     setSelectedDate(d)
                                     setSelectedSlot(null)
+                                    setIsExpanded(false)
+                                    setIsProposing(false)
                                 }}
                                 className={cn(
                                     "flex flex-col items-center justify-center min-w-[100px] h-24 rounded-xl border-2 transition-all snap-start focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
@@ -710,20 +839,35 @@ function AgendarVisitaContent() {
                 <Card>
                     <CardContent className="p-6">
                         {slotsForSelectedDate.length > 0 ? (
-                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-                                {slotsForSelectedDate.map((slot) => (
-                                    <Button
-                                        key={slot}
-                                        variant={selectedSlot === slot ? "default" : "outline"}
-                                        className={cn(
-                                            "h-12 text-lg font-medium transition-all",
-                                            selectedSlot === slot ? "shadow-md scale-105" : "hover:border-primary/50"
-                                        )}
-                                        onClick={() => setSelectedSlot(slot)}
-                                    >
-                                        {slot}
-                                    </Button>
-                                ))}
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                                    {(isExpanded ? slotsForSelectedDate : slotsForSelectedDate.slice(0, 3)).map((slot) => (
+                                        <Button
+                                            key={slot}
+                                            variant={selectedSlot === slot ? "default" : "outline"}
+                                            className={cn(
+                                                "h-12 text-lg font-medium transition-all",
+                                                selectedSlot === slot ? "shadow-md scale-105" : "hover:border-primary/50"
+                                            )}
+                                            onClick={() => setSelectedSlot(slot)}
+                                        >
+                                            {slot}
+                                        </Button>
+                                    ))}
+                                </div>
+                                
+                                {!isExpanded && slotsForSelectedDate.length > 3 && (
+                                    <div className="flex justify-center pt-2">
+                                        <Button 
+                                            variant="ghost" 
+                                            onClick={() => setIsExpanded(true)}
+                                            className="text-primary hover:text-primary/80 hover:bg-primary/5 gap-2"
+                                        >
+                                            <Clock className="h-4 w-4" />
+                                            Ver más horarios disponibles ({slotsForSelectedDate.length - 3} más)
+                                        </Button>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div className="text-center py-8 text-slate-500">
@@ -732,6 +876,100 @@ function AgendarVisitaContent() {
                         )}
                     </CardContent>
                 </Card>
+            </div>
+        )}
+
+        {/* Proposal Section */}
+        {!success && !isCancelled && !proposalSuccess && (
+            <div className="space-y-4 pt-8 pb-8 border-t border-slate-200">
+                {!isProposing ? (
+                    <div className="text-center">
+                        <p className="text-slate-600 mb-3">¿No te encajan estos horarios?</p>
+                        <Button 
+                            variant="outline" 
+                            onClick={() => {
+                                setIsProposing(true)
+                                setSelectedDate(undefined)
+                                setSelectedSlot(null)
+                            }}
+                            className="border-primary text-primary hover:bg-primary/5"
+                        >
+                            Sugerir otra fecha y hora
+                        </Button>
+                    </div>
+                ) : (
+                    <Card className="border-blue-200 bg-blue-50/30 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        <CardHeader>
+                            <CardTitle className="text-lg text-blue-800">Sugerir Fecha y Hora</CardTitle>
+                            <CardDescription>
+                                Propón un horario que te vaya bien y el agente te contactará para confirmar.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            <div className="flex flex-col md:flex-row gap-6">
+                                <div className="space-y-2 flex-1">
+                                    <label className="text-sm font-medium text-slate-700">Fecha Propuesta</label>
+                                    <input
+                                        type="date"
+                                        className="flex h-12 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                        min={new Date().toISOString().split('T')[0]}
+                                        value={proposalDate ? format(proposalDate, "yyyy-MM-dd") : ""}
+                                        onChange={(e) => {
+                                            const val = e.target.value
+                                            setProposalDate(val ? new Date(val) : undefined)
+                                        }}
+                                    />
+                                </div>
+                                <div className="space-y-4 flex-1">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-slate-700">Hora Preferida</label>
+                                        <input
+                                            type="time"
+                                            className="flex h-12 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                            value={proposalTime}
+                                            onChange={(e) => setProposalTime(e.target.value)}
+                                        />
+                                        <p className="text-xs text-slate-500">
+                                            Indica la hora aproximada en la que te gustaría realizar la visita.
+                                        </p>
+                                    </div>
+                                    
+                                    {proposalDate && proposalTime && (
+                                        <div className="rounded-md bg-blue-100 p-4 text-blue-800 text-sm">
+                                            <p className="font-semibold mb-1">Resumen de tu propuesta:</p>
+                                            <p>
+                                                <span className="capitalize">{format(new Date(proposalDate.getTime() + proposalDate.getTimezoneOffset() * 60000), "EEEE d 'de' MMMM", { locale: es })}</span> a las {proposalTime}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </CardContent>
+                        <CardFooter className="flex justify-between gap-3 bg-white/50 border-t border-blue-100 p-6">
+                            <Button 
+                                variant="ghost" 
+                                onClick={() => setIsProposing(false)}
+                                className="text-slate-500"
+                            >
+                                Cancelar
+                            </Button>
+                            <Button 
+                                onClick={handlePropose}
+                                disabled={!proposalDate || !proposalTime || submittingProposal}
+                                className="bg-blue-600 hover:bg-blue-700 text-white min-w-[150px]"
+                            >
+                                {submittingProposal ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Enviando...
+                                    </>
+                                ) : (
+                                    "Enviar Propuesta"
+                                )}
+                            </Button>
+                        </CardFooter>
+                    </Card>
+                )}
             </div>
         )}
 

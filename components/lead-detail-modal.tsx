@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast"
 import { cn, formatDateTime, formatWebhookDate } from "@/lib/utils"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import { generateSlotCandidates, isOverlapping } from "@/lib/agenda-utils"
 
 // Types duplicated to avoid circular deps
 export type Lead = {
@@ -303,7 +304,7 @@ export function LeadDetailModal({
       try {
         const { data, error } = await supabase
           .from("Agendas")
-          .select("hora_inicio, hora_fin, anuncio_id")
+          .select("hora_inicio, hora_fin, anuncio_id, duracion, gap")
           .eq("agente_id", selectedAgenteId)
           .eq("fecha", newVisitDateDate)
 
@@ -339,8 +340,9 @@ export function LeadDetailModal({
                 (v.Inmueble && a.Direccion && v.Inmueble.includes(a.Direccion)) ||
                 (v.Inmueble && a.Referencia && v.Inmueble.includes(a.Referencia))
               )
-              const dur = (visitAd?.Duracion_visita || 30) * 60000
-              const gap = (visitAd?.Gap_visita || 0) * 60000
+              // Fix property accessors and defaults (20/5)
+              const dur = (visitAd?.duracion_visita || 20) * 60000
+              const gap = (visitAd?.tiempo_entre_visitas ?? 5) * 60000
               busyRanges.push({ start, end: start + dur + gap })
             }
           })
@@ -360,63 +362,34 @@ export function LeadDetailModal({
              }
           }
 
-          const slots: string[] = []
           let hasBlockedSlots = false
-
-          data.forEach((range: any) => {
-            if (!range.hora_inicio || !range.hora_fin) return
-
-            // Filter: if slot is assigned to another property, skip it
-            if (range.anuncio_id && targetAnuncioId && range.anuncio_id !== targetAnuncioId) {
-               hasBlockedSlots = true
-               return
-            }
-            
-            let start = range.hora_inicio.slice(0, 5)
-            const end = range.hora_fin.slice(0, 5)
-            
-            let [h, m] = start.split(':').map(Number)
-            let currentMins = h * 60 + m
-            const [endH, endM] = end.split(':').map(Number)
-            const endMins = endH * 60 + endM
-
-            // Generate slots every 5 minutes
-            while (currentMins < endMins) {
-              const slotH = Math.floor(currentMins / 60)
-              const slotM = currentMins % 60
-              const timeStr = `${slotH.toString().padStart(2, '0')}:${slotM.toString().padStart(2, '0')}`
-              slots.push(timeStr)
-              currentMins += 5 
-            }
-          })
-          slots.sort()
           
-          // Determine duration for CURRENT visit
-          let currentDur = 30 * 60000
-          let currentGap = 0
-          if (lead && lead.Inmueble) {
-             const ad = advertisements.find(a => 
-               a.Referencia === lead.Inmueble ||
-               a.Direccion === lead.Inmueble ||
-               (lead.Inmueble && a.Direccion && lead.Inmueble.includes(a.Direccion))
-             )
-             if (ad) {
-               currentDur = (ad.duracion_visita || 30) * 60000
-               currentGap = (ad.tiempo_entre_visitas || 0) * 60000
+          // Filter slots relevant to this lead
+          const relevantSlots = data.filter((range: any) => {
+             if (range.anuncio_id && targetAnuncioId && String(range.anuncio_id) !== String(targetAnuncioId)) {
+                hasBlockedSlots = true
+                return false
              }
-          }
-          const totalDur = currentDur + currentGap
+             return true
+          })
 
-          const uniqueSlots = [...new Set(slots)].filter(slot => {
-             // Construct start time for this slot
-             // We need to use isoDate to ensure correct date parsing
-             const slotStart = new Date(`${isoDate}T${slot}`).getTime()
-             const slotEnd = slotStart + totalDur
+          // Use shared utility to generate candidates
+          // Map advertisements to AdData shape (already compatible)
+          const candidates = generateSlotCandidates(relevantSlots, advertisements, 20, 5)
+
+          const uniqueSlots = candidates.filter(candidate => {
+             const [h, m] = candidate.time.split(':').map(Number)
+             
+             // Construct start/end time for this candidate slot
+             const slotStart = new Date(`${isoDate}T${candidate.time}`).getTime()
+             const durationMs = candidate.duration * 60000
+             const gapMs = candidate.gap * 60000
+             const slotEnd = slotStart + durationMs + gapMs
              
              // Check overlap with busyRanges
-             // Overlap if (StartA < EndB) and (EndA > StartB)
-             return !busyRanges.some(range => (slotStart < range.end && slotEnd > range.start))
-          })
+             return !busyRanges.some(range => isOverlapping(slotStart, slotEnd, range.start, range.end))
+          }).map(c => c.time)
+
           setAvailableSlots(uniqueSlots)
           
           if (uniqueSlots.length > 0) {
@@ -1024,11 +997,14 @@ export function LeadDetailModal({
 
         // Fetch Inmobiliaria data
         let inmobiliariaData = null
-        if (inmobiliariaId) {
+        // Try context ID first, then lead.idi if available
+        const targetInmoId = inmobiliariaId || (lead as any).idi || (lead as any).usuario;
+        
+        if (targetInmoId) {
            const { data: inmoData } = await supabase
               .from("Inmobiliarias")
               .select("*")
-              .eq("idi", inmobiliariaId)
+              .eq("idi", targetInmoId)
               .single()
            inmobiliariaData = inmoData
         }
@@ -1040,7 +1016,7 @@ export function LeadDetailModal({
           "Agente Asignado": assignedAgent || null,
           "Agente Email": assignedAgent?.Email || null,
           "Inmueble/Anuncio": currentAd || null,
-          "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
+          "Nombre Inmobiliaria": inmobiliariaNombre || (inmobiliariaData as any)?.nombre_inmobiliaria || "Sin nombre",
           "Inmobiliaria": inmobiliariaData || null,
           "Firma": (inmobiliariaData as any)?.firma_html || "",
           "Link de Agendamiento": bookingLink,
@@ -1099,8 +1075,10 @@ export function LeadDetailModal({
       try {
         console.log("Calling cancellation webhook from modal...")
         let inmobiliariaData = null
-        if (inmobiliariaId) {
-             const { data } = await supabase.from("Inmobiliarias").select("*").eq("idi", inmobiliariaId).single()
+        const targetInmoId = inmobiliariaId || (lead as any).idi || (lead as any).usuario;
+
+        if (targetInmoId) {
+             const { data } = await supabase.from("Inmobiliarias").select("*").eq("idi", targetInmoId).single()
              inmobiliariaData = data
         }
 

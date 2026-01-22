@@ -28,7 +28,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Eye, Download, UploadCloud, IdCard, Image as ImageIcon, Tag, Trash, Trash2, StickyNote, Calendar as CalendarIcon, History as HistoryIcon } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
-import { formatDate, formatDateTime, cn } from "@/lib/utils"
+import { formatDate, formatDateTime, cn, formatWebhookDate } from "@/lib/utils"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import React from "react" // Imported React
@@ -37,6 +37,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { LeadApproveWrapper } from "@/components/lead-approve-wrapper"
 import { LeadDenyWrapper } from "@/components/lead-deny-wrapper"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
+import { generateSlotCandidates, isOverlapping } from "@/lib/agenda-utils"
 
 const WhatsAppIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -366,63 +367,30 @@ export default function LeadsPage() {
              }
           }
 
-          const slots: string[] = []
           let hasBlockedSlots = false
 
-          data.forEach(range => {
-            if (!range.hora_inicio || !range.hora_fin) return
-
-            // Filter: if slot is assigned to another property, skip it
-            if (range.anuncio_id && targetAnuncioId && range.anuncio_id !== targetAnuncioId) {
-               hasBlockedSlots = true
-               return
-            }
-            
-            let start = range.hora_inicio.slice(0, 5)
-            const end = range.hora_fin.slice(0, 5)
-            
-            let [h, m] = start.split(':').map(Number)
-            let currentMins = h * 60 + m
-            const [endH, endM] = end.split(':').map(Number)
-            const endMins = endH * 60 + endM
-
-            // Generate slots every 5 minutes
-            while (currentMins < endMins) {
-              const slotH = Math.floor(currentMins / 60)
-              const slotM = currentMins % 60
-              const timeStr = `${slotH.toString().padStart(2, '0')}:${slotM.toString().padStart(2, '0')}`
-              slots.push(timeStr)
-              currentMins += 5 
-            }
-          })
-          slots.sort()
-          
-          // Determine duration for CURRENT visit
-          let currentDur = 30 * 60000
-          let currentGap = 0
-          if (selectedLeadForVisit && selectedLeadForVisit.Inmueble) {
-             const ad = advertisements.find(a => 
-               a.Referencia === selectedLeadForVisit.Inmueble ||
-               a.Direccion === selectedLeadForVisit.Inmueble ||
-               (selectedLeadForVisit.Inmueble && a.Direccion && selectedLeadForVisit.Inmueble.includes(a.Direccion))
-             )
-             if (ad) {
-               currentDur = (ad.duracion_visita || ad.Duracion_visita || 30) * 60000
-               currentGap = (ad.tiempo_entre_visitas || ad.Gap_visita || 0) * 60000
+          // Filter slots relevant to this lead
+          const relevantSlots = data.filter(range => {
+             if (range.anuncio_id && targetAnuncioId && String(range.anuncio_id) !== String(targetAnuncioId)) {
+                hasBlockedSlots = true
+                return false
              }
-          }
-          const totalDur = currentDur + currentGap
+             return true
+          })
 
-          const uniqueSlots = [...new Set(slots)].filter(slot => {
-             // Construct start time for this slot
-             // We need to use isoDate to ensure correct date parsing
-             const slotStart = new Date(`${isoDate}T${slot}`).getTime()
-             const slotEnd = slotStart + totalDur
+          // Use shared utility to generate candidates
+          const candidates = generateSlotCandidates(relevantSlots, advertisements, 20, 5)
+
+          const uniqueSlots = candidates.filter(candidate => {
+             const slotStart = new Date(`${isoDate}T${candidate.time}`).getTime()
+             const durationMs = candidate.duration * 60000
+             const gapMs = candidate.gap * 60000
+             const slotEnd = slotStart + durationMs + gapMs
              
              // Check overlap with busyRanges
-             // Overlap if (StartA < EndB) and (EndA > StartB)
-             return !busyRanges.some(range => (slotStart < range.end && slotEnd > range.start))
-          })
+             return !busyRanges.some(range => isOverlapping(slotStart, slotEnd, range.start, range.end))
+          }).map(c => c.time)
+
           setAvailableSlots(uniqueSlots)
           
           if (uniqueSlots.length > 0) {
@@ -430,10 +398,6 @@ export default function LeadsPage() {
           } else if (hasBlockedSlots) {
             setAvailabilityReason("blocked_by_property")
           } else {
-             // Slots existed but generated no 10-min intervals? unlikely but possible
-             // or maybe the logic filtered them all out?
-             // If data was not empty but slots is empty, and we didn't flag hasBlockedSlots, it means ranges were weird.
-             // But if hasBlockedSlots is true, it means we skipped them because of property.
              setAvailabilityReason(hasBlockedSlots ? "blocked_by_property" : "no_config") 
           }
 
@@ -2440,45 +2404,25 @@ export default function LeadsPage() {
         })
 
         const slots: string[] = []
-        dayAgenda.forEach(range => {
-           if (!range.hora_inicio || !range.hora_fin) return
-           // Filter by property specific agenda
-           if (range.anuncio_id && targetAnuncioId && range.anuncio_id !== targetAnuncioId) return
+        // Use shared utility to generate candidates
+        const relevantSlots = dayAgenda.filter(range => {
+           if (!range.hora_inicio || !range.hora_fin) return false
+           if (range.anuncio_id && targetAnuncioId && range.anuncio_id !== targetAnuncioId) return false
+           return true
+        })
 
-           let start = range.hora_inicio.slice(0, 5)
-           const end = range.hora_fin.slice(0, 5)
-           let [h, m] = start.split(':').map(Number)
-           let currentMins = h * 60 + m
-           const [endH, endM] = end.split(':').map(Number)
-           const endMins = endH * 60 + endM
+        const candidates = generateSlotCandidates(relevantSlots, advertisements, 20, 5)
 
-           while (currentMins < endMins) {
-              const slotH = Math.floor(currentMins / 60)
-              const slotM = currentMins % 60
-              const timeStr = `${slotH.toString().padStart(2, '0')}:${slotM.toString().padStart(2, '0')}`
-              
-              // Check availability
-              // Current lead duration
-              let currentDur = 30 * 60000
-              let currentGap = 0
-              if (targetAnuncioId) {
-                  const ad = advertisements.find(a => a.ida === targetAnuncioId)
-                  if (ad) {
-                      currentDur = (ad.duracion_visita || ad.Duracion_visita || 30) * 60000
-                      currentGap = (ad.tiempo_entre_visitas || ad.Gap_visita || 0) * 60000
-                  }
-              }
-              const totalDur = currentDur + currentGap
-              const slotStart = new Date(`${date}T${timeStr}`).getTime()
-              const slotEnd = slotStart + totalDur
-              
-              const isBusy = busyRanges.some(r => (slotStart < r.end && slotEnd > r.start))
-              
-              if (!isBusy) {
-                  slots.push(timeStr)
-              }
-
-              currentMins += 5 // Step 5 mins
+        candidates.forEach(candidate => {
+           const slotStart = new Date(`${date}T${candidate.time}`).getTime()
+           const durationMs = candidate.duration * 60000
+           const gapMs = candidate.gap * 60000
+           const slotEnd = slotStart + durationMs + gapMs
+           
+           const isBusy = busyRanges.some(r => isOverlapping(slotStart, slotEnd, r.start, r.end))
+           
+           if (!isBusy) {
+              slots.push(candidate.time)
            }
         })
         

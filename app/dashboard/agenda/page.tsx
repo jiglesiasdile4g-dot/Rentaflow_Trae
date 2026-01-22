@@ -29,12 +29,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn, formatWebhookDate } from "@/lib/utils"
 import { fixUserPermissionsAction } from "@/app/actions/user-config"
 import { LeadDetailModal } from "@/components/lead-detail-modal"
+import { generateSlotCandidates, isOverlapping, AgendaSlot, AdData } from "@/lib/agenda-utils"
 
 interface TimeSlot {
   id?: number
   hora_inicio: string
   hora_fin: string
   anuncio_id?: string | number | null
+  duracion?: number | null
+  gap?: number | null
 }
 
 interface AgendaItem {
@@ -43,6 +46,8 @@ interface AgendaItem {
   hora_inicio: string
   hora_fin: string
   anuncio_id: string | number | null
+  duracion?: number | null
+  gap?: number | null
 }
 
 interface AnuncioOption {
@@ -220,8 +225,100 @@ export default function AgendaPage() {
     fetchAnuncios()
   }, [inmobiliariaId])
 
+  // Calculate preview slots for the dashboard view
+  const previewSlots = useMemo(() => {
+    if (!selectedDateStr) return []
+
+    // 1. Get availability ranges for this day
+    const dayRanges = agendaItems.filter(item => item.fecha === selectedDateStr)
+    if (dayRanges.length === 0) return []
+
+    // 2. Generate candidates using shared utility
+    // Note: previewSlots doesn't have "visitToReschedule" context, so default is always 20/5
+    const candidates = generateSlotCandidates(dayRanges, availableAnuncios, 20, 5)
+
+    return candidates.map(c => {
+        // Calculate slot end for collision check
+        // generateSlotCandidates returns time (start) and we know duration+gap
+        const [h, m] = c.time.split(':').map(Number)
+        const startMins = h * 60 + m
+        const slotEnd = startMins + c.duration + c.gap
+
+        // Check collision
+        const isOccupied = dayVisits.some(visit => {
+            const vDate = safeDate(visit.fecha_de_visita)
+            if (!vDate) return false
+            const [vh, vm] = format(vDate, "HH:mm").split(':').map(Number)
+            const vStart = vh * 60 + vm
+            
+            // Estimate visit duration
+            let vDuration = 20
+            let vGap = 5
+            let configFound = false
+
+            // 1. Check Priority: Agent Configuration (AgendaItem)
+            const matchingAgendaItem = dayRanges.find(item => {
+                  const [sH, sM] = item.hora_inicio.slice(0, 5).split(':').map(Number)
+                  const [eH, eM] = item.hora_fin.slice(0, 5).split(':').map(Number)
+                  const startMins = sH * 60 + sM
+                  const endMins = eH * 60 + eM
+                  return vStart >= startMins && vStart < endMins
+            })
+
+            if (matchingAgendaItem) {
+                  if (matchingAgendaItem.duracion) {
+                      vDuration = Number(matchingAgendaItem.duracion)
+                      vGap = (matchingAgendaItem.gap !== undefined && matchingAgendaItem.gap !== null) ? Number(matchingAgendaItem.gap) : 5
+                      configFound = true
+                  } else if (matchingAgendaItem.anuncio_id) {
+                       const ad = availableAnuncios.find(a => String(a.ida) === String(matchingAgendaItem.anuncio_id))
+                       if (ad) {
+                           vDuration = Number(ad.duracion_visita) || 20
+                           const gapVal = ad.tiempo_entre_visitas
+                           vGap = (gapVal !== null && gapVal !== undefined) ? Number(gapVal) : 5
+                           configFound = true
+                       }
+                  }
+            }
+
+            if (!configFound) {
+                 const vInmueble = visit.Inmueble?.toLowerCase() || ""
+                 const vAd = availableAnuncios.find(a => {
+                      const ref = a.Referencia?.toLowerCase() || ""
+                      const dir = a.Direccion?.toLowerCase() || ""
+                      return (ref && ref === vInmueble) || (dir && dir.includes(vInmueble)) || (vInmueble && dir && vInmueble.includes(dir))
+                 })
+                 if (vAd) {
+                     vDuration = Number(vAd.duracion_visita) || 20
+                     const gapVal = vAd.tiempo_entre_visitas
+                     vGap = (gapVal !== null && gapVal !== undefined) ? Number(gapVal) : 5
+                 }
+            }
+
+            // Visit interval [Start, End)
+            const vEnd = vStart + vDuration + vGap
+
+            // Check overlap
+            return isOverlapping(startMins, slotEnd, vStart, vEnd)
+        })
+
+        return {
+            time: c.time,
+            status: isOccupied ? 'occupied' : 'available',
+            source: c.source,
+            duration: c.duration,
+            gap: c.gap
+        }
+    }).sort((a, b) => {
+        const [ah, am] = a.time.split(':').map(Number)
+        const [bh, bm] = b.time.split(':').map(Number)
+        return (ah * 60 + am) - (bh * 60 + bm)
+    })
+  }, [selectedDateStr, agendaItems, dayVisits, availableAnuncios])
+
   // Calculate available times when date changes
   useEffect(() => {
+    // Logic updated to respect agent configuration hierarchy
     if (!newRescheduleDate || !agentId) {
       setAvailableTimes([])
       return
@@ -237,171 +334,100 @@ export default function AgendaPage() {
       return
     }
     
-    // 2. Generate all possible start times within these slots
-    let candidates: string[] = []
-    
-    const generateSlots = (startStr: string, endStr: string, duration: number = 20, gap: number = 5) => {
-      const slots: string[] = []
-      const [startH, startM] = startStr.split(':').map(Number)
-      const [endH, endM] = endStr.split(':').map(Number)
-      
-      let currentMins = startH * 60 + startM
-      const endMins = endH * 60 + endM
-      
-      // Use configured duration + gap
-      const step = duration + gap
-      
-      while (currentMins + duration <= endMins) {
-        const h = Math.floor(currentMins / 60)
-        const m = currentMins % 60
-        slots.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`)
-        currentMins += step
-      }
-      return slots
-    }
+    // Determine default duration/gap based on the visit being rescheduled (if any)
+    let defaultDur = 20
+    let defaultGap = 5
 
-    dayAvailability.forEach(slot => {
-      // Ensure we use HH:mm format
-      const start = slot.hora_inicio.slice(0, 5)
-      const end = slot.hora_fin.slice(0, 5)
-      
-      // Determine duration/gap based on the visit being rescheduled
-      // We prioritize the configuration of the property related to the visit
-      let duration = 20
-      let gap = 5
-      
-      if (visitToReschedule) {
-        // Find property in availableAnuncios by matching reference or similar logic
-        // The visit has 'Inmueble' string which is usually the Reference
-        const visitInmueble = visitToReschedule.Inmueble?.toLowerCase() || ""
-        
-        const relatedAnuncio = availableAnuncios.find(a => {
-           const ref = a.Referencia?.toLowerCase() || ""
-           const dir = a.Direccion?.toLowerCase() || ""
-           return (ref && ref === visitInmueble) || (dir && dir.includes(visitInmueble)) || (visitInmueble && dir && visitInmueble.includes(dir))
-        })
-        
-        if (relatedAnuncio) {
-          console.log("Found related anuncio config:", relatedAnuncio.Referencia, relatedAnuncio.duracion_visita, relatedAnuncio.tiempo_entre_visitas)
-          duration = relatedAnuncio.duracion_visita || 20
-          gap = relatedAnuncio.tiempo_entre_visitas ?? 5
-        } else if (slot.anuncio_id) {
-           // Fallback to slot configuration if visit property not found
-           const slotAnuncio = availableAnuncios.find(a => a.ida === slot.anuncio_id)
-           if (slotAnuncio) {
-             duration = slotAnuncio.duracion_visita || 20
-             gap = slotAnuncio.tiempo_entre_visitas ?? 5
-           }
-        }
-      } else if (slot.anuncio_id) {
-        // If we are just viewing slots (no reschedule context yet?), use slot config
-        const anuncio = availableAnuncios.find(a => a.ida === slot.anuncio_id)
-        if (anuncio) {
-          duration = anuncio.duracion_visita || 20
-          gap = anuncio.tiempo_entre_visitas ?? 5
-        }
-      }
-      
-      console.log(`Generating slots for ${start}-${end} with duration ${duration} and gap ${gap}`)
-      candidates = [...candidates, ...generateSlots(start, end, duration, gap)]
-    })
-    
-    // Deduplicate and sort
-    candidates = Array.from(new Set(candidates)).sort()
-    
-    // 3. Filter out times occupied by other visits
-    // We must ensure the new slot doesn't overlap with any existing visit
-    // For this check, we need to know the duration of the CANDIDATE slot (which we just determined)
-    // AND the duration of EXISTING visits.
-    
-    // Since 'candidates' is just a list of strings, we lost the specific duration associated with each candidate if mixed.
-    // However, usually rescheduling is for one specific visit type.
-    
-    // Let's assume the duration for the visit we are scheduling is constant for all candidates generated
-    // (which is true if we base it on visitToReschedule)
-    let activeDuration = 20
-    let activeGap = 5 // Default gap
-    
     if (visitToReschedule) {
         const visitInmueble = visitToReschedule.Inmueble?.toLowerCase() || ""
         const relatedAnuncio = availableAnuncios.find(a => {
-           const ref = a.Referencia?.toLowerCase() || ""
-           const dir = a.Direccion?.toLowerCase() || ""
-           return (ref && ref === visitInmueble) || (dir && dir.includes(visitInmueble)) || (visitInmueble && dir && visitInmueble.includes(dir))
+            const ref = a.Referencia?.toLowerCase() || ""
+            const dir = a.Direccion?.toLowerCase() || ""
+            return (ref && ref === visitInmueble) || (dir && dir.includes(visitInmueble)) || (visitInmueble && dir && visitInmueble.includes(dir))
         })
         if (relatedAnuncio) {
-            activeDuration = relatedAnuncio.duracion_visita || 20
-            activeGap = relatedAnuncio.tiempo_entre_visitas ?? 5
+            defaultDur = relatedAnuncio.duracion_visita || 20
+            defaultGap = relatedAnuncio.tiempo_entre_visitas ?? 5
         }
     }
+    
+    // 2. Generate all possible start times with their specific duration/gap
+    // Use shared utility
+    const uniqueCandidates = generateSlotCandidates(dayAvailability, availableAnuncios, defaultDur, defaultGap)
 
+    // 3. Filter out times occupied by other visits
     const existingVisitsOnDay = scheduledVisits.filter(v => {
-      // Ignore the one we are modifying
       if (visitToReschedule && v.id === visitToReschedule.id) return false
-      
       const vDate = safeDate(v.fecha_de_visita)
       if (!vDate) return false
       return format(vDate, "yyyy-MM-dd") === dateStr
     })
     
-    const isOverlapping = (start1: number, end1: number, start2: number, end2: number) => {
-        // Simple interval overlap check: [start1, end1) vs [start2, end2)
-        // Two intervals overlap if max(start1, start2) < min(end1, end2)
-        return Math.max(start1, start2) < Math.min(end1, end2)
-    }
-
-    const finalTimes = candidates.filter(t => {
-       const [th, tm] = t.split(':').map(Number)
+    const finalTimes = uniqueCandidates.filter(c => {
+       const [th, tm] = c.time.split(':').map(Number)
        const tStart = th * 60 + tm
-       // The time we occupy is duration + gap (to ensure we leave gap after us)
-       // But wait, the "gap" is effectively a buffer. 
-       // If I book 10:00 (20 min + 5 gap), I occupy 10:00-10:25.
-       // The next person can start at 10:25.
-       // So for collision check, we treat my slot as [Start, Start + Duration + Gap).
-       const tEnd = tStart + activeDuration + activeGap
+       // Use the candidate's specific duration!
+       const tEnd = tStart + c.duration + c.gap
 
-       // Check collision with any existing visit
        return !existingVisitsOnDay.some(v => {
           const d = safeDate(v.fecha_de_visita)
           if (!d) return false
           const [vh, vm] = format(d, "HH:mm").split(':').map(Number)
           const vStart = vh * 60 + vm
           
-          // Ideally we should know the duration of the EXISTING visit 'v'
-          // We can try to find its property config too
           let vDuration = 20
           let vGap = 5
+          let configFound = false
           
-          const vInmueble = v.Inmueble?.toLowerCase() || ""
-          const vAnuncio = availableAnuncios.find(a => {
-             const ref = a.Referencia?.toLowerCase() || ""
-             const dir = a.Direccion?.toLowerCase() || ""
-             return (ref && ref === vInmueble) || (dir && dir.includes(vInmueble)) || (vInmueble && dir && vInmueble.includes(dir))
+          // 1. Check Priority: Agent Configuration (AgendaItem)
+          const matchingAgendaItem = dayAvailability.find(item => {
+                const [sH, sM] = item.hora_inicio.slice(0, 5).split(':').map(Number)
+                const [eH, eM] = item.hora_fin.slice(0, 5).split(':').map(Number)
+                const startMins = sH * 60 + sM
+                const endMins = eH * 60 + eM
+                return vStart >= startMins && vStart < endMins
           })
-          
-          if (vAnuncio) {
-              vDuration = vAnuncio.duracion_visita || 20
-              vGap = vAnuncio.tiempo_entre_visitas ?? 5
+
+          if (matchingAgendaItem) {
+                if (matchingAgendaItem.duracion) {
+                    vDuration = Number(matchingAgendaItem.duracion)
+                    vGap = (matchingAgendaItem.gap !== undefined && matchingAgendaItem.gap !== null) ? Number(matchingAgendaItem.gap) : 5
+                    configFound = true
+                } else if (matchingAgendaItem.anuncio_id) {
+                     const ad = availableAnuncios.find(a => String(a.ida) === String(matchingAgendaItem.anuncio_id))
+                     if (ad) {
+                         vDuration = Number(ad.duracion_visita) || 20
+                         const gapVal = ad.tiempo_entre_visitas
+                         vGap = (gapVal !== null && gapVal !== undefined) ? Number(gapVal) : 5
+                         configFound = true
+                     }
+                }
           }
           
-          // The existing visit occupies [vStart, vStart + vDuration + vGap)
+          if (!configFound) {
+               // 2. Check Priority: Property Configuration
+               const vInmueble = v.Inmueble?.toLowerCase() || ""
+               const vAnuncio = availableAnuncios.find(a => {
+                  const ref = a.Referencia?.toLowerCase() || ""
+                  const dir = a.Direccion?.toLowerCase() || ""
+                  return (ref && ref === vInmueble) || (dir && dir.includes(vInmueble)) || (vInmueble && dir && vInmueble.includes(dir))
+               })
+               if (vAnuncio) {
+                    vDuration = Number(vAnuncio.duracion_visita) || 20
+                    const gapVal = vAnuncio.tiempo_entre_visitas
+                    vGap = (gapVal !== null && gapVal !== undefined) ? Number(gapVal) : 5
+               }
+          }
+          
           const vEnd = vStart + vDuration + vGap
           
-          const overlaps = isOverlapping(tStart, tEnd, vStart, vEnd)
-          if (overlaps) {
-             console.log(`Collision detected: Candidate ${t} (${tStart}-${tEnd}) overlaps with Visit ${v.id} at ${format(d, "HH:mm")} (${vStart}-${vEnd})`)
-          }
-          return overlaps
+          return isOverlapping(tStart, tEnd, vStart, vEnd)
        })
-    })
+    }).map(c => c.time)
     
     setAvailableTimes(finalTimes)
     
-    // If current selected time is not in the new list (and we just changed date), clear it
-    // But if we just opened the dialog, we might want to preserve it if valid?
-    // We'll let the user re-select if invalid.
-    
-  }, [newRescheduleDate, agendaItems, scheduledVisits, visitToReschedule, agentId])
+  }, [newRescheduleDate, agendaItems, scheduledVisits, visitToReschedule, agentId, availableAnuncios])
 
   // Update slots when selected date changes or agendaItems change
   useEffect(() => {
@@ -413,7 +439,9 @@ export default function AgendaPage() {
             id: item.id,
             hora_inicio: item.hora_inicio.slice(0, 5),
             hora_fin: item.hora_fin.slice(0, 5),
-            anuncio_id: item.anuncio_id
+            anuncio_id: item.anuncio_id,
+            duracion: item.duracion,
+            gap: item.gap
           }))
           .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
         
@@ -594,7 +622,7 @@ export default function AgendaPage() {
     }
     
     if (foundStart) {
-      setCurrentSlots(prev => [...prev, { hora_inicio: foundStart, hora_fin: foundEnd, anuncio_id: null }])
+      setCurrentSlots(prev => [...prev, { hora_inicio: foundStart, hora_fin: foundEnd, anuncio_id: null, duracion: null, gap: null }])
     } else {
        toast({
         title: "Agenda completa",
@@ -813,13 +841,97 @@ export default function AgendaPage() {
       
       // Convert to UTC ISO string for Supabase
       const newDateTimeIso = localDate.toISOString()
+
+      // Fetch current user for history
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      // Fetch full lead data for history and webhook
+      const { data: fullLead } = await supabase
+        .from("Clientes")
+        .select("*")
+        .eq("id", visitToReschedule.id)
+        .single()
+
+      // Update history
+      const currentHistory = (fullLead?.status_history as any[]) || []
+      const historyEntry = {
+          status: "Visita Reprogramada",
+          timestamp: new Date().toISOString(),
+          agent_id: user?.id,
+          agent_name: user?.email || "Agente"
+      }
+      const updatedHistory = [...currentHistory, historyEntry]
       
       const { error } = await supabase
         .from("Clientes")
-        .update({ fecha_de_visita: newDateTimeIso })
+        .update({ 
+            fecha_de_visita: newDateTimeIso,
+            status_history: updatedHistory,
+            Estado: "Visita Propuesta" // Ensure status is consistent
+        })
         .eq("id", visitToReschedule.id)
         
       if (error) throw error
+
+      // Trigger Webhook
+      try {
+        console.log("Preparing reschedule webhook payload...")
+        
+        // Fetch additional data
+        let inmobiliariaData = null
+        const targetInmoId = inmobiliariaId || (fullLead as any)?.idi || (fullLead as any)?.usuario;
+
+        if (targetInmoId) {
+             const { data } = await supabase.from("Inmobiliarias").select("*").eq("idi", targetInmoId).single()
+             inmobiliariaData = data
+        }
+
+        const currentAd = availableAnuncios.find(a => 
+            (visitToReschedule.Inmueble && a.Referencia === visitToReschedule.Inmueble) ||
+            (visitToReschedule.Inmueble && a.Direccion === visitToReschedule.Inmueble)
+        )
+        
+        // Fetch Agent Data
+        let agentData = null
+        if (fullLead?.idag) {
+            const { data } = await supabase.from("Agentes").select("*").eq("idag", fullLead.idag).single()
+            agentData = data
+        }
+
+        const { date: formattedDate, time: formattedTime } = formatWebhookDate(newDateTimeIso)
+        const bookingLink = `${typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''}/agendar-visita?leadId=${visitToReschedule.id}`
+        
+        // Prepare base lead data excluding status_history
+        const leadData = { ...(fullLead || visitToReschedule) }
+        delete leadData.status_history
+
+        const payload = {
+            "Link de Agendamiento": bookingLink,
+            "Nombre de lead": `${fullLead?.Nombre || visitToReschedule.Nombre} ${fullLead?.Apellidos || visitToReschedule.Apellidos || ''}`.trim(),
+            "Inmueble/Anuncio": currentAd || { Referencia: visitToReschedule.Inmueble },
+            "Nombre Inmobiliaria": inmobiliariaNombre || (inmobiliariaData as any)?.nombre_inmobiliaria || "Sin nombre",
+            "Inmobiliaria": inmobiliariaData || null,
+            "Firma": (inmobiliariaData as any)?.firma_html || "",
+            "Agente Asignado": agentData,
+            "Agente Email": agentData?.Email,
+            "Fecha Visita": formattedDate,
+            "Hora Visita": formattedTime,
+            "Fecha Completa": newDateTimeIso,
+            "Motivo": "Reprogramado por agente",
+            ...leadData,
+            fecha_de_visita: newDateTimeIso
+        }
+
+        await fetch("/api/reprogramar-visita", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        })
+      } catch (webhookError) {
+        console.error("Error calling reschedule webhook:", webhookError)
+      }
       
       toast({ 
         title: "Visita reprogramada", 
@@ -865,10 +977,15 @@ export default function AgendaPage() {
       try {
         console.log("Preparing cancellation webhook payload...")
         
+        // Fetch full lead data to ensure we have email etc.
+        const { data: fullLead } = await supabase.from("Clientes").select("*").eq("id", visitToCancel.id).single()
+
         // Fetch additional data
         let inmobiliariaData = null
-        if (inmobiliariaId) {
-             const { data } = await supabase.from("Inmobiliarias").select("*").eq("idi", inmobiliariaId).single()
+        const targetInmoId = inmobiliariaId || (fullLead as any)?.idi || (fullLead as any)?.usuario;
+
+        if (targetInmoId) {
+             const { data } = await supabase.from("Inmobiliarias").select("*").eq("idi", targetInmoId).single()
              inmobiliariaData = data
         }
 
@@ -877,9 +994,6 @@ export default function AgendaPage() {
             (visitToCancel.Inmueble && a.Direccion === visitToCancel.Inmueble)
         )
         
-        // Fetch full lead data to ensure we have email etc.
-        const { data: fullLead } = await supabase.from("Clientes").select("*").eq("id", visitToCancel.id).single()
-
         // Fetch Agent Data
         let agentData = null
         if (fullLead?.idag) {
@@ -893,7 +1007,7 @@ export default function AgendaPage() {
             "Link de Agendamiento": bookingLink,
             "Nombre de lead": `${fullLead?.Nombre || visitToCancel.Nombre} ${fullLead?.Apellidos || visitToCancel.Apellidos || ''}`.trim(),
             "Inmueble/Anuncio": currentAd || { Referencia: visitToCancel.Inmueble },
-            "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
+            "Nombre Inmobiliaria": inmobiliariaNombre || (inmobiliariaData as any)?.nombre_inmobiliaria || "Sin nombre",
             "Inmobiliaria": inmobiliariaData || null,
             "Firma": (inmobiliariaData as any)?.firma_html || "",
             "Agente Asignado": agentData,
@@ -1006,7 +1120,9 @@ export default function AgendaPage() {
         fecha: selectedDateStr,
         hora_inicio: slot.hora_inicio,
         hora_fin: slot.hora_fin,
-        anuncio_id: slot.anuncio_id ? Number(slot.anuncio_id) : null
+        anuncio_id: slot.anuncio_id ? Number(slot.anuncio_id) : null,
+        duracion: slot.duracion ? Number(slot.duracion) : null,
+        gap: slot.gap !== null && slot.gap !== undefined ? Number(slot.gap) : null
       }))
 
       if (newSlots.length > 0) {
@@ -1169,8 +1285,9 @@ export default function AgendaPage() {
                             value={day.id}
                             disabled={day.disabled}
                             className={cn(
-                              "relative flex flex-col items-center justify-center h-14 w-16 rounded-md border border-muted bg-card data-[state=active]:border-primary data-[state=active]:bg-primary/5 transition-all",
-                              hasSlots && "border-b-4 border-b-primary/40",
+                              "group relative flex flex-col items-center justify-center h-14 w-16 rounded-md border border-muted bg-card transition-all",
+                              hasSlots && "border-primary bg-primary/5",
+                              "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary",
                               day.disabled && "opacity-50 cursor-not-allowed bg-muted/50"
                             )}
                           >
@@ -1179,10 +1296,10 @@ export default function AgendaPage() {
                                 {visitCount}
                               </span>
                             )}
-                            <span className="text-[10px] font-medium uppercase text-muted-foreground">
+                            <span className="text-[10px] font-medium uppercase text-muted-foreground group-data-[state=active]:text-primary-foreground/90">
                               {day.label.split(' ')[0]}
                             </span>
-                            <span className="text-base font-bold">
+                            <span className="text-base font-bold group-data-[state=active]:text-primary-foreground">
                               {day.label.split(' ')[1]}
                             </span>
                           </TabsTrigger>
@@ -1209,8 +1326,9 @@ export default function AgendaPage() {
                             value={day.id}
                             disabled={day.disabled}
                             className={cn(
-                              "relative flex flex-col items-center justify-center h-14 w-16 rounded-md border border-muted bg-card data-[state=active]:border-primary data-[state=active]:bg-primary/5 transition-all",
-                              hasSlots && "border-b-4 border-b-primary/40"
+                              "group relative flex flex-col items-center justify-center h-14 w-16 rounded-md border border-muted bg-card transition-all",
+                              hasSlots && "border-primary bg-primary/5",
+                              "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary",
                             )}
                           >
                             {visitCount > 0 && (
@@ -1218,10 +1336,10 @@ export default function AgendaPage() {
                                 {visitCount}
                               </span>
                             )}
-                            <span className="text-[10px] font-medium uppercase text-muted-foreground">
+                            <span className="text-[10px] font-medium uppercase text-muted-foreground group-data-[state=active]:text-primary-foreground/90">
                               {day.label.split(' ')[0]}
                             </span>
-                            <span className="text-base font-bold">
+                            <span className="text-base font-bold group-data-[state=active]:text-primary-foreground">
                               {day.label.split(' ')[1]}
                             </span>
                           </TabsTrigger>
@@ -1369,6 +1487,31 @@ export default function AgendaPage() {
                                           )}
                                         </SelectContent>
                                       </Select>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-2 mt-1">
+                                    <div className="space-y-1">
+                                        <Label htmlFor={`duration-${index}`} className="text-[10px] text-muted-foreground">Duración (min)</Label>
+                                        <Input 
+                                            id={`duration-${index}`}
+                                            type="number" 
+                                            placeholder="Defecto" 
+                                            className="h-8 text-xs"
+                                            value={slot.duracion || ""}
+                                            onChange={(e) => handleSlotChange(index, "duracion", e.target.value ? Number(e.target.value) : null)}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label htmlFor={`gap-${index}`} className="text-[10px] text-muted-foreground">Gap (min)</Label>
+                                        <Input 
+                                            id={`gap-${index}`}
+                                            type="number" 
+                                            placeholder="Defecto" 
+                                            className="h-8 text-xs"
+                                            value={slot.gap !== null ? slot.gap : ""}
+                                            onChange={(e) => handleSlotChange(index, "gap", e.target.value ? Number(e.target.value) : null)}
+                                        />
                                     </div>
                                   </div>
                                 </div>
@@ -1519,6 +1662,50 @@ export default function AgendaPage() {
                       )
                     })}
                   </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="mt-4">
+            <Card>
+              <CardHeader className="py-4">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Clock className="h-4 w-4" />
+                  Franjas Disponibles (Vista Previa)
+                </CardTitle>
+                <CardDescription className="text-xs">
+                   Estos son los horarios que verán los clientes para agendar. Se calculan sumando el tiempo de visita + gap.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pb-4">
+                {previewSlots.length === 0 ? (
+                    <div className="text-center py-6 bg-muted/20 rounded-lg">
+                      <p className="text-muted-foreground text-xs">No hay franjas configuradas para este día.</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                       {previewSlots.map((slot, i) => (
+                           <div key={i} className={cn(
+                              "flex flex-col items-center justify-center p-2 rounded-md border text-center transition-colors relative",
+                              slot.status === 'occupied' 
+                                  ? "bg-muted text-muted-foreground border-transparent opacity-60"
+                                  : "bg-background border-input hover:border-primary/50 hover:bg-accent/5"
+                           )}>
+                              {slot.status === 'occupied' && (
+                                <div className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-red-500" title="Ocupado" />
+                              )}
+                              <span className="font-bold text-sm">{slot.time}</span>
+                              <div className="flex items-center gap-1 text-[10px] text-muted-foreground mt-1">
+                                  <span>{slot.duration}m</span>
+                                  {slot.gap > 0 && <span className="text-muted-foreground/60">+{slot.gap}m</span>}
+                              </div>
+                              <span className="text-[9px] uppercase tracking-wider opacity-60 mt-0.5 scale-90">
+                                  {slot.source}
+                              </span>
+                           </div>
+                       ))}
+                    </div>
                 )}
               </CardContent>
             </Card>

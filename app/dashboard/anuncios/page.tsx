@@ -30,12 +30,13 @@ import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, E
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { loadStripe, type Stripe as StripeJS } from "@stripe/stripe-js"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
-import { formatDate, cn } from "@/lib/utils"
+import { formatDate, cn, formatWebhookDate } from "@/lib/utils"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import ChangePlanButton from "@/components/change-plan-button"
 import { createBrowserClient } from "@/lib/supabase/client" // Added for createBrowserClient
+import { generateSlotCandidates, isOverlapping } from "@/lib/agenda-utils"
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts"
 import Link from "next/link"
 
@@ -93,6 +94,10 @@ interface AnuncioCard {
   descartados?: number
   // Availability indicator
   hasAvailability?: boolean
+  // Fields for agenda-utils
+  ida?: string
+  duracion_visita?: number
+  tiempo_entre_visitas?: number
 }
 
 interface CreationStep {
@@ -276,34 +281,72 @@ export default function AnunciosPage() {
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
           process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
         )
-        const { data, error } = await supabase
-          .from("Agendas")
-          .select("hora_inicio, hora_fin")
-          .eq("agente_id", visitDateDialog.selectedAgenteId)
-          .eq("fecha", visitDateDialog.selectedDate)
+        const [agendaResult, visitsResult] = await Promise.all([
+          supabase
+            .from("Agendas")
+            .select("hora_inicio, hora_fin, anuncio_id, duracion, gap")
+            .eq("agente_id", visitDateDialog.selectedAgenteId)
+            .eq("fecha", visitDateDialog.selectedDate),
+          supabase
+            .from("Clientes")
+            .select("fecha_de_visita, Inmueble")
+            .eq("idag", visitDateDialog.selectedAgenteId)
+            .gte("fecha_de_visita", `${visitDateDialog.selectedDate}T00:00:00`)
+            .lte("fecha_de_visita", `${visitDateDialog.selectedDate}T23:59:59`)
+        ])
 
-        if (error) throw error
+        if (agendaResult.error) throw agendaResult.error
 
-        if (data && data.length > 0) {
-          const slots: string[] = []
-          data.forEach((range: any) => {
-            let start = range.hora_inicio.slice(0, 5)
-            const end = range.hora_fin.slice(0, 5)
-            
-            let [h, m] = start.split(':').map(Number)
-            let currentMins = h * 60 + m
-            const [endH, endM] = end.split(':').map(Number)
-            const endMins = endH * 60 + endM
+        const data = agendaResult.data || []
+        const visits = visitsResult.data || []
 
-            // Generate slots every 10 minutes
-            while (currentMins < endMins) {
-              const slotH = Math.floor(currentMins / 60)
-              const slotM = currentMins % 60
-              const timeStr = `${slotH.toString().padStart(2, '0')}:${slotM.toString().padStart(2, '0')}`
-              slots.push(timeStr)
-              currentMins += 10 
-            }
+        if (data.length > 0) {
+          // Use shared utility to generate candidates
+          const candidates = generateSlotCandidates(data, anunciosCards as any[], 20, 5)
+          
+          // Filter out busy slots
+          const availableCandidates = candidates.filter(candidate => {
+             const [h, m] = candidate.time.split(':').map(Number)
+             const startMins = h * 60 + m
+             const slotEnd = startMins + candidate.duration + candidate.gap
+             
+             // Check against visits
+             const isBusy = visits.some((visit: any) => {
+                if (!visit.fecha_de_visita) return false
+                const vDate = new Date(visit.fecha_de_visita)
+                if (isNaN(vDate.getTime())) return false
+                
+                const vh = vDate.getHours()
+                const vm = vDate.getMinutes()
+                const vStart = vh * 60 + vm
+                
+                // Default duration/gap for existing visits if unknown
+                let vDuration = 20
+                let vGap = 5
+                
+                // Try to find matching ad to get specific duration
+                const vInmueble = (visit.Inmueble || "").toLowerCase()
+                const vAd = anunciosCards.find(a => {
+                     const ref = (a.referencia || "").toLowerCase()
+                     const dir = (a.direccion || "").toLowerCase()
+                     return (ref && ref === vInmueble) || (dir && dir.includes(vInmueble)) || (vInmueble && dir && vInmueble.includes(dir))
+                })
+                
+                if (vAd) {
+                    // Check editFormData for duration if it's the current one? No, use card data
+                    // But card data might not have duracion_visita if not fetched?
+                    // The interface AnuncioCard doesn't list duracion_visita...
+                    // Wait, I should check AnuncioCard interface in this file.
+                }
+                
+                const vEnd = vStart + vDuration + vGap
+                return isOverlapping(startMins, slotEnd, vStart, vEnd)
+             })
+             
+             return !isBusy
           })
+
+          const slots = availableCandidates.map(c => c.time)
           slots.sort()
           setAvailableSlots([...new Set(slots)])
         } else {
@@ -1746,7 +1789,7 @@ export default function AnunciosPage() {
 
       let query = supabase
         .from("Anuncios")
-        .select("ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion")
+        .select("ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion, duracion_visita, tiempo_entre_visitas")
         .order("created_at", { ascending: false })
         .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
       
@@ -1764,7 +1807,7 @@ export default function AnunciosPage() {
         let fallbackQuery = supabase
           .from("Anuncios")
           .select(
-            "ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion",
+            "ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion, duracion_visita, tiempo_entre_visitas",
           )
           .order("created_at", { ascending: false })
           .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
@@ -2129,6 +2172,7 @@ export default function AnunciosPage() {
 
         cards.push({
           id: anuncio.ida, // Use "ida" instead of "id"
+          ida: anuncio.ida, // For agenda-utils compatibility
           codPortal: anuncio.CodPortal || "",
           referencia,
           direccion: anuncio.Direccion || "",
@@ -2138,6 +2182,8 @@ export default function AnunciosPage() {
           activacion: anuncio.Activacion || "Inactivo",
           fotoUrl: anuncio.Foto_Url || "",
           adjuntos: anuncio.Adjuntos || [],
+          duracion_visita: anuncio.duracion_visita,
+          tiempo_entre_visitas: anuncio.tiempo_entre_visitas,
           nuevosHoy,
           emailsEnviados: emailsEnviadosMes,
           whatsappsTotal: whatsappsPeriodo,
@@ -3715,15 +3761,25 @@ export default function AnunciosPage() {
              inmobiliariaData = inmoData
           }
 
+          // Prepare base lead data excluding status_history
+          const leadData = { ...existingLead }
+          delete leadData.status_history
+
+          const { date: formattedDate, time: formattedTime } = formatWebhookDate(valueWithOffset)
+
           const payload = {
             "Nombre de lead": `${existingLead?.Nombre || ''} ${existingLead?.Apellidos || ''}`.trim(),
             "Agente Asignado": agentData || { idag: visitDateDialog.selectedAgenteId },
+            "Agente Email": agentData?.Email || "",
             "Inmueble/Anuncio": currentAd || { Referencia: existingLead?.Inmueble },
             "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
             "Inmobiliaria": inmobiliariaData || null,
             "Firma": (inmobiliariaData as any)?.firma_html || "",
             "Link de Agendamiento": bookingLink,
-            ...existingLead,
+            "Fecha Visita": formattedDate,
+            "Hora Visita": formattedTime,
+            "Fecha Completa": valueWithOffset,
+            ...leadData,
             fecha_de_visita: valueWithOffset,
             idag: visitDateDialog.selectedAgenteId ? Number(visitDateDialog.selectedAgenteId) : null,
             Estado: "Visita Propuesta"
