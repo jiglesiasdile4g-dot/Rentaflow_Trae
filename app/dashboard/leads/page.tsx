@@ -2613,11 +2613,12 @@ export default function LeadsPage() {
                     
                     // Fetch Inmobiliaria data
                     let inmobiliariaData = null
-                    if (inmobiliariaId) {
+                    const targetInmoId = inmobiliariaId || (selectedLeadForVisit as any).idi || (selectedLeadForVisit as any).usuario
+                    if (targetInmoId) {
                         const { data: inmoData } = await supabase
                            .from("Inmobiliarias")
                            .select("*")
-                           .eq("idi", inmobiliariaId)
+                           .eq("idi", targetInmoId)
                            .single()
                         inmobiliariaData = inmoData
                     }
@@ -2629,7 +2630,7 @@ export default function LeadsPage() {
                       "Agente Asignado": assignedAgent || { idag: selectedAgenteId },
                       "Agente Email": assignedAgent?.Email || null,
                       "Inmueble/Anuncio": currentAd || { Referencia: selectedLeadForVisit.Inmueble },
-                      "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
+                      "Nombre Inmobiliaria": inmobiliariaNombre || (inmobiliariaData as any)?.nombre_inmobiliaria || "Sin nombre",
                       "Inmobiliaria": inmobiliariaData || null,
                       "Firma": (inmobiliariaData as any)?.firma_html || "",
                       "Franjas/Huecos libres": futureSlots,
