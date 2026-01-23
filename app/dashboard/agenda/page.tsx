@@ -1658,7 +1658,7 @@ export default function AgendaPage() {
                         const completed = isVisitCompleted(visit.visita_completada)
                         return (
                           <div key={visit.id} className={cn(
-                            "flex items-center justify-between p-3 border rounded-lg shadow-sm hover:shadow-md transition-all",
+                            "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-3 border rounded-lg shadow-sm hover:shadow-md transition-all",
                             completed 
                               ? "border-green-500/30 bg-green-100" 
                               : "bg-card border-border"
@@ -1711,7 +1711,7 @@ export default function AgendaPage() {
                                 )}
                               </div>
                             </div>
-                            <div className="ml-2 shrink-0 flex gap-2">
+                            <div className="sm:ml-2 w-full sm:w-auto shrink-0 flex flex-wrap gap-2 sm:justify-end">
                               <Button
                                 variant="outline"
                                 size="icon"
