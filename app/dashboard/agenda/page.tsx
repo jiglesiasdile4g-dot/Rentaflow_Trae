@@ -1,13 +1,13 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef, type TouchEvent } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2, Plus, Trash2, Clock, CalendarDays, User, Building, Phone, Euro, CheckCircle, FileText, Undo, Check, CalendarIcon } from "lucide-react"
+import { Loader2, Plus, Trash2, Clock, CalendarDays, User, Building, Phone, Euro, CheckCircle, FileText, Undo, Check, CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react"
 import { getAgentsByIdi, getAgentByEmail } from "@/app/actions/get-agents"
 import { useToast } from "@/hooks/use-toast"
 import { format, addDays, startOfToday, startOfWeek, addWeeks, isBefore } from "date-fns"
@@ -90,12 +90,14 @@ export default function AgendaPage() {
   // Tabs state
   const [currentWeekDays, setCurrentWeekDays] = useState<DayTab[]>([])
   const [nextWeekDays, setNextWeekDays] = useState<DayTab[]>([])
+  const [nextWeekOffset, setNextWeekOffset] = useState(0)
   const [selectedDateStr, setSelectedDateStr] = useState<string>("")
   const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([])
   const [scheduledVisits, setScheduledVisits] = useState<ScheduledVisit[]>([])
   const [currentSlots, setCurrentSlots] = useState<TimeSlot[]>([])
   const [dayVisits, setDayVisits] = useState<ScheduledVisit[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const nextWeekTouchStartX = useRef<number | null>(null)
   
   // Visit completion state
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false)
@@ -143,6 +145,33 @@ export default function AgendaPage() {
     return options
   }, [])
 
+  const visibleNextWeekDays = useMemo(() => {
+    return nextWeekDays.slice(nextWeekOffset, nextWeekOffset + 7)
+  }, [nextWeekDays, nextWeekOffset])
+  const maxNextWeekOffset = Math.max(0, nextWeekDays.length - 7)
+  const canShiftPrevNextWeek = nextWeekOffset > 0
+  const canShiftNextNextWeek = nextWeekOffset < maxNextWeekOffset
+
+  const shiftNextWeek = (delta: number) => {
+    setNextWeekOffset(prev => {
+      const maxOffset = Math.max(0, nextWeekDays.length - 7)
+      return Math.min(maxOffset, Math.max(0, prev + delta))
+    })
+  }
+
+  const handleNextWeekTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+    nextWeekTouchStartX.current = e.touches[0]?.clientX ?? null
+  }
+
+  const handleNextWeekTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
+    if (nextWeekTouchStartX.current === null) return
+    const endX = e.changedTouches[0]?.clientX ?? nextWeekTouchStartX.current
+    const delta = endX - nextWeekTouchStartX.current
+    nextWeekTouchStartX.current = null
+    if (Math.abs(delta) < 40) return
+    shiftNextWeek(delta < 0 ? 7 : -7)
+  }
+
   // Initialize weeks
   useEffect(() => {
     const today = startOfToday()
@@ -150,9 +179,9 @@ export default function AgendaPage() {
     const startOfNextWeek = addWeeks(startOfCurrentWeek, 1)
 
     // Helper to create days
-    const createDays = (startDate: Date): DayTab[] => {
+    const createDays = (startDate: Date, count: number): DayTab[] => {
       const days: DayTab[] = []
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < count; i++) {
         const date = addDays(startDate, i)
         const dateStr = format(date, "yyyy-MM-dd")
         days.push({
@@ -166,8 +195,8 @@ export default function AgendaPage() {
       return days
     }
 
-    const current = createDays(startOfCurrentWeek)
-    const next = createDays(startOfNextWeek)
+    const current = createDays(startOfCurrentWeek, 7)
+    const next = createDays(startOfNextWeek, 35)
     
     setCurrentWeekDays(current)
     setNextWeekDays(next)
@@ -1196,6 +1225,34 @@ export default function AgendaPage() {
     }
   }
 
+  const timelineItems = useMemo(() => {
+    const visitItems = dayVisits.map(visit => {
+      const date = safeDate(visit.fecha_de_visita)
+      const time = date ? format(date, "HH:mm") : ""
+      const [h, m] = time ? time.split(":").map(Number) : [0, 0]
+      return {
+        type: "visit" as const,
+        time,
+        minutes: h * 60 + m,
+        visit,
+      }
+    }).filter(item => item.time)
+
+    const slotItems = previewSlots
+      .filter(slot => slot.status === "available")
+      .map(slot => {
+        const [h, m] = slot.time.split(":").map(Number)
+        return {
+          type: "slot" as const,
+          time: slot.time,
+          minutes: h * 60 + m,
+          slot,
+        }
+      })
+
+    return [...visitItems, ...slotItems].sort((a, b) => a.minutes - b.minutes)
+  }, [dayVisits, previewSlots])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -1310,42 +1367,75 @@ export default function AgendaPage() {
                 </div>
 
                 <div>
-                  <h3 className="text-xs font-medium text-muted-foreground mb-2">Siguiente Semana</h3>
-                  <div className="flex flex-wrap gap-2">
-                     <TabsList className="h-auto bg-transparent p-0 gap-2 flex-wrap justify-start">
-                      {nextWeekDays.map((day) => {
-                        const hasSlots = agendaItems.some(item => item.fecha === day.id)
-                        const visitCount = scheduledVisits.filter(v => {
-                           const d = safeDate(v.fecha_de_visita)
-                           return d && format(d, "yyyy-MM-dd") === day.id
-                        }).length
-                        
-                        return (
-                          <TabsTrigger
-                            key={day.id}
-                            value={day.id}
-                            disabled={day.disabled}
-                            className={cn(
-                              "group relative flex flex-col items-center justify-center h-14 w-16 rounded-md border border-muted bg-card transition-all",
-                              hasSlots && "border-primary bg-primary/5",
-                              "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary",
-                            )}
-                          >
-                            {visitCount > 0 && (
-                              <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background z-10">
-                                {visitCount}
+                  <h3 className="text-xs font-medium text-muted-foreground mb-1">Proximas fechas</h3>
+                  <div className="space-y-0.5">
+                    <div
+                      className="flex gap-2 overflow-y-visible pb-2 pt-1"
+                      onTouchStart={handleNextWeekTouchStart}
+                      onTouchEnd={handleNextWeekTouchEnd}
+                    >
+                       <TabsList className="h-auto bg-transparent p-0 gap-2 flex-nowrap justify-start w-full">
+                        {visibleNextWeekDays.map((day) => {
+                          const hasSlots = agendaItems.some(item => item.fecha === day.id)
+                          const visitCount = scheduledVisits.filter(v => {
+                             const d = safeDate(v.fecha_de_visita)
+                             return d && format(d, "yyyy-MM-dd") === day.id
+                          }).length
+                          
+                          return (
+                            <TabsTrigger
+                              key={day.id}
+                              value={day.id}
+                              disabled={day.disabled}
+                              className={cn(
+                                "group relative flex flex-col items-center justify-center h-14 w-16 rounded-md border border-muted bg-card transition-all",
+                                hasSlots && "border-primary bg-primary/5",
+                                "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary",
+                              )}
+                            >
+                              {visitCount > 0 && (
+                                <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background z-10">
+                                  {visitCount}
+                                </span>
+                              )}
+                              <span className="text-[10px] font-medium uppercase text-muted-foreground group-data-[state=active]:text-primary-foreground/90">
+                                {day.label.split(' ')[0]}
                               </span>
-                            )}
-                            <span className="text-[10px] font-medium uppercase text-muted-foreground group-data-[state=active]:text-primary-foreground/90">
-                              {day.label.split(' ')[0]}
-                            </span>
-                            <span className="text-base font-bold group-data-[state=active]:text-primary-foreground">
-                              {day.label.split(' ')[1]}
-                            </span>
-                          </TabsTrigger>
-                        )
-                      })}
-                    </TabsList>
+                              <span className="text-base font-bold group-data-[state=active]:text-primary-foreground">
+                                {day.label.split(' ')[1]}
+                              </span>
+                            </TabsTrigger>
+                          )
+                        })}
+                      </TabsList>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground mt-0.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-full bg-muted/40 hover:bg-muted/60"
+                        disabled={!canShiftPrevNextWeek}
+                        onClick={() => shiftNextWeek(-7)}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-muted/40">
+                        <span className="font-medium">Proximas fechas</span>
+                        <span className="text-muted-foreground/70">•</span>
+                        <span>Desliza o usa flechas</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-full bg-muted/40 hover:bg-muted/60"
+                        disabled={!canShiftNextNextWeek}
+                        onClick={() => shiftNextWeek(7)}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1556,156 +1646,132 @@ export default function AgendaPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="pb-4">
-                {dayVisits.length === 0 ? (
+                {timelineItems.length === 0 ? (
                   <div className="text-center py-6 bg-muted/20 rounded-lg">
-                    <p className="text-muted-foreground text-xs">No hay citas programadas para este día.</p>
+                    <p className="text-muted-foreground text-xs">No hay citas ni franjas disponibles para este día.</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {dayVisits.map(visit => {
-                      const completed = isVisitCompleted(visit.visita_completada)
-                      return (
-                      <div key={visit.id} className={cn(
-                        "flex items-center justify-between p-3 border rounded-lg shadow-sm hover:shadow-md transition-all",
-                        completed 
-                          ? "border-green-500/30 bg-green-100" 
-                          : "bg-card border-border"
-                      )}>
-                        <div className="flex items-center gap-3 w-full">
-                          <div 
-                            onClick={() => handleOpenReschedule(visit)}
-                            className={cn(
-                            "flex flex-col items-center justify-center w-12 h-12 rounded-md shrink-0 transition-colors cursor-pointer hover:bg-primary/20 hover:scale-105 active:scale-95",
+                    {timelineItems.map((item, index) => {
+                      if (item.type === "visit") {
+                        const visit = item.visit
+                        const completed = isVisitCompleted(visit.visita_completada)
+                        return (
+                          <div key={visit.id} className={cn(
+                            "flex items-center justify-between p-3 border rounded-lg shadow-sm hover:shadow-md transition-all",
                             completed 
-                              ? "bg-green-200 text-green-800" 
-                              : "bg-primary/10 text-primary"
-                          )}
-                          title="Click para reprogramar"
-                          >
-                            <span className="text-sm font-bold">
-                              {format(new Date(visit.fecha_de_visita), "HH:mm")}
-                            </span>
-                          </div>
-                          <div 
-                            className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 w-full cursor-pointer hover:opacity-80 transition-opacity"
-                            onClick={() => handleOpenLeadDetail(visit)}
-                            title="Ver detalles del lead"
-                          >
-                            <div className="flex items-center gap-2">
-                              <User className={cn("h-4 w-4 shrink-0", completed ? "!text-black" : "text-muted-foreground")} />
-                              <h4 className={cn("font-bold text-lg", completed && "!text-black")}>
-                                {visit.Nombre} {visit.Apellidos}
-                              </h4>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              <Building className={cn("h-4 w-4 shrink-0", completed && "!text-black/70")} />
-                              <span className={cn("font-medium text-foreground/80", completed && "!text-black/80")}>{visit.Inmueble}</span>
-                            </div>
-                            {visit.Telefono && (
-                              <a 
-                                href={`tel:${visit.Telefono}`}
-                                className={cn("flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group", completed && "!text-black/70")}
-                                title="Llamar"
+                              ? "border-green-500/30 bg-green-100" 
+                              : "bg-card border-border"
+                          )}>
+                            <div className="flex items-center gap-3 w-full">
+                              <div 
+                                onClick={() => handleOpenReschedule(visit)}
+                                className={cn(
+                                "flex flex-col items-center justify-center w-12 h-12 rounded-md shrink-0 transition-colors cursor-pointer hover:bg-primary/20 hover:scale-105 active:scale-95",
+                                completed 
+                                  ? "bg-green-200 text-green-800" 
+                                  : "bg-primary/10 text-primary"
+                              )}
+                              title="Click para reprogramar"
                               >
-                                <Phone className="h-4 w-4 shrink-0 group-hover:text-primary" />
-                                <span className="font-medium underline decoration-dotted underline-offset-4 group-hover:text-primary">{visit.Telefono}</span>
-                              </a>
-                            )}
-                            {(visit.Ingresos !== null && visit.Ingresos !== undefined) && (
-                              <div className={cn("flex items-center gap-2 text-sm text-muted-foreground", completed && "!text-black/70")}>
-                                <Euro className="h-4 w-4 shrink-0" />
-                                <span>Ingresos: {visit.Ingresos}€</span>
+                                <span className="text-sm font-bold">
+                                  {format(new Date(visit.fecha_de_visita), "HH:mm")}
+                                </span>
                               </div>
-                            )}
+                              <div 
+                                className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 w-full cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={() => handleOpenLeadDetail(visit)}
+                                title="Ver detalles del lead"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <User className={cn("h-4 w-4 shrink-0", completed ? "!text-black" : "text-muted-foreground")} />
+                                  <h4 className={cn("font-bold text-lg", completed && "!text-black")}>
+                                    {visit.Nombre} {visit.Apellidos}
+                                  </h4>
+                                </div>
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <Building className={cn("h-4 w-4 shrink-0", completed && "!text-black/70")} />
+                                  <span className={cn("font-medium text-foreground/80", completed && "!text-black/80")}>{visit.Inmueble}</span>
+                                </div>
+                                {visit.Telefono && (
+                                  <a 
+                                    href={`tel:${visit.Telefono}`}
+                                    className={cn("flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group", completed && "!text-black/70")}
+                                    title="Llamar"
+                                  >
+                                    <Phone className="h-4 w-4 shrink-0 group-hover:text-primary" />
+                                    <span className="font-medium underline decoration-dotted underline-offset-4 group-hover:text-primary">{visit.Telefono}</span>
+                                  </a>
+                                )}
+                                {(visit.Ingresos !== null && visit.Ingresos !== undefined) && (
+                                  <div className={cn("flex items-center gap-2 text-sm text-muted-foreground", completed && "!text-black/70")}>
+                                    <Euro className="h-4 w-4 shrink-0" />
+                                    <span>Ingresos: {visit.Ingresos}€</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="ml-2 shrink-0 flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className={cn(
+                                  "h-9 w-9 transition-all shadow-sm rounded-full",
+                                  completed 
+                                    ? "bg-green-500 hover:bg-green-600 text-black border-green-500" 
+                                    : "bg-white hover:bg-green-50 text-muted-foreground border-muted-foreground/30 hover:border-green-500 hover:text-green-600"
+                                )}
+                                onClick={() => handleToggleCompletion(visit)}
+                                title={completed ? "Marcar como pendiente" : "Marcar como realizada"}
+                              >
+                                <Check className={cn("h-6 w-6 stroke-[3]", completed ? "opacity-100" : "opacity-50")} />
+                              </Button>
+                              
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className={cn(
+                                  "h-9 w-9 transition-all shadow-sm",
+                                   visit.resumen_visita ? "text-blue-600 border-blue-200 bg-blue-50" : "text-muted-foreground border-muted-foreground/30"
+                                )}
+                                onClick={() => handleOpenFeedbackDialog(visit)}
+                                title="Añadir feedback / resumen"
+                              >
+                                <FileText className={cn("h-4 w-4", visit.resumen_visita && "fill-current")} />
+                              </Button>
+
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-9 w-9 transition-all shadow-sm text-muted-foreground border-muted-foreground/30 hover:border-red-500 hover:text-red-600 hover:bg-red-50"
+                                onClick={() => handleOpenCancelDialog(visit)}
+                                title="Cancelar visita"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      }
+
+                      const slot = item.slot
+                      return (
+                        <div key={`slot-${slot.time}-${index}`} className="flex items-center justify-between py-2 px-3 border rounded-lg bg-muted/20">
+                          <div className="flex items-center gap-2.5 w-full">
+                            <div className="flex flex-col items-center justify-center w-10 h-10 rounded-md shrink-0 bg-muted text-muted-foreground">
+                              <span className="text-xs font-bold">{slot.time}</span>
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-2 text-sm font-medium">
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                                <span>Franja disponible</span>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                        <div className="ml-2 shrink-0 flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className={cn(
-                              "h-9 w-9 transition-all shadow-sm rounded-full",
-                              completed 
-                                ? "bg-green-500 hover:bg-green-600 text-black border-green-500" 
-                                : "bg-white hover:bg-green-50 text-muted-foreground border-muted-foreground/30 hover:border-green-500 hover:text-green-600"
-                            )}
-                            onClick={() => handleToggleCompletion(visit)}
-                            title={completed ? "Marcar como pendiente" : "Marcar como realizada"}
-                          >
-                            <Check className={cn("h-6 w-6 stroke-[3]", completed ? "opacity-100" : "opacity-50")} />
-                          </Button>
-                          
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className={cn(
-                              "h-9 w-9 transition-all shadow-sm",
-                               visit.resumen_visita ? "text-blue-600 border-blue-200 bg-blue-50" : "text-muted-foreground border-muted-foreground/30"
-                            )}
-                            onClick={() => handleOpenFeedbackDialog(visit)}
-                            title="Añadir feedback / resumen"
-                          >
-                            <FileText className={cn("h-4 w-4", visit.resumen_visita && "fill-current")} />
-                          </Button>
-
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-9 w-9 transition-all shadow-sm text-muted-foreground border-muted-foreground/30 hover:border-red-500 hover:text-red-600 hover:bg-red-50"
-                            onClick={() => handleOpenCancelDialog(visit)}
-                            title="Cancelar visita"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
                       )
                     })}
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="mt-4">
-            <Card>
-              <CardHeader className="py-4">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Clock className="h-4 w-4" />
-                  Franjas Disponibles (Vista Previa)
-                </CardTitle>
-                <CardDescription className="text-xs">
-                   Estos son los horarios que verán los clientes para agendar. Se calculan sumando el tiempo de visita + gap.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pb-4">
-                {previewSlots.length === 0 ? (
-                    <div className="text-center py-6 bg-muted/20 rounded-lg">
-                      <p className="text-muted-foreground text-xs">No hay franjas configuradas para este día.</p>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                       {previewSlots.map((slot, i) => (
-                           <div key={i} className={cn(
-                              "flex flex-col items-center justify-center p-2 rounded-md border text-center transition-colors relative",
-                              slot.status === 'occupied' 
-                                  ? "bg-muted text-muted-foreground border-transparent opacity-60"
-                                  : "bg-background border-input hover:border-primary/50 hover:bg-accent/5"
-                           )}>
-                              {slot.status === 'occupied' && (
-                                <div className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-red-500" title="Ocupado" />
-                              )}
-                              <span className="font-bold text-sm">{slot.time}</span>
-                              <div className="flex items-center gap-1 text-[10px] text-muted-foreground mt-1">
-                                  <span>{slot.duration}m</span>
-                                  {slot.gap > 0 && <span className="text-muted-foreground/60">+{slot.gap}m</span>}
-                              </div>
-                              <span className="text-[9px] uppercase tracking-wider opacity-60 mt-0.5 scale-90">
-                                  {slot.source}
-                              </span>
-                           </div>
-                       ))}
-                    </div>
                 )}
               </CardContent>
             </Card>

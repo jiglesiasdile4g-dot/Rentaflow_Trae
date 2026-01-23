@@ -1435,14 +1435,15 @@ export function LeadDetailModal({
                                         onClick={() => openCommunicationDetail(comm)}
                                     >
                                         <div className="p-3 space-y-1">
-                                            <div className="flex justify-between items-start">
-                                                <div className="flex items-center gap-1.5">
+                                            <div className="flex justify-between items-start gap-2">
+                                                <div className="flex items-center gap-1.5 min-w-0">
                                                     {comm.source === "whatsapp" ? <Phone className="h-3 w-3 text-emerald-600" /> : <Mail className="h-3 w-3 text-blue-600" />}
                                                     <span className="font-medium text-xs">{comm.source === "whatsapp" ? "WhatsApp" : "Email"}</span>
+                                                    <span className="text-[10px] text-muted-foreground">•</span>
+                                                    <span className="text-xs font-medium truncate">{comm.Subject || (comm.source === "whatsapp" ? "Mensaje" : "Sin asunto")}</span>
                                                 </div>
                                                 <span className="text-[10px] text-muted-foreground">{new Date(comm.created_at).toLocaleDateString()}</span>
                                             </div>
-                                            <p className="text-xs font-medium truncate">{comm.Subject || (comm.source === "whatsapp" ? "Mensaje" : "Sin asunto")}</p>
                                             <p className="text-xs text-muted-foreground line-clamp-2">
                                                 {(comm.Mensaje || comm.Text || "Sin contenido").replace(/<[^>]*>?/gm, '')}
                                             </p>
