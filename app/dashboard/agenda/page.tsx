@@ -144,6 +144,7 @@ export default function AgendaPage() {
     }
     return options
   }, [])
+  const nextWeekDaysCount = 35
 
   const visibleNextWeekDays = useMemo(() => {
     return nextWeekDays.slice(nextWeekOffset, nextWeekOffset + 7)
@@ -196,7 +197,7 @@ export default function AgendaPage() {
     }
 
     const current = createDays(startOfCurrentWeek, 7)
-    const next = createDays(startOfNextWeek, 35)
+    const next = createDays(startOfNextWeek, nextWeekDaysCount)
     
     setCurrentWeekDays(current)
     setNextWeekDays(next)
@@ -571,10 +572,10 @@ export default function AgendaPage() {
       // Fetch agenda for current and next week
       const today = startOfToday()
       const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 })
-      const endOfNextWeek = addDays(addWeeks(startOfCurrentWeek, 2), -1)
-      
+      const endDate = addDays(startOfCurrentWeek, 7 + nextWeekDaysCount - 1)
+
       const startDateStr = format(startOfCurrentWeek, "yyyy-MM-dd")
-      const endDateStr = format(endOfNextWeek, "yyyy-MM-dd")
+      const endDateStr = format(endDate, "yyyy-MM-dd")
       
       const { data: agendaData, error: agendaError } = await supabase
           .from("Agendas")
