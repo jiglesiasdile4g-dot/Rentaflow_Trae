@@ -522,12 +522,7 @@ export function LeadDetailModal({
             Telefono: editFormData.Telefono,
             Pais: editFormData.Pais,
             Ingresos: editFormData.Ingresos,
-            // Trabajo: editFormData.Trabajo,
-            Observaciones: editFormData.Observaciones,
-            // Mascota: editFormData.Mascota,
-            // Fumador: editFormData.Fumador,
-            // Pareja: editFormData.Pareja,
-            // "Niños": editFormData["Niños"],
+            Obsevaciones: editFormData.Observaciones ?? editFormData.Obsevaciones,
             Documento: editFormData.Documento,
             Tipo_Documento: editFormData.Tipo_Documento,
             // Persona 2
@@ -562,7 +557,8 @@ export function LeadDetailModal({
 
       if (error) throw error
 
-      const updatedLead = { ...lead, ...editFormData }
+      const mergedObservaciones = editFormData.Observaciones ?? editFormData.Obsevaciones
+      const updatedLead = { ...lead, ...editFormData, Observaciones: mergedObservaciones, Obsevaciones: mergedObservaciones }
       setLead(updatedLead as Lead)
       if (onLeadUpdate) onLeadUpdate(updatedLead as Lead)
       
@@ -842,7 +838,7 @@ export function LeadDetailModal({
 
   const deleteNoteEntry = async (index: number) => {
     if (!lead) return
-    const currentNotes = lead.Observaciones || ""
+    const currentNotes = lead.Observaciones ?? lead.Obsevaciones ?? ""
     const parts = splitNotes(currentNotes)
     
     // Remove the entry at index
@@ -852,12 +848,12 @@ export function LeadDetailModal({
     try {
       const { error } = await supabase
         .from("Clientes")
-        .update({ Observaciones: newNotes })
+        .update({ Obsevaciones: newNotes })
         .eq("id", lead.id)
 
       if (error) throw error
 
-      const updatedLead = { ...lead, Observaciones: newNotes }
+      const updatedLead = { ...lead, Observaciones: newNotes, Obsevaciones: newNotes }
       setLead(updatedLead as Lead)
       setNoteContent(newNotes) // Update current editing content too if needed? 
       // Actually noteContent is for *new* notes or editing *all* notes. 
@@ -890,18 +886,18 @@ export function LeadDetailModal({
     const newEntryHeader = `[${dateStr} ${timeStr} • ${userStr}]`
     const newEntry = `${newEntryHeader}\n${inlineNote.trim()}`
     
-    const currentNotes = lead.Observaciones || ""
+    const currentNotes = lead.Observaciones ?? lead.Obsevaciones ?? ""
     const updatedNotes = currentNotes ? `${newEntry}\n\n${currentNotes}` : newEntry
 
     try {
       const { error } = await supabase
         .from("Clientes")
-        .update({ Observaciones: updatedNotes })
+        .update({ Obsevaciones: updatedNotes })
         .eq("id", lead.id)
 
       if (error) throw error
 
-      const updatedLead = { ...lead, Observaciones: updatedNotes }
+      const updatedLead = { ...lead, Observaciones: updatedNotes, Obsevaciones: updatedNotes }
       setLead(updatedLead as Lead)
       setInlineNote("") 
       
@@ -1314,12 +1310,12 @@ export function LeadDetailModal({
     try {
       const { error } = await supabase
         .from("Clientes")
-        .update({ Observaciones: noteContent })
+        .update({ Obsevaciones: noteContent })
         .eq("id", lead.id)
 
       if (error) throw error
 
-      const updatedLead = { ...lead, Observaciones: noteContent }
+      const updatedLead = { ...lead, Observaciones: noteContent, Obsevaciones: noteContent }
       setLead(updatedLead as Lead)
       if (onLeadUpdate) onLeadUpdate(updatedLead as Lead)
       

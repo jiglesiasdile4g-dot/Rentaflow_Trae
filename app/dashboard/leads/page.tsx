@@ -420,7 +420,7 @@ export default function LeadsPage() {
 
   const deleteLeadNoteEntry = async (index: number) => {
     if (!selectedLead) return
-    const currentNotes = selectedLead.Observaciones || ""
+    const currentNotes = selectedLead.Observaciones ?? selectedLead.Obsevaciones ?? ""
     const parts = splitNotes(currentNotes)
     
     const newParts = parts.filter((_, i) => i !== index)
@@ -429,12 +429,12 @@ export default function LeadsPage() {
     try {
       const { error } = await supabase
         .from("Clientes")
-        .update({ Observaciones: newNotes })
+        .update({ Obsevaciones: newNotes })
         .eq("id", selectedLead.id)
 
       if (error) throw error
 
-      const updatedLead = { ...selectedLead, Observaciones: newNotes }
+      const updatedLead = { ...selectedLead, Observaciones: newNotes, Obsevaciones: newNotes }
       setSelectedLead(updatedLead as Lead)
       setLeads((prev) => prev.map(l => l.id === selectedLead.id ? updatedLead : l))
       
@@ -463,18 +463,18 @@ export default function LeadsPage() {
     const newEntryHeader = `[${dateStr} ${timeStr} • ${userStr}]`
     const newEntry = `${newEntryHeader}\n${inlineNote.trim()}`
     
-    const currentNotes = selectedLead.Observaciones || ""
+    const currentNotes = selectedLead.Observaciones ?? selectedLead.Obsevaciones ?? ""
     const updatedNotes = currentNotes ? `${newEntry}\n\n${currentNotes}` : newEntry
 
     try {
       const { error } = await supabase
         .from("Clientes")
-        .update({ Observaciones: updatedNotes })
+        .update({ Obsevaciones: updatedNotes })
         .eq("id", selectedLead.id)
 
       if (error) throw error
 
-      const updatedLead = { ...selectedLead, Observaciones: updatedNotes }
+      const updatedLead = { ...selectedLead, Observaciones: updatedNotes, Obsevaciones: updatedNotes }
       setSelectedLead(updatedLead as Lead)
       setLeads((prev) => prev.map(l => l.id === selectedLead.id ? updatedLead : l))
       setInlineNote("") 
@@ -627,7 +627,7 @@ export default function LeadsPage() {
   const [attachmentPreviewName, setAttachmentPreviewName] = useState<string>("")
 
   const openNoteDialog = (lead: Lead) => {
-    const v = (lead.Observaciones ?? "")
+    const v = (lead.Observaciones ?? lead.Obsevaciones ?? "")
     console.log("[observ] dialog_open", { id: lead.id, len: String(v).length })
     setNoteDialog({
       open: true,
@@ -661,12 +661,12 @@ export default function LeadsPage() {
       const entries = splitNotes(noteDialog.existing)
       const remaining = entries.filter((_, i) => i !== idx).map((e) => e.raw).join(entries.length > 1 ? "\n" : "")
       
-      const { error } = await supabase.from("Clientes").update({ Observaciones: remaining }).eq("id", idVal)
+      const { error } = await supabase.from("Clientes").update({ Obsevaciones: remaining }).eq("id", idVal)
       if (error) throw error
       
-      setLeads((prev) => prev.map((l) => (String(l.id) === idStr ? { ...l, Observaciones: remaining } : l)))
-      setFilteredLeads((prev) => prev.map((l) => (String(l.id) === idStr ? { ...l, Observaciones: remaining } : l)))
-      setSelectedLead((prev) => (prev && String(prev.id) === idStr ? { ...prev, Observaciones: remaining } : prev))
+      setLeads((prev) => prev.map((l) => (String(l.id) === idStr ? { ...l, Observaciones: remaining, Obsevaciones: remaining } : l)))
+      setFilteredLeads((prev) => prev.map((l) => (String(l.id) === idStr ? { ...l, Observaciones: remaining, Obsevaciones: remaining } : l)))
+      setSelectedLead((prev) => (prev && String(prev.id) === idStr ? { ...prev, Observaciones: remaining, Obsevaciones: remaining } : prev))
       setNoteDialog((prev) => ({ ...prev, existing: remaining }))
       toast({ title: "Anotación eliminada", description: "Se eliminó de Observaciones", duration: 2000 })
     } catch (err) {
@@ -684,29 +684,29 @@ export default function LeadsPage() {
       const now = new Date()
       const two = (n: number) => String(n).padStart(2, "0")
       const ts = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())} ${two(now.getHours())}:${two(now.getMinutes())}`
-      const existingText = String((target as any)?.Observaciones ?? "")
+      const existingText = String((target as any)?.Observaciones ?? (target as any)?.Obsevaciones ?? "")
       const entry = `[${ts}${userEmail ? ` • ${userEmail}` : ""}] ${noteDialog.value}`
       const joined = existingText ? `${entry}\n${existingText}` : entry
       
       const { error } = await supabase
         .from("Clientes")
-        .update({ Observaciones: joined })
+        .update({ Obsevaciones: joined })
         .eq("id", idVal)
       
       if (error) throw error
 
       setLeads((prev) =>
         prev.map((l) =>
-          String(l.id) === idStr ? { ...l, Observaciones: joined } : l,
+          String(l.id) === idStr ? { ...l, Observaciones: joined, Obsevaciones: joined } : l,
         ),
       )
       setFilteredLeads((prev) =>
         prev.map((l) =>
-          String(l.id) === idStr ? { ...l, Observaciones: joined } : l,
+          String(l.id) === idStr ? { ...l, Observaciones: joined, Obsevaciones: joined } : l,
         ),
       )
       setSelectedLead((prev) =>
-        prev && String(prev.id) === idStr ? { ...prev, Observaciones: joined } : prev,
+        prev && String(prev.id) === idStr ? { ...prev, Observaciones: joined, Obsevaciones: joined } : prev,
       )
       setNoteDialog((prev) => ({ ...prev, open: false }))
       toast({ title: "Anotación guardada", description: "Se guardó en Observaciones", duration: 2000 })
@@ -1675,7 +1675,7 @@ export default function LeadsPage() {
           Codigo_Postal: editFormData.Codigo_Postal,
           Tipo_Documento: editFormData.Tipo_Documento,
           Documento: editFormData.Documento,
-          Observaciones: editFormData.Observaciones || editFormData.Obsevaciones, // Matches DB column name (typo in DB)
+          Obsevaciones: editFormData.Observaciones ?? editFormData.Obsevaciones,
           // Update persona-specific fields based on selectedPersona
           ...(selectedPersona === 1 && {
             Persona_2: editFormData.Persona_2, // Only update if editing persona 1
@@ -1744,7 +1744,8 @@ export default function LeadsPage() {
 
       if (error) throw error
 
-      const updatedLead = { ...selectedLead, ...editFormData }
+      const mergedObservaciones = editFormData.Observaciones ?? editFormData.Obsevaciones
+      const updatedLead = { ...selectedLead, ...editFormData, Observaciones: mergedObservaciones, Obsevaciones: mergedObservaciones }
       setSelectedLead(updatedLead)
       setLeads(leads.map((lead) => (lead.id === selectedLead.id ? updatedLead : lead)))
       setIsEditingPersonalInfo(false)
@@ -2141,11 +2142,13 @@ export default function LeadsPage() {
       try {
         setIsSubmittingNewLead(true)
 
-        const leadData = {
-          ...newLeadFormData,
-          usuario: inmobiliariaId,
-          created_at: new Date().toISOString(),
-        }
+      const { Observaciones, Obsevaciones, ...restLeadData } = newLeadFormData
+      const leadData = {
+        ...restLeadData,
+        ...(Observaciones || Obsevaciones ? { Obsevaciones: Observaciones ?? Obsevaciones } : {}),
+        usuario: inmobiliariaId,
+        created_at: new Date().toISOString(),
+      }
 
         const { data, error } = await createLeadAction(leadData)
 
