@@ -110,7 +110,7 @@ function AuthConfirmContent() {
     }
 
     handleAuth()
-  }, [router, next, searchParams]) // Added searchParams to dependency array
+  }, [router, next, searchParams, error])
 
   if (error) {
     return (

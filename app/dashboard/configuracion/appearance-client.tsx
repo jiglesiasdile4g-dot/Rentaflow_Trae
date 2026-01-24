@@ -18,7 +18,6 @@ interface AppearanceSettingsProps {
   initialWebsite?: string
   canEdit?: boolean
 }
-
 export function AppearanceSettings({ idi, initialSignature, initialWebsite, canEdit }: AppearanceSettingsProps) {
   const { resolvedTheme, theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)

@@ -136,7 +136,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
       if (effectiveId !== null) {
         const { data: inmobiliaria, error: inmobiliariaError } = await supabase
           .from("Inmobiliarias")
-          .select("idi, Nombre")
+          .select("*")
           .eq("idi", String(effectiveId))
           .limit(1)
           .maybeSingle()

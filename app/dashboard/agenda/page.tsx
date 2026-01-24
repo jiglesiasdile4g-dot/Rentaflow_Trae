@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useRef, type TouchEvent } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback, type TouchEvent } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -209,10 +209,6 @@ export default function AgendaPage() {
     }
   }, [])
 
-  useEffect(() => {
-    fetchAgentAndSchedule()
-  }, [inmobiliariaId])
-
   // Fetch available anuncios for the selector
   useEffect(() => {
     const fetchAnuncios = async () => {
@@ -253,7 +249,7 @@ export default function AgendaPage() {
     }
 
     fetchAnuncios()
-  }, [inmobiliariaId])
+  }, [inmobiliariaId, supabase])
 
   // Calculate preview slots for the dashboard view
   const previewSlots = useMemo(() => {
@@ -501,7 +497,7 @@ export default function AgendaPage() {
     setIsLeadDetailModalOpen(true)
   }
 
-  const fetchAgentAndSchedule = async (showLoader = true, targetId?: number) => {
+  const fetchAgentAndSchedule = useCallback(async (showLoader = true, targetId?: number) => {
     try {
       if (showLoader) setLoading(true)
       
@@ -618,7 +614,11 @@ export default function AgendaPage() {
     } finally {
       if (showLoader) setLoading(false)
     }
-  }
+  }, [agentId, inmobiliariaId, nextWeekDaysCount, supabase, toast])
+
+  useEffect(() => {
+    fetchAgentAndSchedule()
+  }, [fetchAgentAndSchedule])
 
   const handleAddSlot = () => {
     // Find first available 1-hour slot

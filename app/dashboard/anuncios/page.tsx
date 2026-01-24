@@ -2,7 +2,7 @@
 
 import { createAnuncioAction } from "@/app/actions/anuncios"
 import { createClient } from "@/lib/supabase/client"
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { useRouter, usePathname } from 'next/navigation'
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -39,6 +39,7 @@ import { createBrowserClient } from "@/lib/supabase/client" // Added for createB
 import { generateSlotCandidates, isOverlapping } from "@/lib/agenda-utils"
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts"
 import Link from "next/link"
+import Image from "next/image"
 
 interface AnuncioCard {
   id: string
@@ -365,7 +366,7 @@ export default function AnunciosPage() {
     }
 
     fetchAvailability()
-  }, [visitDateDialog.selectedAgenteId, visitDateDialog.selectedDate])
+  }, [visitDateDialog.selectedAgenteId, visitDateDialog.selectedDate, anunciosCards])
   const [infoFaqsData, setInfoFaqsData] = useState({
     informacionDetallada: "",
     faqs: [{ pregunta: "", respuesta: "" }],
@@ -723,7 +724,7 @@ export default function AnunciosPage() {
     }
   }
 
-  const loadEditFiles = async () => {
+  const loadEditFiles = useCallback(async () => {
     if (!editFormData.referencia) return
     const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
     setEditFilesLoading(true)
@@ -737,7 +738,15 @@ export default function AnunciosPage() {
     } finally {
       setEditFilesLoading(false)
     }
-  }
+  }, [editFormData.referencia, inmobiliariaNombre, inmobiliariaId])
+
+  useEffect(() => {
+    if (editingAnuncio && editFormData.referencia) {
+      loadEditFiles()
+      return
+    }
+    setEditFilesList([])
+  }, [editingAnuncio, editFormData.referencia, loadEditFiles])
 
   const loadCreationFiles = async () => {
     if (!creationStep.data.referencia) return
@@ -874,30 +883,6 @@ export default function AnunciosPage() {
 
 
   useEffect(() => {
-    console.log("[DEBUG] useEffect triggered - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
-    if (!inmobiliariaLoading && inmobiliariaId !== null) {
-      console.log("[DEBUG] Calling ordered fetch with inmobiliariaId:", inmobiliariaId);
-      const controller = new AbortController()
-      const run = async () => {
-        const u = await checkUser()
-        if (!u) return
-        if (controller.signal.aborted) return
-        await fetchPlanLimit(controller.signal)
-        if (controller.signal.aborted) return
-        await fetchAvailablePlans(controller.signal)
-        if (controller.signal.aborted) return
-        await fetchAnuncios(controller.signal)
-        if (controller.signal.aborted) return
-        await fetchAgentes(inmobiliariaId, controller.signal)
-      }
-      run()
-      return () => controller.abort()
-    } else {
-      console.log("[DEBUG] Skipping fetch calls - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
-    }
-  }, [inmobiliariaId, inmobiliariaLoading])
-
-  useEffect(() => {
     try {
       if (planResetAt == null && typeof window !== "undefined" && inmobiliariaId != null) {
         const key = `rf_planResetAt_${String(inmobiliariaId)}`
@@ -911,122 +896,6 @@ export default function AnunciosPage() {
       }
     } catch {}
   }, [inmobiliariaId, planResetAt])
-
-  useEffect(() => {
-    if (selectedAnuncioForStats && showStatsModal) {
-      // Fetch trend data when modal is open or temporal frame changes
-      setLoadingTrendData(true)
-      
-      // Use the specific period directly instead of mapping to generic timeframes
-      calculateTrendData(selectedAnuncioForStats, statsPeriod, statsLeads).then((data) => {
-        console.log(`[v0] Trend data result:`, data)
-        setTrendData(data)
-        setLoadingTrendData(false)
-      })
-    }
-  }, [selectedAnuncioForStats, statsPeriod, showStatsModal, statsLeads]) // Added statsPeriod to dependencies
-
-  useEffect(() => {
-    if (selectedAnuncioForStats && showStatsModal) {
-      fetchQualityMetrics(selectedAnuncioForStats.referencia, statsPeriod, selectedAnuncioForStats.fecha_activacion).then((metrics) => {
-        console.log("[v0] Quality metrics fetched:", metrics)
-        setQualityMetrics(metrics)
-      })
-    }
-  }, [selectedAnuncioForStats, statsPeriod, showStatsModal])
-
-  useEffect(() => {
-    if (selectedAnuncioForStats && showStatsModal && statsLeads) {
-      const now = new Date()
-      let startDate: Date
-      let endDate: Date = new Date()
-
-      // Calculate dates based on statsPeriod
-      if (statsPeriod === "hoy") {
-        startDate = new Date(now)
-        startDate.setHours(0, 0, 0, 0)
-        endDate.setHours(23, 59, 59, 999)
-      } else if (statsPeriod === "esteMes") {
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1)
-      } else if (statsPeriod === "ultimoMes") {
-        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-        endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
-      } else if (statsPeriod === "esteAno") {
-        startDate = new Date(now.getFullYear(), 0, 1)
-      } else { // periodoActual
-        startDate = planResetAt ? new Date(planResetAt) : new Date(now.getFullYear(), now.getMonth(), 1)
-        if (planResetAt) {
-           const resetDate = new Date(planResetAt)
-           if (!isNaN(resetDate.getTime()) && (now.getTime() - resetDate.getTime() > 60000)) {
-               startDate = resetDate
-           } else {
-               startDate = new Date(now.getFullYear(), now.getMonth(), 1)
-           }
-        }
-      }
-
-      const periodLeads = statsLeads.filter((l) => {
-        const d = new Date(l.created_at)
-        return d >= startDate && d <= endDate
-      })
-
-      // Calculate sent messages (emails + whatsapp) in the period
-      let sentMessagesCount = 0
-      let whatsappsEnviados = 0
-      let emailsEnviadosCount = 0
-      
-      // Filter emails/whatsapp for leads of this anuncio
-      const leadEmails = statsLeads.map((l) => l.Correo).filter(Boolean)
-      const leadIDCs = statsLeads.map((l) => l.IDC).filter((id: any) => Number.isFinite(id))
-      
-      let emailsEnviados = 0
-      if (leadEmails.length > 0 && statsEmails.length > 0) {
-         const matchingEmails = statsEmails.filter((e) => leadEmails.includes(e.to))
-         
-         emailsEnviados = matchingEmails.filter((e) => 
-           e.Tipo?.toLowerCase() === "enviado" &&
-           new Date(e.created_at) >= startDate && 
-           new Date(e.created_at) <= endDate
-         ).length
-
-         console.log("[v0] Debug Consumption: Email counts", {
-           statsPeriod,
-           totalMatchingLeads: matchingEmails.length,
-           finalEnviados: emailsEnviados,
-           startDate,
-           endDate
-         })
-      }
-      emailsEnviadosCount = emailsEnviados
-      
-      if (leadIDCs.length > 0 && statsWhatsapps.length > 0) {
-         whatsappsEnviados = statsWhatsapps.filter((w) => 
-           leadIDCs.includes(w.IDC) && 
-           w.Tipo === "Enviado" &&
-           new Date(w.created_at) >= startDate && 
-           new Date(w.created_at) <= endDate
-         ).length
-      }
-      
-      sentMessagesCount = emailsEnviados + whatsappsEnviados
-
-      const count = periodLeads.length
-      const tiempo = (sentMessagesCount * 1.27) / 60 // hours
-      const planUsed = planLimit > 0 ? (count / planLimit) * 100 : 0
-
-      setConsumptionMetrics({
-        leads: count,
-        tiempoAhorrado: tiempo,
-        planUtilizado: planUsed,
-        whatsappsEnviados,
-        emailsEnviados: emailsEnviadosCount,
-      })
-    }
-  }, [selectedAnuncioForStats, statsPeriod, showStatsModal, statsLeads, planLimit, planResetAt, statsEmails, statsWhatsapps])
-
-  useEffect(() => {
-    fetchAnuncios()
-  }, [metricsPeriod])
 
   const fetchQualityMetrics = async (anuncioReferencia: string, period: string, activationDateStr?: string | null) => {
     const supabase = createBrowserClient(
@@ -1283,7 +1152,7 @@ export default function AnunciosPage() {
     })
   }
 
-  const calculateTrendData = async (anuncio: any, period: string, leadsOverride?: any[]) => {
+  const calculateTrendData = useCallback(async (anuncio: any, period: string, leadsOverride?: any[]) => {
     console.log(`[v0] calculateTrendData for ${anuncio.referencia}, period: ${period}, leadsOverride: ${leadsOverride?.length}`)
     const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -1467,7 +1336,7 @@ export default function AnunciosPage() {
 
       return dailyData
     }
-  }
+  }, [planResetAt])
 
   const handleOpenArchiveDialog = (anuncio: AnuncioCard) => {
     setArchivingAnuncio(anuncio)
@@ -1578,7 +1447,7 @@ export default function AnunciosPage() {
     }
   }
 
-  const fetchAvailablePlans = async (signal?: AbortSignal) => {
+  const fetchAvailablePlans = useCallback(async (signal?: AbortSignal) => {
     try {
       console.log("[v0] Fetching all available plans from Planes table...")
 
@@ -1614,9 +1483,9 @@ export default function AnunciosPage() {
       if (signal?.aborted || err?.name === 'AbortError' || err?.message?.includes('Abort')) return
       console.log("[v0] Error in fetchAvailablePlans:", err)
     }
-  }
+  }, [supabase])
 
-  const fetchPlanLimit = async (signal?: AbortSignal) => {
+  const fetchPlanLimit = useCallback(async (signal?: AbortSignal) => {
     try {
       console.log("[v0] Fetching plan limit from Planes table...")
 
@@ -1739,9 +1608,9 @@ export default function AnunciosPage() {
       setPlanLimit(1000000)
       setAnunciosLimit(1000000)
     }
-  }
+  }, [supabase, inmobiliariaId, planResetAt])
 
-  const checkUser = async () => {
+  const checkUser = useCallback(async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -1750,9 +1619,9 @@ export default function AnunciosPage() {
       return user
     }
     return null
-  }
+  }, [supabase])
 
-  const fetchAnuncios = async (signal?: AbortSignal) => {
+  const fetchAnuncios = useCallback(async (signal?: AbortSignal) => {
     try {
       console.log("[v0] Fetching anuncios from database with proper schema mapping...")
       setLoading(true)
@@ -1870,12 +1739,13 @@ export default function AnunciosPage() {
             const dbReset = new Date(inmRow.PlanResetAt)
             if (!isNaN(dbReset.getTime())) {
               cutoffDate = dbReset
-              setPlanResetAt(dbReset)
+              if (!planResetAt || planResetAt.getTime() !== dbReset.getTime()) {
+                setPlanResetAt(dbReset)
+              }
             }
           }
-        } catch {}
+      } catch {}
       }
-
       // Pre-fetch all leads, emails, and whatsapps to avoid N+1 queries
       console.log("[v0] Pre-fetching leads and communications...")
       
@@ -2300,7 +2170,144 @@ export default function AnunciosPage() {
         setCardsLoading(false)
       }
     }
-  }
+  }, [supabase, inmobiliariaId, planResetAt, metricsPeriod])
+
+  useEffect(() => {
+    console.log("[DEBUG] useEffect triggered - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
+    if (!inmobiliariaLoading && inmobiliariaId !== null) {
+      console.log("[DEBUG] Calling ordered fetch with inmobiliariaId:", inmobiliariaId);
+      const controller = new AbortController()
+      const run = async () => {
+        const u = await checkUser()
+        if (!u) return
+        if (controller.signal.aborted) return
+        await fetchPlanLimit(controller.signal)
+        if (controller.signal.aborted) return
+        await fetchAvailablePlans(controller.signal)
+        if (controller.signal.aborted) return
+        await fetchAnuncios(controller.signal)
+        if (controller.signal.aborted) return
+        await fetchAgentes(inmobiliariaId, controller.signal)
+      }
+      run()
+      return () => controller.abort()
+    } else {
+      console.log("[DEBUG] Skipping fetch calls - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
+    }
+  }, [inmobiliariaId, inmobiliariaLoading, checkUser, fetchPlanLimit, fetchAvailablePlans, fetchAnuncios])
+
+  useEffect(() => {
+    if (selectedAnuncioForStats && showStatsModal) {
+      setLoadingTrendData(true)
+      calculateTrendData(selectedAnuncioForStats, statsPeriod, statsLeads).then((data) => {
+        console.log(`[v0] Trend data result:`, data)
+        setTrendData(data)
+        setLoadingTrendData(false)
+      })
+    }
+  }, [selectedAnuncioForStats, statsPeriod, showStatsModal, statsLeads, calculateTrendData])
+
+  useEffect(() => {
+    if (selectedAnuncioForStats && showStatsModal) {
+      fetchQualityMetrics(selectedAnuncioForStats.referencia, statsPeriod, selectedAnuncioForStats.fecha_activacion).then((metrics) => {
+        console.log("[v0] Quality metrics fetched:", metrics)
+        setQualityMetrics(metrics)
+      })
+    }
+  }, [selectedAnuncioForStats, statsPeriod, showStatsModal])
+
+  useEffect(() => {
+    if (selectedAnuncioForStats && showStatsModal && statsLeads) {
+      const now = new Date()
+      let startDate: Date
+      let endDate: Date = new Date()
+
+      // Calculate dates based on statsPeriod
+      if (statsPeriod === "hoy") {
+        startDate = new Date(now)
+        startDate.setHours(0, 0, 0, 0)
+        endDate.setHours(23, 59, 59, 999)
+      } else if (statsPeriod === "esteMes") {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+      } else if (statsPeriod === "ultimoMes") {
+        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+      } else if (statsPeriod === "esteAno") {
+        startDate = new Date(now.getFullYear(), 0, 1)
+      } else { // periodoActual
+        startDate = planResetAt ? new Date(planResetAt) : new Date(now.getFullYear(), now.getMonth(), 1)
+        if (planResetAt) {
+           const resetDate = new Date(planResetAt)
+           if (!isNaN(resetDate.getTime()) && (now.getTime() - resetDate.getTime() > 60000)) {
+               startDate = resetDate
+           } else {
+               startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+           }
+        }
+      }
+
+      const periodLeads = statsLeads.filter((l) => {
+        const d = new Date(l.created_at)
+        return d >= startDate && d <= endDate
+      })
+
+      // Calculate sent messages (emails + whatsapp) in the period
+      let sentMessagesCount = 0
+      let whatsappsEnviados = 0
+      let emailsEnviadosCount = 0
+      
+      // Filter emails/whatsapp for leads of this anuncio
+      const leadEmails = statsLeads.map((l) => l.Correo).filter(Boolean)
+      const leadIDCs = statsLeads.map((l) => l.IDC).filter((id: any) => Number.isFinite(id))
+      
+      let emailsEnviados = 0
+      if (leadEmails.length > 0 && statsEmails.length > 0) {
+         const matchingEmails = statsEmails.filter((e) => leadEmails.includes(e.to))
+         
+         emailsEnviados = matchingEmails.filter((e) => 
+           e.Tipo?.toLowerCase() === "enviado" &&
+           new Date(e.created_at) >= startDate && 
+           new Date(e.created_at) <= endDate
+         ).length
+
+         console.log("[v0] Debug Consumption: Email counts", {
+           statsPeriod,
+           totalMatchingLeads: matchingEmails.length,
+           finalEnviados: emailsEnviados,
+           startDate,
+           endDate
+         })
+      }
+      emailsEnviadosCount = emailsEnviados
+      
+      if (leadIDCs.length > 0 && statsWhatsapps.length > 0) {
+         whatsappsEnviados = statsWhatsapps.filter((w) => 
+           leadIDCs.includes(w.IDC) && 
+           w.Tipo === "Enviado" &&
+           new Date(w.created_at) >= startDate && 
+           new Date(w.created_at) <= endDate
+         ).length
+      }
+      
+      sentMessagesCount = emailsEnviados + whatsappsEnviados
+
+      const count = periodLeads.length
+      const tiempo = (sentMessagesCount * 1.27) / 60 // hours
+      const planUsed = planLimit > 0 ? (count / planLimit) * 100 : 0
+
+      setConsumptionMetrics({
+        leads: count,
+        tiempoAhorrado: tiempo,
+        planUtilizado: planUsed,
+        whatsappsEnviados,
+        emailsEnviados: emailsEnviadosCount,
+      })
+    }
+  }, [selectedAnuncioForStats, statsPeriod, showStatsModal, statsLeads, planLimit, planResetAt, statsEmails, statsWhatsapps])
+
+  useEffect(() => {
+    fetchAnuncios()
+  }, [metricsPeriod, fetchAnuncios])
 
   const handleToggleEstado = async (anuncioId: string, currentActivacion: string) => {
     setProcessingId(anuncioId)
@@ -6013,7 +6020,7 @@ export default function AnunciosPage() {
         </Dialog>
         
         <Dialog open={!!attachmentPreviewUrl} onOpenChange={closeAttachmentPreview}>
-          <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto">
+          <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto z-[70000]">
             <DialogHeader>
               <DialogTitle>Vista previa del archivo</DialogTitle>
               <DialogDescription>{attachmentPreviewName || ""}</DialogDescription>
@@ -6031,7 +6038,14 @@ export default function AnunciosPage() {
                     <div className="text-sm">No se pudo mostrar el PDF. Usa los botones arriba.</div>
                   </object>
                 ) : attachmentPreviewKind === "image" ? (
-                  <img src={attachmentPreviewUrl} alt={attachmentPreviewName || "Imagen"} className="w-full h-full object-contain rounded-md border" />
+                  <Image
+                    src={attachmentPreviewUrl}
+                    alt={attachmentPreviewName || "Imagen"}
+                    width={1600}
+                    height={1200}
+                    unoptimized
+                    className="w-full h-full object-contain rounded-md border"
+                  />
                 ) : (
                   <iframe src={attachmentPreviewUrl} className="w-full h-full rounded-md border" />
                 )}

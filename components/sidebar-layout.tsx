@@ -17,17 +17,16 @@ interface SidebarLayoutProps {
 }
 
 export default function SidebarLayout({ user, children }: SidebarLayoutProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false)
-
-  useEffect(() => {
-    // Check local storage and screen size only on client side after mount
-    const checkCollapsed = () => {
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false
+    try {
       if (window.innerWidth < 1024) return true
       const saved = localStorage.getItem("rf_sidebar_collapsed")
       return saved === "1"
+    } catch {
+      return false
     }
-    setIsCollapsed(checkCollapsed())
-  }, [])
+  })
 
   useEffect(() => {
     if (typeof window !== "undefined") {

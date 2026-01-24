@@ -16,6 +16,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Checkbox } from "@/components/ui/checkbox"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import Image from "next/image"
 import { 
   User, Building, Phone, Mail, Euro, FileText, Calendar, 
   MapPin, MessageSquare, Clock, Check, X, Copy, Loader2,
@@ -188,7 +189,7 @@ export function LeadDetailModal({
       setCurrentUser(user)
     }
     getUser()
-  }, [])
+  }, [supabase])
 
   // Format currency helper
   const formatCurrency = (value?: number) => {
@@ -2550,8 +2551,14 @@ export function LeadDetailModal({
                 <div>
                   {attachmentPreviewUrl && (
                     attachmentPreviewKind === "image" ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={attachmentPreviewUrl} alt={attachmentPreviewName} style={{ maxHeight: "70vh", maxWidth: "100%", borderRadius: 8 }} />
+                      <Image
+                        src={attachmentPreviewUrl}
+                        alt={attachmentPreviewName}
+                        width={1600}
+                        height={1200}
+                        unoptimized
+                        style={{ maxHeight: "70vh", maxWidth: "100%", borderRadius: 8, width: "100%", height: "auto" }}
+                      />
                     ) : (
                       <iframe src={attachmentPreviewUrl} style={{ width: "100%", height: "70vh", borderRadius: 8 }} />
                     )
@@ -2566,7 +2573,7 @@ export function LeadDetailModal({
                 <AlertDialogHeader>
                   <AlertDialogTitle>¿Estás seguro de cambiar el estado?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Cambiar el estado a "{pendingStatus === "Aceptado" ? "Aprobado" : pendingStatus}" activará notificaciones automáticas y otros procesos asociados a este lead.
+                    Cambiar el estado a &quot;{pendingStatus === "Aceptado" ? "Aprobado" : pendingStatus}&quot; activará notificaciones automáticas y otros procesos asociados a este lead.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

@@ -308,7 +308,6 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
   const unlimited = limitUsers >= 1000000
   const canCreateAgents = !!inmobiliariaData && (unlimited || agentCount < limitUsers)
   const remainingUsers = unlimited ? 1000000 : Math.max(limitUsers - agentCount, 0)
-
   return (
     <div className="p-8">
       <div className="space-y-8 max-w-4xl">
@@ -636,6 +635,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                </>
             )}
             <AppearanceSettings 
+              key={currentIdi ?? "default"}
               idi={currentIdi ?? undefined} 
               initialSignature={(inmobiliariaData as any)?.firma_html} 
               initialWebsite={(inmobiliariaData as any)?.pagina_web}

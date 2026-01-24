@@ -17,6 +17,7 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { createClient, createBrowserClient } from "@/lib/supabase/client"
+import Image from "next/image"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -520,7 +521,7 @@ export default function LeadsPage() {
         setCurrentUser({ id: data.user.id, email: data.user.email || "" })
       }
     })
-  }, [])
+  }, [supabase])
 
   useEffect(() => {
     const fetchAgentId = async () => {
@@ -6726,7 +6727,14 @@ export default function LeadsPage() {
           <div>
             {attachmentPreviewUrl && (
               attachmentPreviewKind === "image" ? (
-                <img src={attachmentPreviewUrl} alt={attachmentPreviewName} style={{ maxHeight: "70vh", maxWidth: "100%", borderRadius: 8 }} />
+                <Image
+                  src={attachmentPreviewUrl}
+                  alt={attachmentPreviewName}
+                  width={1600}
+                  height={1200}
+                  unoptimized
+                  style={{ maxHeight: "70vh", maxWidth: "100%", borderRadius: 8, width: "100%", height: "auto" }}
+                />
               ) : (
                 <iframe src={attachmentPreviewUrl} style={{ width: "100%", height: "70vh", borderRadius: 8 }} />
               )
