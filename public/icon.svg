@@ -5,7 +5,7 @@
       .foreground { fill: white; }
     }
     @media (prefers-color-scheme: dark) {
-      .background { fill: white; }
+      .background { fill: #F8FBF8; }
       .foreground { fill: black; }
     }
   </style>

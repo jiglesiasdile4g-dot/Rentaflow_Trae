@@ -2201,7 +2201,7 @@ export function LeadDetailModal({
                     </div>
 
                     {/* Message Body */}
-                    <div className="border rounded-lg p-4 bg-white dark:bg-muted/30 dark:text-foreground">
+                    <div className="border rounded-lg p-4 bg-[#F8FBF8] dark:bg-muted/30 dark:text-foreground">
                       <h3 className="text-sm font-semibold mb-3">Mensaje:</h3>
                       {selectedCommunication.source === "whatsapp" ? (
                         <div
@@ -2296,7 +2296,7 @@ export function LeadDetailModal({
                     </div>
 
                     <div
-                      className="p-4 rounded-lg border space-y-4 bg-white dark:bg-zinc-600 border-gray-200 dark:border-gray-500"
+                      className="p-4 rounded-lg border space-y-4 bg-[#F8FBF8] dark:bg-zinc-600 border-gray-200 dark:border-gray-500"
                     >
                       <h3
                         className="text-base font-bold text-gray-900 dark:text-gray-100"
@@ -2320,8 +2320,8 @@ export function LeadDetailModal({
                             <div
                               className={`p-4 rounded-md border-l-4 shadow-sm ${
                                 avalCalculation.needsAval
-                                  ? "bg-white border-red-600"
-                                  : "bg-white border-green-600"
+                                  ? "bg-[#F8FBF8] border-red-600"
+                                  : "bg-[#F8FBF8] border-green-600"
                               }`}
                             >
                               <p
@@ -2374,7 +2374,7 @@ export function LeadDetailModal({
                           </p>
                           <details className="mt-2 text-xs text-yellow-700 cursor-pointer">
                             <summary>Ver detalles técnicos</summary>
-                            <div className="mt-2 p-2 bg-white/50 rounded border border-yellow-200 font-mono text-[10px] overflow-auto max-h-40">
+                            <div className="mt-2 p-2 bg-[#F8FBF8]/50 rounded border border-yellow-200 font-mono text-[10px] overflow-auto max-h-40">
                               <p>Lead Inmueble: {lead.Inmueble || "N/A"}</p>
                               <p>Ads Fetched: {advertisements.length}</p>
                               <p>InmobiliariaID: {inmobiliariaId}</p>

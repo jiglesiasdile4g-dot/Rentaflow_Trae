@@ -4,11 +4,11 @@
   --font-family-sans: "Inter", "Inter Fallback", system-ui, -apple-system, sans-serif;
   --font-family-mono: "Roboto Mono", "Roboto Mono Fallback", "Courier New", monospace;
   
-  --color-background: #ffffff;
+  --color-background: #F8FBF8;
   --color-foreground: #0a0a0a;
-  --color-card: #ffffff;
+  --color-card: #F8FBF8;
   --color-card-foreground: #0a0a0a;
-  --color-popover: #ffffff;
+  --color-popover: #F8FBF8;
   --color-popover-foreground: #0a0a0a;
   --color-primary: #171717;
   --color-primary-foreground: #fafafa;

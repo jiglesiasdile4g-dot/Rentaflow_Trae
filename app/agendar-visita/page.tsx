@@ -723,7 +723,7 @@ function AgendarVisitaContent() {
                  <CardContent className="space-y-6">
                      <div className="flex flex-col md:flex-row gap-6 p-4 bg-slate-50 rounded-lg border">
                          <div className="flex items-center gap-3">
-                             <div className="bg-white p-2 rounded-full shadow-sm">
+                            <div className="bg-[#F8FBF8] p-2 rounded-full shadow-sm">
                                  <CalendarIcon className="h-6 w-6 text-slate-700" />
                              </div>
                              <div>
@@ -734,7 +734,7 @@ function AgendarVisitaContent() {
                              </div>
                          </div>
                          <div className="flex items-center gap-3">
-                             <div className="bg-white p-2 rounded-full shadow-sm">
+                            <div className="bg-[#F8FBF8] p-2 rounded-full shadow-sm">
                                  <Clock className="h-6 w-6 text-slate-700" />
                              </div>
                              <div>
@@ -801,7 +801,7 @@ function AgendarVisitaContent() {
                                     "flex flex-col items-center justify-center min-w-[100px] h-24 rounded-xl border-2 transition-all snap-start focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
                                     isSelected 
                                         ? "border-primary bg-primary text-primary-foreground shadow-md scale-105" 
-                                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                        : "border-slate-200 bg-[#F8FBF8] text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                                 )}
                             >
                                 <span className="text-xs font-medium uppercase tracking-wider opacity-80">
@@ -911,7 +911,7 @@ function AgendarVisitaContent() {
                                     <label className="text-sm font-medium text-slate-700">Fecha Propuesta</label>
                                     <input
                                         type="date"
-                                        className="flex h-12 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                        className="flex h-12 w-full rounded-md border border-slate-300 bg-[#F8FBF8] px-3 py-2 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                                         min={new Date().toISOString().split('T')[0]}
                                         value={proposalDate ? format(proposalDate, "yyyy-MM-dd") : ""}
                                         onChange={(e) => {
@@ -925,7 +925,7 @@ function AgendarVisitaContent() {
                                         <label className="text-sm font-medium text-slate-700">Hora Preferida</label>
                                         <input
                                             type="time"
-                                            className="flex h-12 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                            className="flex h-12 w-full rounded-md border border-slate-300 bg-[#F8FBF8] px-3 py-2 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                                             value={proposalTime}
                                             onChange={(e) => setProposalTime(e.target.value)}
                                         />
@@ -945,7 +945,7 @@ function AgendarVisitaContent() {
                                 </div>
                             </div>
                         </CardContent>
-                        <CardFooter className="flex justify-between gap-3 bg-white/50 border-t border-blue-100 p-6">
+                        <CardFooter className="flex justify-between gap-3 bg-[#F8FBF8]/50 border-t border-blue-100 p-6">
                             <Button 
                                 variant="ghost" 
                                 onClick={() => setIsProposing(false)}
@@ -975,7 +975,7 @@ function AgendarVisitaContent() {
 
         {/* Confirm Action */}
         <div className={cn(
-            "fixed bottom-0 left-0 right-0 p-4 bg-white border-t shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] transition-transform duration-300 md:relative md:bg-transparent md:border-0 md:shadow-none md:p-0 md:transform-none z-50",
+            "fixed bottom-0 left-0 right-0 p-4 bg-[#F8FBF8] border-t shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] transition-transform duration-300 md:relative md:bg-transparent md:border-0 md:shadow-none md:p-0 md:transform-none z-50",
             selectedDate && selectedSlot ? "translate-y-0" : "translate-y-full md:translate-y-0 md:opacity-0 md:pointer-events-none",
             selectedDate && selectedSlot && "md:opacity-100 md:pointer-events-auto"
         )}>

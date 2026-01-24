@@ -3862,7 +3862,7 @@ export default function AnunciosPage() {
             <Card
               className={`border rounded-lg p-2 transition-all duration-300 ${
                 alertConfig?.cardHighlight
-                  ? `border-red-500/50 shadow-lg shadow-red-500/20 bg-gradient-to-br from-white via-red-50/30 to-red-100/40 ring-2 ring-red-500/20`
+                  ? `border-red-500/50 shadow-lg shadow-red-500/20 bg-gradient-to-br from-[#F8FBF8] via-red-50/30 to-red-100/40 ring-2 ring-red-500/20`
                   : "bg-card border"
               }`}
             >
@@ -4166,8 +4166,8 @@ export default function AnunciosPage() {
                                           anuncio.estado === "pausado"
                                             ? "bg-red-600 text-white border-red-600 dark:bg-red-900 dark:text-white dark:border-red-900"
                                             : anuncio.estado === "archivado"
-                                              ? "bg-black text-white border-black dark:bg-white dark:text-black dark:border-white"
-                                              : "bg-white text-black border-black dark:bg-black dark:text-white dark:border-white"
+                                              ? "bg-black text-white border-black dark:bg-[#F8FBF8] dark:text-black dark:border-white"
+                                              : "bg-[#F8FBF8] text-black border-black dark:bg-black dark:text-white dark:border-white"
                                         }`}
                                       >
                                         {processingId === anuncio.id ? "..." : anuncio.activacion}

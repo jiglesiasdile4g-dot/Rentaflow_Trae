@@ -18,17 +18,17 @@ const badgeVariants = cva(
         outline:
           'text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground',
         feature:
-          'bg-white text-emerald-600 border-emerald-600 [a&]:hover:bg-emerald-50',
+          'bg-[#F8FBF8] text-emerald-600 border-emerald-600 [a&]:hover:bg-emerald-50',
         bug:
           'border-transparent bg-red-600 text-white [a&]:hover:bg-red-700',
         performance:
           'border-transparent bg-indigo-600 text-white [a&]:hover:bg-indigo-700',
         docs:
-          'bg-white text-sky-600 border-sky-600 [a&]:hover:bg-sky-50',
+          'bg-[#F8FBF8] text-sky-600 border-sky-600 [a&]:hover:bg-sky-50',
         chore:
           'border-transparent bg-stone-600 text-white [a&]:hover:bg-stone-700',
         refactor:
-          'bg-white text-amber-600 border-amber-600 [a&]:hover:bg-amber-50',
+          'bg-[#F8FBF8] text-amber-600 border-amber-600 [a&]:hover:bg-amber-50',
       },
     },
     defaultVariants: {

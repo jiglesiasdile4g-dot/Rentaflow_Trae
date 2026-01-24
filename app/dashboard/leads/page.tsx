@@ -1882,7 +1882,7 @@ export default function LeadsPage() {
         }
       case "Datos Incompletos":
         return {
-          bg: "#ffffff",
+          bg: "#F8FBF8",
           border: "#f59e0b",
           text: "#92400e",
           label: estado,
@@ -2848,7 +2848,7 @@ export default function LeadsPage() {
                     <Card
                       className={`mt-4 border rounded-lg p-2 transition-all duration-300 ${
                         showCritical
-                          ? `border-red-500/50 shadow-lg shadow-red-500/20 bg-gradient-to-br from-white via-red-50/30 to-red-100/40 ring-2 ring-red-500/20`
+                          ? `border-red-500/50 shadow-lg shadow-red-500/20 bg-gradient-to-br from-[#F8FBF8] via-red-50/30 to-red-100/40 ring-2 ring-red-500/20`
                           : "bg-card border"
                       }`}
                     >
@@ -5465,7 +5465,7 @@ export default function LeadsPage() {
                             <div 
                               className="w-full flex-1 p-4 border-2 rounded-lg flex flex-col justify-between"
                               style={{
-                                backgroundColor: "#ffffff",
+                                backgroundColor: "#F8FBF8",
                                 borderColor: "#3b82f6",
                               }}
                             >
@@ -6145,7 +6145,7 @@ export default function LeadsPage() {
                 </div>
 
                 <div
-                  className="p-4 rounded-lg border space-y-4 bg-white dark:bg-zinc-600 border-gray-200 dark:border-gray-500"
+                  className="p-4 rounded-lg border space-y-4 bg-[#F8FBF8] dark:bg-zinc-600 border-gray-200 dark:border-gray-500"
                 >
                   <h3
                     className="text-base font-bold text-gray-900 dark:text-gray-100"
@@ -6169,8 +6169,8 @@ export default function LeadsPage() {
                         <div
                           className={`p-4 rounded-md border-l-4 shadow-sm ${
                             avalCalculation.needsAval
-                              ? "bg-white border-red-600"
-                              : "bg-white border-green-600"
+                              ? "bg-[#F8FBF8] border-red-600"
+                              : "bg-[#F8FBF8] border-green-600"
                           }`}
                         >
                           <p
@@ -6831,7 +6831,7 @@ export default function LeadsPage() {
                 </div>
 
                 {/* Message Body */}
-                <div className="border rounded-lg p-4 bg-white dark:bg-muted/30 dark:text-foreground">
+                <div className="border rounded-lg p-4 bg-[#F8FBF8] dark:bg-muted/30 dark:text-foreground">
                   <h3 className="text-sm font-semibold mb-3">Mensaje:</h3>
                   {selectedCommunication.source === "whatsapp" ? (
                     <div

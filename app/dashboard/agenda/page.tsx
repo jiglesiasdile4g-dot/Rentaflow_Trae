@@ -1720,7 +1720,7 @@ export default function AgendaPage() {
                                   "h-9 w-9 transition-all shadow-sm rounded-full",
                                   completed 
                                     ? "bg-green-500 hover:bg-green-600 text-black border-green-500" 
-                                    : "bg-white hover:bg-green-50 text-muted-foreground border-muted-foreground/30 hover:border-green-500 hover:text-green-600"
+                                    : "bg-[#F8FBF8] hover:bg-green-50 text-muted-foreground border-muted-foreground/30 hover:border-green-500 hover:text-green-600"
                                 )}
                                 onClick={() => handleToggleCompletion(visit)}
                                 title={completed ? "Marcar como pendiente" : "Marcar como realizada"}
