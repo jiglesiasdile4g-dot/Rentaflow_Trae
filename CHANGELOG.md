@@ -1,3 +1,21 @@
+## [0.9.2](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.8.7...v0.9.2) (2026-01-24)
+
+
+### Bug Fixes
+
+* mejoras en anuncios y modales ([a0f6324](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/a0f6324f30915da5a8ce20344b5b79b1314fbe27))
+
+
+
+## [0.8.7](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.8.6...v0.8.7) (2026-01-14)
+
+
+### Bug Fixes
+
+* build error add suspense to agendar-visita and fix quotes in leads page ([05cd31e](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/05cd31e2462a5bcad4fd830507d5494b55f24dea))
+
+
+
 ## [0.8.6](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.8.5...v0.8.6) (2026-01-14)
 
 
