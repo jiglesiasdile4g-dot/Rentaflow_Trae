@@ -485,7 +485,7 @@ function AgendarVisitaContent() {
                 fecha_de_visita: valueWithOffset
             }
 
-            fetch("/api/proponer-visita", {
+            fetch("/api/sugerir-fecha-visita", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
