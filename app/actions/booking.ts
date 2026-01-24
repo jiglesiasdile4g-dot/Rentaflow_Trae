@@ -213,6 +213,7 @@ export async function cancelVisit(leadId: string) {
       const { data, error } = await supabase
         .from("Clientes")
         .update({
+          Estado: "Descartado",
           visita_completada: "cancelada",
           fecha_de_visita: null
         })
@@ -226,6 +227,22 @@ export async function cancelVisit(leadId: string) {
   
       if (!data || data.length === 0) {
           return { error: "No se encontró el cliente para cancelar." }
+      }
+
+      try {
+        await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/descartado", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            leadId,
+            Estado: "Descartado",
+            lead: data[0] ?? null,
+            source: "cancelVisit",
+            timestamp: new Date().toISOString()
+          })
+        })
+      } catch (webhookErr) {
+        console.error("[Booking Action] Error calling descartado webhook:", webhookErr)
       }
   
       return { success: true }

@@ -7,6 +7,17 @@ import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Loader2, Calendar as CalendarIcon, Clock, MapPin, User, CheckCircle, AlertCircle, XCircle, RefreshCw } from "lucide-react"
 import { format, addDays, isSameDay } from "date-fns"
 import { es } from "date-fns/locale"
@@ -72,11 +83,13 @@ function AgendarVisitaContent() {
     const [isCancelled, setIsCancelled] = useState(false)
     const [isCancelling, setIsCancelling] = useState(false)
     const [isExpanded, setIsExpanded] = useState(false)
+    const [isCancelConfirmOpen, setIsCancelConfirmOpen] = useState(false)
     
     // Proposal state
     const [isProposing, setIsProposing] = useState(false)
     const [proposalDate, setProposalDate] = useState<Date | undefined>(undefined)
-    const [proposalTime, setProposalTime] = useState<string>("")
+    const [proposalShift, setProposalShift] = useState<string>("")
+    const [proposalComment, setProposalComment] = useState<string>("")
     const [submittingProposal, setSubmittingProposal] = useState(false)
     const [proposalSuccess, setProposalSuccess] = useState(false)
 
@@ -106,6 +119,22 @@ function AgendarVisitaContent() {
 
         if (!leadData) {
           throw new Error("No se encontraron datos del cliente.")
+        }
+
+        if (leadData.Estado !== "Visita Propuesta") {
+          const mailSistema = inmoData
+            ? (inmoData as any)["Mail sistema"] ??
+              (inmoData as any).mail_sistema ??
+              (inmoData as any).Mail_sistema ??
+              (inmoData as any).MailSistema ??
+              (inmoData as any).mailSistema ??
+              (inmoData as any).EmailSistema ??
+              (inmoData as any).email_sistema ??
+              (inmoData as any).emailSistema
+            : null
+          const contactoExtra = mailSistema ? ` o con ${mailSistema}` : ""
+          setError(`Esta página no está disponible en tu fase del proceso. Contacta con tu agente${contactoExtra}.`)
+          return
         }
 
         setLead(leadData)
@@ -367,7 +396,8 @@ function AgendarVisitaContent() {
                 "Fecha Visita": formattedDate,
                 "Hora Visita": formattedTime,
                 "Fecha Completa": lead.fecha_de_visita,
-                ...leadWithoutStatusHistory
+                ...leadWithoutStatusHistory,
+                Estado: "Descartado"
             }
 
             fetch("/api/cancelar-visita", {
@@ -386,7 +416,7 @@ function AgendarVisitaContent() {
         })
 
         // Update local state to show cancellation confirmation
-        setLead({ ...lead, fecha_de_visita: undefined })
+        setLead({ ...lead, fecha_de_visita: undefined, Estado: "Descartado" })
         setIsRescheduling(false)
         setSuccess(false)
         setSelectedDate(undefined)
@@ -406,12 +436,13 @@ function AgendarVisitaContent() {
   }
 
   const handlePropose = async () => {
-    if (!lead || !proposalDate || !proposalTime) return
+    if (!lead || !proposalDate || !proposalShift) return
     setSubmittingProposal(true)
 
     try {
+        const shiftToTime = proposalShift === "Mañana" ? "10:00" : "17:00"
         const dateStr = format(proposalDate, "yyyy-MM-dd")
-        const dateTimeStr = `${dateStr}T${proposalTime}:00`
+        const dateTimeStr = `${dateStr}T${shiftToTime}:00`
         
         // Handle timezone offset
         const d = new Date(dateTimeStr)
@@ -447,7 +478,9 @@ function AgendarVisitaContent() {
                 "Link de Agendamiento": bookingLink,
                 "Fecha Visita": formattedDate,
                 "Hora Visita": formattedTime,
+                "Turno Preferido": proposalShift,
                 "Fecha Completa": valueWithOffset,
+                "Comentario cliente": proposalComment.trim() || null,
                 ...leadWithoutStatusHistory,
                 fecha_de_visita: valueWithOffset
             }
@@ -515,14 +548,14 @@ function AgendarVisitaContent() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="rounded-lg bg-slate-50 p-6 shadow-sm">
+                            <div className="rounded-lg bg-slate-50 p-6 shadow-sm">
                         <div className="flex items-center justify-center gap-2 text-xl font-semibold text-slate-900">
                             <CalendarIcon className="h-5 w-5 text-slate-500" />
                             {proposalDate && format(proposalDate, "d 'de' MMMM", { locale: es })}
                         </div>
-                        <div className="mt-2 flex items-center justify-center gap-2 text-2xl font-bold text-primary">
+                                <div className="mt-2 flex items-center justify-center gap-2 text-2xl font-bold text-primary">
                             <Clock className="h-6 w-6" />
-                            {proposalTime}
+                                    {proposalShift}
                         </div>
                     </div>
                     <p className="text-sm text-slate-500">
@@ -557,23 +590,15 @@ function AgendarVisitaContent() {
                 </CardHeader>
                 <CardContent>
                     <p className="text-slate-600 font-medium mb-4">
-                        ¿Deseas agendar una nueva visita para otro momento?
+                        Si necesitas otra fecha, contacta con tu agente.
                     </p>
                 </CardContent>
                 <CardFooter className="flex flex-col gap-3 pb-6">
                     <Button 
-                        onClick={() => setIsCancelled(false)}
-                        className="w-full bg-primary hover:bg-primary/90 text-white gap-2"
-                    >
-                        <RefreshCw className="h-4 w-4" />
-                        Sí, agendar otra visita
-                    </Button>
-                    <Button 
                         onClick={() => window.location.href = inmobiliaria?.pagina_web || 'https://acesalquiler.com'}
-                        variant="outline"
-                        className="w-full"
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white"
                     >
-                        No, salir
+                        Salir
                     </Button>
                 </CardFooter>
             </Card>
@@ -629,7 +654,7 @@ function AgendarVisitaContent() {
                             Reprogramar
                          </Button>
                          <Button 
-                            onClick={handleCancel} 
+                            onClick={() => setIsCancelConfirmOpen(true)} 
                             variant="destructive" 
                             className="flex-1 gap-2"
                             disabled={isCancelling}
@@ -646,6 +671,30 @@ function AgendarVisitaContent() {
                     </Button>
                 </CardFooter>
             </Card>
+            <AlertDialog open={isCancelConfirmOpen} onOpenChange={setIsCancelConfirmOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Confirmar anulación</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Al anular la cita tu candidatura será descartada, considera elegir otra fecha en lugar de cancelarla.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>No anular</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-red-600 hover:bg-red-700"
+                            onClick={async () => {
+                                await handleCancel()
+                                setIsCancelConfirmOpen(false)
+                            }}
+                            disabled={isCancelling}
+                        >
+                            {isCancelling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Sí, anular cita
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     )
   }
@@ -709,6 +758,7 @@ function AgendarVisitaContent() {
         </Card>
 
         {lead?.fecha_de_visita && !isRescheduling && !success ? (
+        <>
              <Card className="border-l-4 border-l-blue-600 shadow-md">
                  <CardHeader>
                      <div className="flex items-center gap-2 text-blue-600 mb-2">
@@ -755,7 +805,7 @@ function AgendarVisitaContent() {
                         Reprogramar Visita
                      </Button>
                      <Button 
-                        onClick={handleCancel} 
+                        onClick={() => setIsCancelConfirmOpen(true)} 
                         variant="destructive" 
                         className="w-full sm:w-auto gap-2"
                         disabled={isCancelling}
@@ -765,6 +815,31 @@ function AgendarVisitaContent() {
                      </Button>
                  </CardFooter>
              </Card>
+            <AlertDialog open={isCancelConfirmOpen} onOpenChange={setIsCancelConfirmOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Confirmar anulación</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Al anular la cita tu candidatura será descartada, considera elegir otra fecha en lugar de cancelarla.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>No anular</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-red-600 hover:bg-red-700"
+                            onClick={async () => {
+                                await handleCancel()
+                                setIsCancelConfirmOpen(false)
+                            }}
+                            disabled={isCancelling}
+                        >
+                            {isCancelling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Sí, anular cita
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </>
         ) : (
         <>
             {isRescheduling && (
@@ -891,6 +966,8 @@ function AgendarVisitaContent() {
                                 setIsProposing(true)
                                 setSelectedDate(undefined)
                                 setSelectedSlot(null)
+                                setProposalShift("")
+                                setProposalComment("")
                             }}
                             className="border-primary text-primary hover:bg-primary/5"
                         >
@@ -922,23 +999,36 @@ function AgendarVisitaContent() {
                                 </div>
                                 <div className="space-y-4 flex-1">
                                     <div className="space-y-2">
-                                        <label className="text-sm font-medium text-slate-700">Hora Preferida</label>
-                                        <input
-                                            type="time"
+                                        <label className="text-sm font-medium text-slate-700">Turno Preferido</label>
+                                        <select
                                             className="flex h-12 w-full rounded-md border border-slate-300 bg-[#F8FBF8] px-3 py-2 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                            value={proposalTime}
-                                            onChange={(e) => setProposalTime(e.target.value)}
-                                        />
+                                            value={proposalShift}
+                                            onChange={(e) => setProposalShift(e.target.value)}
+                                        >
+                                            <option value="">Selecciona un turno</option>
+                                            <option value="Mañana">Mañana</option>
+                                            <option value="Tarde">Tarde</option>
+                                        </select>
                                         <p className="text-xs text-slate-500">
-                                            Indica la hora aproximada en la que te gustaría realizar la visita.
+                                            Indica el turno en el que te gustaría realizar la visita.
                                         </p>
                                     </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-slate-700">Comentario</label>
+                                        <Textarea
+                                            value={proposalComment}
+                                            onChange={(e) => setProposalComment(e.target.value)}
+                                            placeholder="Añade un comentario para el agente (opcional)"
+                                            className="bg-[#F8FBF8]"
+                                        />
+                                    </div>
                                     
-                                    {proposalDate && proposalTime && (
+                                    {proposalDate && proposalShift && (
                                         <div className="rounded-md bg-blue-100 p-4 text-blue-800 text-sm">
                                             <p className="font-semibold mb-1">Resumen de tu propuesta:</p>
                                             <p>
-                                                <span className="capitalize">{format(new Date(proposalDate.getTime() + proposalDate.getTimezoneOffset() * 60000), "EEEE d 'de' MMMM", { locale: es })}</span> a las {proposalTime}
+                                                <span className="capitalize">{format(new Date(proposalDate.getTime() + proposalDate.getTimezoneOffset() * 60000), "EEEE d 'de' MMMM", { locale: es })}</span> en turno {proposalShift.toLowerCase()}
                                             </p>
                                         </div>
                                     )}
@@ -955,7 +1045,7 @@ function AgendarVisitaContent() {
                             </Button>
                             <Button 
                                 onClick={handlePropose}
-                                disabled={!proposalDate || !proposalTime || submittingProposal}
+                                disabled={!proposalDate || !proposalShift || submittingProposal}
                                 className="bg-blue-600 hover:bg-blue-700 text-white min-w-[150px]"
                             >
                                 {submittingProposal ? (

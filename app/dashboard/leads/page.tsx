@@ -1784,6 +1784,18 @@ export default function LeadsPage() {
     setSingleStatusConfirmOpen(true)
   }
 
+  const sendDescartadoWebhook = async (payload: any) => {
+    try {
+      await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/descartado", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+    } catch (err) {
+      console.error("[v0] Error calling descartado webhook:", err)
+    }
+  }
+
   const executeSingleStatusChange = async () => {
     if (!pendingSingleStatus) return
     const { id, status } = pendingSingleStatus
@@ -1824,6 +1836,17 @@ export default function LeadsPage() {
       const { error } = await supabase.from("Clientes").update(updateData).eq("id", id)
 
       if (error) throw error
+
+      const updatedLeadForWebhook = lead ? { ...lead, ...updateData } : { id, ...updateData }
+      if (status === "Descartado") {
+        await sendDescartadoWebhook({
+          leadId: id,
+          Estado: "Descartado",
+          lead: updatedLeadForWebhook,
+          source: "leads-single",
+          timestamp: new Date().toISOString()
+        })
+      }
 
       // Update local state
       setLeads(leads.map((l) => (String(l.id) === String(id) ? { ...l, ...updateData } : l)))
@@ -2293,6 +2316,24 @@ export default function LeadsPage() {
           variant: "destructive",
         })
         return
+      }
+
+      if (pendingBulkStatus === "Descartado") {
+        const timestamp = new Date().toISOString()
+        const payloads = selectedLeadIds.map((id) => {
+          const lead = leads.find((l) => String(l.id) === String(id))
+          const currentHistory = (lead?.status_history as LeadHistoryEntry[]) || []
+          return {
+            leadId: id,
+            Estado: "Descartado",
+            lead: lead
+              ? { ...lead, ...updateData, status_history: [...currentHistory, historyEntry] }
+              : { id, ...updateData, status_history: [historyEntry] },
+            source: "leads-bulk",
+            timestamp
+          }
+        })
+        await Promise.all(payloads.map((payload) => sendDescartadoWebhook(payload)))
       }
 
       setLeads((prevLeads) =>

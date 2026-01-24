@@ -632,6 +632,24 @@ export function LeadDetailModal({
       setLead(updatedLead as Lead)
       if (onLeadUpdate) onLeadUpdate(updatedLead as Lead)
 
+      if (newStatus === "Descartado") {
+        try {
+          await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/descartado", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              leadId: lead.id,
+              Estado: "Descartado",
+              lead: updatedLead,
+              source: "lead-detail-modal",
+              timestamp: new Date().toISOString()
+            })
+          })
+        } catch (webhookErr) {
+          console.error("Error calling descartado webhook:", webhookErr)
+        }
+      }
+
       if (shouldCancelVisit) {
         toast({
             title: "Visita cancelada",
