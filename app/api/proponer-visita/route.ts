@@ -7,7 +7,7 @@ export async function POST(req: Request) {
 
     // Forward to n8n webhook
     try {
-      const webhookUrl = "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/sugerir_fecha_visita"
+      const webhookUrl = "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/proponer_visita"
       console.log("[Webhook] Forwarding to:", webhookUrl)
       
       const response = await fetch(webhookUrl, {
