@@ -436,9 +436,26 @@ export function LeadDetailModal({
       setSelectedPersona(1)
       setIsEditingPersonalInfo(false)
       
-      // Fetch communications if we have contact info
-      if (data.Correo || data.Telefono) {
-        fetchCommunications(data.Correo, data.Telefono)
+      const emails = [
+        data.Correo,
+        data["Correo 2"],
+        data["Correo 3"],
+        data["Correo 4"],
+      ]
+        .map((value) => (typeof value === "string" ? value.trim().toLowerCase() : ""))
+        .filter(Boolean)
+
+      const phones = [
+        data.Telefono,
+        data["Telefono 2"],
+        data["Telefono 3"],
+        data["Telefono 4"],
+      ]
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean)
+
+      if (emails.length > 0 || phones.length > 0) {
+        fetchCommunications(emails, phones)
       }
       
       // Load docs status (checking file existence logic is complex, assume lead has status fields)
@@ -455,19 +472,36 @@ export function LeadDetailModal({
     }
   }
 
-  const fetchCommunications = async (email?: string, phone?: string) => {
-    if (!email && !phone) {
+  const fetchCommunications = async (emails: string[] = [], phones: string[] = []) => {
+    if (emails.length === 0 && phones.length === 0) {
       setCommunications([])
       return
     }
     setCommsLoading(true)
     try {
-      const emailsPromise = email
-        ? supabase.from("Correos").select("*").eq("Email", email).in("Tipo", ["enviado", "recibido"])
+      const uniqueEmails = Array.from(new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean)))
+      const emailFilter = uniqueEmails
+        .flatMap((email) => [`Email.ilike.${email}`, `From.ilike.${email}`, `to.ilike.${email}`])
+        .join(",")
+
+      const phoneVariants = Array.from(
+        new Set(
+          phones
+            .flatMap((phone) => {
+              const raw = phone.trim()
+              const digits = raw.replace(/\D/g, "")
+              return [raw, digits, digits ? `+${digits}` : ""]
+            })
+            .filter(Boolean),
+        ),
+      )
+
+      const emailsPromise = uniqueEmails.length > 0
+        ? supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"]).or(emailFilter)
         : Promise.resolve({ data: [], error: null })
 
-      const whatsappPromise = phone
-        ? supabase.from("Whatsapp").select("*").eq("Telefono", phone).in("Tipo", ["Enviado", "Recibido"])
+      const whatsappPromise = phoneVariants.length > 0
+        ? supabase.from("Whatsapp").select("*").in("Telefono", phoneVariants).in("Tipo", ["Enviado", "Recibido"])
         : Promise.resolve({ data: [], error: null })
 
       const [emailsResult, whatsappResult] = await Promise.all([emailsPromise, whatsappPromise])
