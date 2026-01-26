@@ -1350,79 +1350,125 @@ export default function AgendaPage() {
                       onTouchStart={handleCalendarTouchStart}
                       onTouchEnd={handleCalendarTouchEnd}
                     >
-                      <div className="grid grid-cols-7 gap-2 px-1">
-                        {weekDayLabels.map((label) => (
-                          <div key={label} className="text-[10px] font-medium uppercase text-muted-foreground text-center">
-                            {label}
-                          </div>
-                        ))}
+                      <div className="sm:hidden">
+                        <TabsList className="h-auto bg-transparent p-0 gap-2 flex-nowrap overflow-x-auto w-full">
+                          {visibleCalendarDays.map((day) => {
+                            const hasSlots = agendaItems.some(item => item.fecha === day.id)
+                            const visitCount = scheduledVisits.filter(v => {
+                              const d = safeDate(v.fecha_de_visita)
+                              return d && format(d, "yyyy-MM-dd") === day.id
+                            }).length
+                            
+                            return (
+                              <TabsTrigger
+                                key={day.id}
+                                value={day.id}
+                                disabled={day.disabled}
+                                className={cn(
+                                  "group relative flex flex-col items-center justify-center min-w-[64px] h-14 rounded-md border border-muted bg-card transition-all",
+                                  hasSlots && "border-primary bg-primary/5",
+                                  "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary",
+                                  day.isCurrentWeek && "ring-1 ring-primary/40",
+                                  day.isPast && "opacity-50 data-[state=active]:opacity-100"
+                                )}
+                              >
+                                {visitCount > 0 && (
+                                  <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background z-10">
+                                    {visitCount}
+                                  </span>
+                                )}
+                                <span className="text-[10px] uppercase text-muted-foreground leading-none group-data-[state=active]:text-primary-foreground/80">
+                                  {format(day.date, "EEE", { locale: es })}
+                                </span>
+                                <span className="text-sm font-bold leading-none group-data-[state=active]:text-primary-foreground">
+                                  {format(day.date, "d", { locale: es })}
+                                </span>
+                              </TabsTrigger>
+                            )
+                          })}
+                        </TabsList>
                       </div>
-                      <TabsList className="h-auto bg-transparent p-0 gap-2 grid grid-cols-7 w-full">
-                        {visibleCalendarDays.slice(0, 7).map((day) => {
-                          const hasSlots = agendaItems.some(item => item.fecha === day.id)
-                          const visitCount = scheduledVisits.filter(v => {
-                            const d = safeDate(v.fecha_de_visita)
-                            return d && format(d, "yyyy-MM-dd") === day.id
-                          }).length
-                          
-                          return (
-                            <TabsTrigger
-                              key={day.id}
-                              value={day.id}
-                              disabled={day.disabled}
-                              className={cn(
-                                "group relative flex flex-col items-center justify-center h-16 w-full rounded-md border border-muted bg-card transition-all",
-                                hasSlots && "border-primary bg-primary/5",
-                                "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary",
-                                day.isCurrentWeek && "ring-1 ring-primary/40",
-                                day.isPast && "opacity-50 data-[state=active]:opacity-100"
-                              )}
-                            >
-                              {visitCount > 0 && (
-                                <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background z-10">
-                                  {visitCount}
+                      <div className="hidden sm:block">
+                        <div className="grid grid-cols-7 gap-1.5 sm:gap-2 px-1">
+                          {weekDayLabels.map((label) => (
+                            <div key={label} className="text-[9px] sm:text-[10px] font-medium uppercase text-muted-foreground text-center leading-none">
+                              {label}
+                            </div>
+                          ))}
+                        </div>
+                        <TabsList className="h-auto bg-transparent p-0 gap-1.5 sm:gap-2 grid grid-cols-7 w-full">
+                          {visibleCalendarDays.slice(0, 7).map((day) => {
+                            const hasSlots = agendaItems.some(item => item.fecha === day.id)
+                            const visitCount = scheduledVisits.filter(v => {
+                              const d = safeDate(v.fecha_de_visita)
+                              return d && format(d, "yyyy-MM-dd") === day.id
+                            }).length
+                            
+                            return (
+                              <TabsTrigger
+                                key={day.id}
+                                value={day.id}
+                                disabled={day.disabled}
+                                className={cn(
+                                  "group relative flex flex-col items-center justify-center h-12 sm:h-16 w-full rounded-md border border-muted bg-card transition-all",
+                                  hasSlots && "border-primary bg-primary/5",
+                                  "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary",
+                                  day.isCurrentWeek && "ring-1 ring-primary/40",
+                                  day.isPast && "opacity-50 data-[state=active]:opacity-100"
+                                )}
+                              >
+                                {visitCount > 0 && (
+                                  <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background z-10">
+                                    {visitCount}
+                                  </span>
+                                )}
+                                <span className="text-sm font-bold leading-none sm:hidden group-data-[state=active]:text-primary-foreground">
+                                  {format(day.date, "d", { locale: es })}
                                 </span>
-                              )}
-                              <span className="text-base font-bold group-data-[state=active]:text-primary-foreground">
-                                {format(day.date, "d MMM", { locale: es })}
-                              </span>
-                            </TabsTrigger>
-                          )
-                        })}
-                      </TabsList>
-                      <TabsList className="h-auto bg-transparent p-0 gap-2 grid grid-cols-7 w-full">
-                        {visibleCalendarDays.slice(7, 14).map((day) => {
-                          const hasSlots = agendaItems.some(item => item.fecha === day.id)
-                          const visitCount = scheduledVisits.filter(v => {
-                            const d = safeDate(v.fecha_de_visita)
-                            return d && format(d, "yyyy-MM-dd") === day.id
-                          }).length
-                          
-                          return (
-                            <TabsTrigger
-                              key={day.id}
-                              value={day.id}
-                              disabled={day.disabled}
-                              className={cn(
-                                "group relative flex flex-col items-center justify-center h-16 w-full rounded-md border border-muted bg-card transition-all",
-                                hasSlots && "border-primary bg-primary/5",
-                                "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary",
-                                day.isCurrentWeek && "ring-1 ring-primary/40",
-                                day.isPast && "opacity-50 data-[state=active]:opacity-100"
-                              )}
-                            >
-                              {visitCount > 0 && (
-                                <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background z-10">
-                                  {visitCount}
+                                <span className="hidden sm:inline text-base font-bold group-data-[state=active]:text-primary-foreground">
+                                  {format(day.date, "d MMM", { locale: es })}
                                 </span>
-                              )}
-                              <span className="text-base font-bold group-data-[state=active]:text-primary-foreground">
-                                {format(day.date, "d MMM", { locale: es })}
-                              </span>
-                            </TabsTrigger>
-                          )
-                        })}
-                      </TabsList>
+                              </TabsTrigger>
+                            )
+                          })}
+                        </TabsList>
+                        <TabsList className="h-auto bg-transparent p-0 gap-1.5 sm:gap-2 grid grid-cols-7 w-full">
+                          {visibleCalendarDays.slice(7, 14).map((day) => {
+                            const hasSlots = agendaItems.some(item => item.fecha === day.id)
+                            const visitCount = scheduledVisits.filter(v => {
+                              const d = safeDate(v.fecha_de_visita)
+                              return d && format(d, "yyyy-MM-dd") === day.id
+                            }).length
+                            
+                            return (
+                              <TabsTrigger
+                                key={day.id}
+                                value={day.id}
+                                disabled={day.disabled}
+                                className={cn(
+                                  "group relative flex flex-col items-center justify-center h-12 sm:h-16 w-full rounded-md border border-muted bg-card transition-all",
+                                  hasSlots && "border-primary bg-primary/5",
+                                  "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary",
+                                  day.isCurrentWeek && "ring-1 ring-primary/40",
+                                  day.isPast && "opacity-50 data-[state=active]:opacity-100"
+                                )}
+                              >
+                                {visitCount > 0 && (
+                                  <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background z-10">
+                                    {visitCount}
+                                  </span>
+                                )}
+                                <span className="text-sm font-bold leading-none sm:hidden group-data-[state=active]:text-primary-foreground">
+                                  {format(day.date, "d", { locale: es })}
+                                </span>
+                                <span className="hidden sm:inline text-base font-bold group-data-[state=active]:text-primary-foreground">
+                                  {format(day.date, "d MMM", { locale: es })}
+                                </span>
+                              </TabsTrigger>
+                            )
+                          })}
+                        </TabsList>
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground mt-0.5">
                       <div className="flex flex-wrap items-center gap-2">
