@@ -2689,7 +2689,9 @@ export default function LeadsPage() {
 
                     // Use API route instead of Server Action to avoid CORS/Network issues
                     const { status_history, ...webhookPayload } = payload as any
-                    const response = await fetch("/api/proponer-visita", {
+                    const hasConfirmedDate = Boolean(updateData.fecha_de_visita)
+                    const endpoint = hasConfirmedDate ? "/api/confirmar-visita" : "/api/proponer-visita"
+                    const response = await fetch(endpoint, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(webhookPayload)
@@ -5658,7 +5660,9 @@ export default function LeadsPage() {
                                       <span className="text-[10px] text-muted-foreground">{new Date(comm.created_at).toLocaleDateString()}</span>
                                     </div>
                                     <p className="text-xs text-muted-foreground line-clamp-2">
-                                      {(comm.Mensaje || comm.Text || "Sin contenido").replace(/<[^>]*>?/gm, '')}
+                                      {comm.source === "whatsapp"
+                                        ? cleanHtmlForPreview(comm.Mensaje) || "Sin contenido"
+                                        : cleanHtmlForPreview(comm.Html || comm.Text) || "Sin contenido"}
                                     </p>
                                   </div>
                                 </Card>

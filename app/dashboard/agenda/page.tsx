@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Loader2, Plus, Trash2, Clock, CalendarDays, User, Building, Phone, Euro, CheckCircle, FileText, Undo, Check, CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react"
+import { Loader2, Plus, Trash2, Clock, CalendarDays, User, Building, Phone, Euro, CheckCircle, FileText, Undo, Check, CalendarIcon } from "lucide-react"
 import { getAgentsByIdi, getAgentByEmail } from "@/app/actions/get-agents"
 import { useToast } from "@/hooks/use-toast"
 import { format, addDays, startOfToday, startOfWeek, addWeeks, isBefore } from "date-fns"
@@ -77,6 +77,8 @@ interface DayTab {
   fullLabel: string
   id: string
   disabled: boolean
+  isPast: boolean
+  isCurrentWeek: boolean
 }
 
 export default function AgendaPage() {
@@ -88,16 +90,15 @@ export default function AgendaPage() {
   const [agentsList, setAgentsList] = useState<Array<{ idag: number; Nombre: string; nombre?: string; Email: string }>>([])
 
   // Tabs state
-  const [currentWeekDays, setCurrentWeekDays] = useState<DayTab[]>([])
-  const [nextWeekDays, setNextWeekDays] = useState<DayTab[]>([])
-  const [nextWeekOffset, setNextWeekOffset] = useState(0)
+  const [calendarDays, setCalendarDays] = useState<DayTab[]>([])
+  const [calendarOffset, setCalendarOffset] = useState(0)
   const [selectedDateStr, setSelectedDateStr] = useState<string>("")
   const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([])
   const [scheduledVisits, setScheduledVisits] = useState<ScheduledVisit[]>([])
   const [currentSlots, setCurrentSlots] = useState<TimeSlot[]>([])
   const [dayVisits, setDayVisits] = useState<ScheduledVisit[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const nextWeekTouchStartX = useRef<number | null>(null)
+  const calendarTouchStartX = useRef<number | null>(null)
   
   // Visit completion state
   const [completeDialogOpen, setCompleteDialogOpen] = useState(false)
@@ -144,42 +145,50 @@ export default function AgendaPage() {
     }
     return options
   }, [])
+  const weekDayLabels = useMemo(() => {
+    const start = startOfWeek(new Date(), { weekStartsOn: 1 })
+    return Array.from({ length: 7 }, (_, i) => format(addDays(start, i), "EEE", { locale: es }))
+  }, [])
+  const prevWeekDaysCount = 35
   const nextWeekDaysCount = 35
 
-  const visibleNextWeekDays = useMemo(() => {
-    return nextWeekDays.slice(nextWeekOffset, nextWeekOffset + 7)
-  }, [nextWeekDays, nextWeekOffset])
-  const maxNextWeekOffset = Math.max(0, nextWeekDays.length - 7)
-  const canShiftPrevNextWeek = nextWeekOffset > 0
-  const canShiftNextNextWeek = nextWeekOffset < maxNextWeekOffset
+  const visibleCalendarDays = useMemo(() => {
+    return calendarDays.slice(calendarOffset, calendarOffset + 14)
+  }, [calendarDays, calendarOffset])
+  const maxCalendarOffset = Math.max(0, calendarDays.length - 14)
+  const canShiftPrevCalendar = calendarOffset > 0
+  const canShiftNextCalendar = calendarOffset < maxCalendarOffset
 
-  const shiftNextWeek = (delta: number) => {
-    setNextWeekOffset(prev => {
-      const maxOffset = Math.max(0, nextWeekDays.length - 7)
+  const shiftCalendar = (delta: number) => {
+    setCalendarOffset(prev => {
+      const maxOffset = Math.max(0, calendarDays.length - 7)
       return Math.min(maxOffset, Math.max(0, prev + delta))
     })
   }
 
-  const handleNextWeekTouchStart = (e: TouchEvent<HTMLDivElement>) => {
-    nextWeekTouchStartX.current = e.touches[0]?.clientX ?? null
+  const handleCalendarTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+    calendarTouchStartX.current = e.touches[0]?.clientX ?? null
   }
 
-  const handleNextWeekTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
-    if (nextWeekTouchStartX.current === null) return
-    const endX = e.changedTouches[0]?.clientX ?? nextWeekTouchStartX.current
-    const delta = endX - nextWeekTouchStartX.current
-    nextWeekTouchStartX.current = null
+  const handleCalendarTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
+    if (calendarTouchStartX.current === null) return
+    const endX = e.changedTouches[0]?.clientX ?? calendarTouchStartX.current
+    const delta = endX - calendarTouchStartX.current
+    calendarTouchStartX.current = null
     if (Math.abs(delta) < 40) return
-    shiftNextWeek(delta < 0 ? 7 : -7)
+    shiftCalendar(delta < 0 ? 7 : -7)
   }
 
   // Initialize weeks
   useEffect(() => {
     const today = startOfToday()
-    const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 }) // Monday
+    const todayStr = format(today, "yyyy-MM-dd")
+    const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 })
+    const startOfPrevRange = addDays(startOfCurrentWeek, -prevWeekDaysCount)
     const startOfNextWeek = addWeeks(startOfCurrentWeek, 1)
 
     // Helper to create days
+    const currentWeekEnd = addDays(startOfCurrentWeek, 7)
     const createDays = (startDate: Date, count: number): DayTab[] => {
       const days: DayTab[] = []
       for (let i = 0; i < count; i++) {
@@ -190,20 +199,23 @@ export default function AgendaPage() {
           id: dateStr,
           label: format(date, "EEE d", { locale: es }),
           fullLabel: format(date, "EEEE d 'de' MMMM", { locale: es }),
-          disabled: isBefore(date, today)
+          disabled: false,
+          isPast: isBefore(date, today),
+          isCurrentWeek: date >= startOfCurrentWeek && date < currentWeekEnd
         })
       }
       return days
     }
 
+    const prev = createDays(startOfPrevRange, prevWeekDaysCount)
     const current = createDays(startOfCurrentWeek, 7)
     const next = createDays(startOfNextWeek, nextWeekDaysCount)
     
-    setCurrentWeekDays(current)
-    setNextWeekDays(next)
+    setCalendarDays([...prev, ...current, ...next])
+    setCalendarOffset(Math.max(0, prevWeekDaysCount - 7))
     
     // Set default selected date to today or next available day
-    const validDay = current.find(d => !d.disabled) || next[0]
+    const validDay = current.find(d => d.id === todayStr) || current[0] || next[0]
     if (validDay) {
       setSelectedDateStr(validDay.id)
     }
@@ -568,9 +580,10 @@ export default function AgendaPage() {
       // Fetch agenda for current and next week
       const today = startOfToday()
       const startOfCurrentWeek = startOfWeek(today, { weekStartsOn: 1 })
+      const startDate = addDays(startOfCurrentWeek, -prevWeekDaysCount)
       const endDate = addDays(startOfCurrentWeek, 7 + nextWeekDaysCount - 1)
 
-      const startDateStr = format(startOfCurrentWeek, "yyyy-MM-dd")
+      const startDateStr = format(startDate, "yyyy-MM-dd")
       const endDateStr = format(endDate, "yyyy-MM-dd")
       
       const { data: agendaData, error: agendaError } = await supabase
@@ -614,7 +627,7 @@ export default function AgendaPage() {
     } finally {
       if (showLoader) setLoading(false)
     }
-  }, [agentId, inmobiliariaId, nextWeekDaysCount, supabase, toast])
+  }, [agentId, inmobiliariaId, nextWeekDaysCount, prevWeekDaysCount, supabase, toast])
 
   useEffect(() => {
     fetchAgentAndSchedule()
@@ -1167,7 +1180,7 @@ export default function AgendaPage() {
       await fetchAgentAndSchedule()
 
       // Find day label
-      const allDays = [...currentWeekDays, ...nextWeekDays]
+      const allDays = calendarDays
       const selectedDay = allDays.find(d => d.id === selectedDateStr)
       
       toast({
@@ -1272,7 +1285,7 @@ export default function AgendaPage() {
   }
 
   // Find currently selected day object
-  const allDays = [...currentWeekDays, ...nextWeekDays]
+  const allDays = calendarDays
   const selectedDay = allDays.find(d => d.id === selectedDateStr)
 
   // Find selected agent for display
@@ -1330,57 +1343,26 @@ export default function AgendaPage() {
             <div className="flex flex-col lg:flex-row gap-6 items-start">
               <div className="flex-1 w-full space-y-4">
                 <div>
-                  <h3 className="text-xs font-medium text-muted-foreground mb-2">Semana Actual</h3>
-                  <div className="flex flex-wrap gap-2">
-                    <TabsList className="h-auto bg-transparent p-0 gap-2 flex-wrap justify-start">
-                      {currentWeekDays.map((day) => {
-                        const hasSlots = agendaItems.some(item => item.fecha === day.id)
-                        const visitCount = scheduledVisits.filter(v => format(new Date(v.fecha_de_visita), "yyyy-MM-dd") === day.id).length
-                        
-                        return (
-                          <TabsTrigger
-                            key={day.id}
-                            value={day.id}
-                            disabled={day.disabled}
-                            className={cn(
-                              "group relative flex flex-col items-center justify-center h-14 w-16 rounded-md border border-muted bg-card transition-all",
-                              hasSlots && "border-primary bg-primary/5",
-                              "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary",
-                              day.disabled && "opacity-50 cursor-not-allowed bg-muted/50"
-                            )}
-                          >
-                            {visitCount > 0 && (
-                              <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background z-10">
-                                {visitCount}
-                              </span>
-                            )}
-                            <span className="text-[10px] font-medium uppercase text-muted-foreground group-data-[state=active]:text-primary-foreground/90">
-                              {day.label.split(' ')[0]}
-                            </span>
-                            <span className="text-base font-bold group-data-[state=active]:text-primary-foreground">
-                              {day.label.split(' ')[1]}
-                            </span>
-                          </TabsTrigger>
-                        )
-                      })}
-                    </TabsList>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="text-xs font-medium text-muted-foreground mb-1">Proximas fechas</h3>
+                  <h3 className="text-xs font-medium text-muted-foreground mb-1">Calendario</h3>
                   <div className="space-y-0.5">
                     <div
-                      className="flex gap-2 overflow-y-visible pb-2 pt-1"
-                      onTouchStart={handleNextWeekTouchStart}
-                      onTouchEnd={handleNextWeekTouchEnd}
+                      className="flex flex-col gap-2 overflow-y-visible pb-2 pt-1"
+                      onTouchStart={handleCalendarTouchStart}
+                      onTouchEnd={handleCalendarTouchEnd}
                     >
-                       <TabsList className="h-auto bg-transparent p-0 gap-2 flex-nowrap justify-start w-full">
-                        {visibleNextWeekDays.map((day) => {
+                      <div className="grid grid-cols-7 gap-2 px-1">
+                        {weekDayLabels.map((label) => (
+                          <div key={label} className="text-[10px] font-medium uppercase text-muted-foreground text-center">
+                            {label}
+                          </div>
+                        ))}
+                      </div>
+                      <TabsList className="h-auto bg-transparent p-0 gap-2 grid grid-cols-7 w-full">
+                        {visibleCalendarDays.slice(0, 7).map((day) => {
                           const hasSlots = agendaItems.some(item => item.fecha === day.id)
                           const visitCount = scheduledVisits.filter(v => {
-                             const d = safeDate(v.fecha_de_visita)
-                             return d && format(d, "yyyy-MM-dd") === day.id
+                            const d = safeDate(v.fecha_de_visita)
+                            return d && format(d, "yyyy-MM-dd") === day.id
                           }).length
                           
                           return (
@@ -1389,9 +1371,11 @@ export default function AgendaPage() {
                               value={day.id}
                               disabled={day.disabled}
                               className={cn(
-                                "group relative flex flex-col items-center justify-center h-14 w-16 rounded-md border border-muted bg-card transition-all",
+                                "group relative flex flex-col items-center justify-center h-16 w-full rounded-md border border-muted bg-card transition-all",
                                 hasSlots && "border-primary bg-primary/5",
                                 "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary",
+                                day.isCurrentWeek && "ring-1 ring-primary/40",
+                                day.isPast && "opacity-50 data-[state=active]:opacity-100"
                               )}
                             >
                               {visitCount > 0 && (
@@ -1399,43 +1383,84 @@ export default function AgendaPage() {
                                   {visitCount}
                                 </span>
                               )}
-                              <span className="text-[10px] font-medium uppercase text-muted-foreground group-data-[state=active]:text-primary-foreground/90">
-                                {day.label.split(' ')[0]}
-                              </span>
                               <span className="text-base font-bold group-data-[state=active]:text-primary-foreground">
-                                {day.label.split(' ')[1]}
+                                {format(day.date, "d MMM", { locale: es })}
+                              </span>
+                            </TabsTrigger>
+                          )
+                        })}
+                      </TabsList>
+                      <TabsList className="h-auto bg-transparent p-0 gap-2 grid grid-cols-7 w-full">
+                        {visibleCalendarDays.slice(7, 14).map((day) => {
+                          const hasSlots = agendaItems.some(item => item.fecha === day.id)
+                          const visitCount = scheduledVisits.filter(v => {
+                            const d = safeDate(v.fecha_de_visita)
+                            return d && format(d, "yyyy-MM-dd") === day.id
+                          }).length
+                          
+                          return (
+                            <TabsTrigger
+                              key={day.id}
+                              value={day.id}
+                              disabled={day.disabled}
+                              className={cn(
+                                "group relative flex flex-col items-center justify-center h-16 w-full rounded-md border border-muted bg-card transition-all",
+                                hasSlots && "border-primary bg-primary/5",
+                                "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary",
+                                day.isCurrentWeek && "ring-1 ring-primary/40",
+                                day.isPast && "opacity-50 data-[state=active]:opacity-100"
+                              )}
+                            >
+                              {visitCount > 0 && (
+                                <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-background z-10">
+                                  {visitCount}
+                                </span>
+                              )}
+                              <span className="text-base font-bold group-data-[state=active]:text-primary-foreground">
+                                {format(day.date, "d MMM", { locale: es })}
                               </span>
                             </TabsTrigger>
                           )
                         })}
                       </TabsList>
                     </div>
-                    <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground mt-0.5">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 rounded-full bg-muted/40 hover:bg-muted/60"
-                        disabled={!canShiftPrevNextWeek}
-                        onClick={() => shiftNextWeek(-7)}
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-muted/40">
-                        <span className="font-medium">Proximas fechas</span>
-                        <span className="text-muted-foreground/70">•</span>
-                        <span>Desliza o usa flechas</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground mt-0.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 rounded-md px-3"
+                          disabled={!canShiftPrevCalendar}
+                          onClick={() => shiftCalendar(-7)}
+                        >
+                          Semana anterior
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 rounded-md px-3"
+                          onClick={() => setCalendarOffset(Math.max(0, prevWeekDaysCount))}
+                        >
+                          Semana actual
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 rounded-md px-3"
+                          disabled={!canShiftNextCalendar}
+                          onClick={() => shiftCalendar(7)}
+                        >
+                          Semana siguiente
+                        </Button>
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 rounded-full bg-muted/40 hover:bg-muted/60"
-                        disabled={!canShiftNextNextWeek}
-                        onClick={() => shiftNextWeek(7)}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-muted/40">
+                        <span className="font-medium">Calendario</span>
+                        <span className="text-muted-foreground/70">•</span>
+                        <span>Usa botones</span>
+                      </div>
                     </div>
                   </div>
                 </div>

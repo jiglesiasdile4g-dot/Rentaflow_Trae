@@ -813,6 +813,13 @@ function AgendarVisitaContent() {
                         {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
                         Anular Cita
                      </Button>
+                    <Button
+                       onClick={() => window.location.href = inmobiliaria?.pagina_web || 'https://acesalquiler.com'}
+                       variant="outline"
+                       className="w-full sm:w-auto"
+                    >
+                       Salir
+                    </Button>
                  </CardFooter>
              </Card>
             <AlertDialog open={isCancelConfirmOpen} onOpenChange={setIsCancelConfirmOpen}>

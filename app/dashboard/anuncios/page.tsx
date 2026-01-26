@@ -3792,7 +3792,7 @@ export default function AnunciosPage() {
             Estado: "Visita Propuesta"
           }
 
-          fetch("/api/proponer-visita", {
+          fetch("/api/confirmar-visita", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)

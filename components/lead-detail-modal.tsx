@@ -349,61 +349,64 @@ export function LeadDetailModal({
           })
         }
 
-        if (data && data.length > 0) {
-          // Determine the target anuncio_id for the current lead
-          let targetAnuncioId: string | null = null
-          if (lead && lead.Inmueble) {
-             const ad = advertisements.find(a => 
-               a.Referencia === lead.Inmueble ||
-               a.Direccion === lead.Inmueble ||
-               (lead.Inmueble && a.Direccion && lead.Inmueble.includes(a.Direccion))
-             )
-             if (ad) {
-               targetAnuncioId = ad.ida
-             }
-          }
+        // Determine the target anuncio_id for the current lead
+        let targetAnuncioId: string | null = null
+        if (lead && lead.Inmueble) {
+           const ad = advertisements.find(a => 
+             a.Referencia === lead.Inmueble ||
+             a.Direccion === lead.Inmueble ||
+             (lead.Inmueble && a.Direccion && lead.Inmueble.includes(a.Direccion))
+           )
+           if (ad) {
+             targetAnuncioId = ad.ida
+           }
+        }
 
-          let hasBlockedSlots = false
-          
+        let hasBlockedSlots = false
+        let relevantSlots: any[] = []
+
+        if (data && data.length > 0) {
           // Filter slots relevant to this lead
-          const relevantSlots = data.filter((range: any) => {
+          relevantSlots = data.filter((range: any) => {
              if (range.anuncio_id && targetAnuncioId && String(range.anuncio_id) !== String(targetAnuncioId)) {
                 hasBlockedSlots = true
                 return false
              }
              return true
           })
-
-          // Use shared utility to generate candidates
-          // Map advertisements to AdData shape (already compatible)
-          const candidates = generateSlotCandidates(relevantSlots, advertisements, 20, 5)
-
-          const uniqueSlots = candidates.filter(candidate => {
-             const [h, m] = candidate.time.split(':').map(Number)
-             
-             // Construct start/end time for this candidate slot
-             const slotStart = new Date(`${isoDate}T${candidate.time}`).getTime()
-             const durationMs = candidate.duration * 60000
-             const gapMs = candidate.gap * 60000
-             const slotEnd = slotStart + durationMs + gapMs
-             
-             // Check overlap with busyRanges
-             return !busyRanges.some(range => isOverlapping(slotStart, slotEnd, range.start, range.end))
-          }).map(c => c.time)
-
-          setAvailableSlots(uniqueSlots)
-          
-          if (uniqueSlots.length > 0) {
-            setAvailabilityReason("available")
-          } else if (hasBlockedSlots) {
-            setAvailabilityReason("blocked_by_property")
-          } else {
-             setAvailabilityReason(hasBlockedSlots ? "blocked_by_property" : "no_config") 
-          }
-
         } else {
-          setAvailableSlots([])
-          setAvailabilityReason("no_config")
+          relevantSlots = [{
+            hora_inicio: "07:00",
+            hora_fin: "23:00",
+            anuncio_id: targetAnuncioId,
+          }]
+        }
+
+        // Use shared utility to generate candidates
+        // Map advertisements to AdData shape (already compatible)
+        const candidates = generateSlotCandidates(relevantSlots, advertisements, 20, 5)
+
+        const uniqueSlots = candidates.filter(candidate => {
+           const [h, m] = candidate.time.split(':').map(Number)
+           
+           // Construct start/end time for this candidate slot
+           const slotStart = new Date(`${isoDate}T${candidate.time}`).getTime()
+           const durationMs = candidate.duration * 60000
+           const gapMs = candidate.gap * 60000
+           const slotEnd = slotStart + durationMs + gapMs
+           
+           // Check overlap with busyRanges
+           return !busyRanges.some(range => isOverlapping(slotStart, slotEnd, range.start, range.end))
+        }).map(c => c.time)
+
+        setAvailableSlots(uniqueSlots)
+        
+        if (uniqueSlots.length > 0) {
+          setAvailabilityReason("available")
+        } else if (hasBlockedSlots) {
+          setAvailabilityReason("blocked_by_property")
+        } else {
+           setAvailabilityReason(hasBlockedSlots ? "blocked_by_property" : "no_config") 
         }
       } catch (err) {
         console.error("Error fetching availability:", err)
@@ -1044,7 +1047,10 @@ export function LeadDetailModal({
 
         const { status_history, ...webhookPayload } = payload as any
         
-        fetch("/api/proponer-visita", {
+        const hasConfirmedDate = Boolean(updateData.fecha_de_visita)
+        const endpoint = hasConfirmedDate ? "/api/confirmar-visita" : "/api/proponer-visita"
+
+        fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(webhookPayload)
