@@ -942,7 +942,7 @@ export default function AgendaPage() {
         }
 
         const { date: formattedDate, time: formattedTime } = formatWebhookDate(newDateTimeIso)
-        const bookingLink = `${typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''}/agendar-visita?leadId=${visitToReschedule.id}`
+        const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${visitToReschedule.id}`
         
         // Prepare base lead data excluding status_history
         const leadData = { ...(fullLead || visitToReschedule) }
@@ -1045,7 +1045,7 @@ export default function AgendaPage() {
         }
 
         const { date: formattedDate, time: formattedTime } = formatWebhookDate(visitToCancel.fecha_de_visita)
-        const bookingLink = `${typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''}/agendar-visita?leadId=${visitToCancel.id}`
+        const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${visitToCancel.id}`
         const cancelPayload = {
             "Link de Agendamiento": bookingLink,
             "Nombre de lead": `${fullLead?.Nombre || visitToCancel.Nombre} ${fullLead?.Apellidos || visitToCancel.Apellidos || ''}`.trim(),

@@ -275,8 +275,7 @@ function AgendarVisitaContent() {
                  const { status_history, ...leadWithoutStatusHistory } = lead as any
                  const { date: formattedDate, time: formattedTime } = formatWebhookDate(lead.fecha_de_visita)
 
-                 const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
-                 const bookingLink = `${origin}/agendar-visita?leadId=${lead.id}`
+                 const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
 
                  const payload = {
                     "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
@@ -316,8 +315,7 @@ function AgendarVisitaContent() {
             
             const { date: formattedDate, time: formattedTime } = formatWebhookDate(valueWithOffset)
 
-            const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
-            const bookingLink = `${origin}/agendar-visita?leadId=${lead.id}`
+            const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
 
             const payload = {
                 "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
@@ -380,8 +378,7 @@ function AgendarVisitaContent() {
              const { status_history, ...leadWithoutStatusHistory } = lead as any
              const { date: formattedDate, time: formattedTime } = formatWebhookDate(lead.fecha_de_visita)
 
-             const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
-             const bookingLink = `${origin}/agendar-visita?leadId=${lead.id}`
+             const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
 
              const payload = {
                 "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
@@ -462,8 +459,7 @@ function AgendarVisitaContent() {
             const { status_history, ...leadWithoutStatusHistory } = lead as any
             const { date: formattedDate, time: formattedTime } = formatWebhookDate(valueWithOffset)
             
-            const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
-            const bookingLink = `${origin}/agendar-visita?leadId=${lead.id}`
+            const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
 
             const payload = {
                 "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),

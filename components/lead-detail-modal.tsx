@@ -1010,8 +1010,7 @@ export function LeadDetailModal({
            (lead.Inmueble && a.Direccion === lead.Inmueble)
         )
         
-        const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
-        const bookingLink = `${origin}/agendar-visita?leadId=${lead.id}`
+        const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
 
         // Fetch Inmobiliaria data
         let inmobiliariaData = null
@@ -1116,7 +1115,7 @@ export function LeadDetailModal({
 
         const { date: formattedDate, time: formattedTime } = formatWebhookDate(lead.fecha_de_visita)
 
-        const bookingLink = `${typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''}/agendar-visita?leadId=${lead.id}`
+        const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
 
         const cancelPayload = {
             "Link de Agendamiento": bookingLink,

@@ -3754,8 +3754,7 @@ export default function AnunciosPage() {
              .eq("idag", visitDateDialog.selectedAgenteId)
              .single()
 
-          const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
-          const bookingLink = `${origin}/agendar-visita?leadId=${visitDateDialog.leadId}`
+          const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${visitDateDialog.leadId}`
 
           // Fetch Inmobiliaria data
           let inmobiliariaData = null

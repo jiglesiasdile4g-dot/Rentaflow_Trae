@@ -2653,8 +2653,7 @@ export default function LeadsPage() {
                     // Calculate future slots
                     const futureSlots = await getFutureAvailability(Number(selectedAgenteId), selectedLeadForVisit)
 
-                    const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
-                    const bookingLink = origin ? `${origin}/agendar-visita?leadId=${selectedLeadForVisit.id}` : `https://aces-dashboard.vercel.app/agendar-visita?leadId=${selectedLeadForVisit.id}`
+                    const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${selectedLeadForVisit.id}`
                     
                     // Fetch Inmobiliaria data
                     let inmobiliariaData = null
@@ -2757,8 +2756,7 @@ export default function LeadsPage() {
                 (selectedLeadForVisit.Inmueble && a.Direccion === selectedLeadForVisit.Inmueble)
             )
 
-            const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : ''
-            const bookingLink = origin ? `${origin}/agendar-visita?leadId=${selectedLeadForVisit.id}` : `https://aces-dashboard.vercel.app/agendar-visita?leadId=${selectedLeadForVisit.id}`
+            const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${selectedLeadForVisit.id}`
 
             const cancelPayload = {
                 "Link de Agendamiento": bookingLink,
