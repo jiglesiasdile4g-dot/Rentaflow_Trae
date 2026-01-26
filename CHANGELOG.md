@@ -1,3 +1,19 @@
+## [0.9.3](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.2...v0.9.3) (2026-01-26)
+
+
+### Bug Fixes
+
+* map Observaciones to Obsevaciones ([0d682de](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/0d682deb2bcad8357b908531ea3c1f647a85d8f0))
+* separate propuesta and sugerir webhooks ([c34d27a](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/c34d27a9d8bc3b9c1a86b8e2f75a83b24852f472))
+* update visita propuesta webhook ([f636f78](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/f636f78f88a37c7cef0f7c25fc683cebc8229948))
+
+
+### Features
+
+* agenda y visitas ([6c6ff78](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/6c6ff78f61349ef7c7722a1f8efa7224f5a9440b))
+
+
+
 ## [0.9.2](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.8.7...v0.9.2) (2026-01-24)
 
 
