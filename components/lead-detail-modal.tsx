@@ -20,7 +20,7 @@ import Image from "next/image"
 import { 
   User, Building, Phone, Mail, Euro, FileText, Calendar, 
   MapPin, MessageSquare, Clock, Check, X, Copy, Loader2,
-  Trash2, ExternalLink, RefreshCw, Edit, Plus, Upload, Eye, CalendarIcon, StickyNote
+  Trash2, ExternalLink, RefreshCw, Edit, Plus, Upload, Eye, Download, CalendarIcon, StickyNote
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { cn, formatDateTime, formatWebhookDate } from "@/lib/utils"
@@ -166,6 +166,8 @@ export function LeadDetailModal({
   const [docsUploadLoading, setDocsUploadLoading] = useState(false)
   const [dropActiveDni, setDropActiveDni] = useState(false)
   const dniInputRef = useRef<HTMLInputElement | null>(null)
+  const [dropActiveIngresos, setDropActiveIngresos] = useState(false)
+  const ingresosInputRef = useRef<HTMLInputElement | null>(null)
   
   // Attachment Preview State
   const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
@@ -739,7 +741,7 @@ export function LeadDetailModal({
     const referencia = String(lead.id)
     try {
       const params = new URLSearchParams({ referencia, inmobiliaria: inmo })
-      const res = await fetch(`/api/nextcloud/files?${params.toString()}`)
+      const res = await fetch(`/api/nextcloud/list?${params.toString()}`)
       if (!res.ok) {
         setDocsList([])
       } else {
@@ -818,7 +820,8 @@ export function LeadDetailModal({
 
   const openAttachmentPreview = (url: string, name: string) => {
     const isPdf = /\.pdf$/i.test(name) || url.toLowerCase().includes(".pdf")
-    setAttachmentPreviewUrl(url)
+    const proxied = isPdf ? `/api/proxy/pdf?url=${encodeURIComponent(url)}` : url
+    setAttachmentPreviewUrl(proxied)
     setAttachmentPreviewName(name)
     setAttachmentPreviewKind(isPdf ? "pdf" : "image")
   }
@@ -1975,34 +1978,74 @@ export function LeadDetailModal({
                         <DialogDescription>Subir y gestionar documentos del lead</DialogDescription>
                     </DialogHeader>
                     
-                    <div 
-                        onDragOver={(e) => { e.preventDefault(); setDropActiveDni(true) }}
-                        onDragLeave={() => setDropActiveDni(false)}
-                        onDrop={(e) => {
-                            e.preventDefault(); setDropActiveDni(false);
-                            const files = Array.from(e.dataTransfer.files || [])
-                            files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "dni" : `dni-${idx+1}`))
-                        }}
-                        onClick={() => { if (!docsUploadLoading) { dniInputRef.current?.click() } }}
-                        className={cn(
-                            "border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer transition-colors",
-                            dropActiveDni ? "border-primary bg-primary/5" : "border-muted hover:bg-muted/50"
-                        )}
-                    >
-                        <input
-                            ref={dniInputRef}
-                            type="file"
-                            accept="image/*,application/pdf"
-                            multiple
-                            className="hidden"
-                            onChange={(e) => {
-                                const files = Array.from(e.target.files || [])
-                                files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "dni" : `dni-${idx+1}`))
-                            }}
-                        />
-                        <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-                        <p className="text-sm font-medium">Click o arrastra archivos aquí</p>
-                        <p className="text-xs text-muted-foreground mt-1">PDF o Imágenes</p>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <h4 className="text-sm font-medium">DNI/NIE</h4>
+                            <div 
+                                onDragOver={(e) => { e.preventDefault(); setDropActiveDni(true) }}
+                                onDragLeave={() => setDropActiveDni(false)}
+                                onDrop={(e) => {
+                                    e.preventDefault(); setDropActiveDni(false);
+                                    const files = Array.from(e.dataTransfer.files || [])
+                                    files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "dni" : `dni-${idx+1}`))
+                                }}
+                                onClick={() => { if (!docsUploadLoading) { dniInputRef.current?.click() } }}
+                                className={cn(
+                                    "border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer transition-colors",
+                                    dropActiveDni ? "border-primary bg-primary/5" : "border-muted hover:bg-muted/50"
+                                )}
+                            >
+                                <input
+                                    ref={dniInputRef}
+                                    type="file"
+                                    accept="image/*,application/pdf"
+                                    multiple
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        const files = Array.from(e.target.files || [])
+                                        files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "dni" : `dni-${idx+1}`))
+                                        e.currentTarget.value = ""
+                                    }}
+                                />
+                                <Upload className="h-8 w-8 text-muted-foreground mb-2" />
+                                <p className="text-sm font-medium">Click o arrastra archivos aquí</p>
+                                <p className="text-xs text-muted-foreground mt-1">PDF o Imágenes</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <h4 className="text-sm font-medium">Nóminas</h4>
+                            <div 
+                                onDragOver={(e) => { e.preventDefault(); setDropActiveIngresos(true) }}
+                                onDragLeave={() => setDropActiveIngresos(false)}
+                                onDrop={(e) => {
+                                    e.preventDefault(); setDropActiveIngresos(false);
+                                    const files = Array.from(e.dataTransfer.files || [])
+                                    files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "ingresos" : `ingresos-${idx+1}`))
+                                }}
+                                onClick={() => { if (!docsUploadLoading) { ingresosInputRef.current?.click() } }}
+                                className={cn(
+                                    "border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer transition-colors",
+                                    dropActiveIngresos ? "border-primary bg-primary/5" : "border-muted hover:bg-muted/50"
+                                )}
+                            >
+                                <input
+                                    ref={ingresosInputRef}
+                                    type="file"
+                                    accept="image/*,application/pdf"
+                                    multiple
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        const files = Array.from(e.target.files || [])
+                                        files.forEach((file, idx) => uploadLeadDocWithOverride(file, idx === 0 ? "ingresos" : `ingresos-${idx+1}`))
+                                        e.currentTarget.value = ""
+                                    }}
+                                />
+                                <Upload className="h-8 w-8 text-muted-foreground mb-2" />
+                                <p className="text-sm font-medium">Click o arrastra archivos aquí</p>
+                                <p className="text-xs text-muted-foreground mt-1">PDF o Imágenes</p>
+                            </div>
+                        </div>
                     </div>
 
                     <div className="space-y-2 mt-4">
@@ -2011,24 +2054,30 @@ export function LeadDetailModal({
                             <div className="text-center py-4"><Loader2 className="h-4 w-4 animate-spin mx-auto" /></div>
                         ) : docsList.length > 0 ? (
                             <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                                {docsList.map((file: any) => (
-                                    <div key={file.path} className="flex items-center justify-between p-2 border rounded text-sm">
-                                        <div className="flex items-center gap-2 truncate">
-                                            <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                                            <span className="truncate max-w-[180px]">{file.name}</span>
-                                        </div>
-                                        <div className="flex gap-1">
-                                            <Button variant="ghost" size="icon" className="h-6 w-6" asChild>
-                                                <a href={`/api/nextcloud/file?path=${encodeURIComponent(file.path)}`} target="_blank" rel="noreferrer">
+                                {docsList.map((file: any) => {
+                                    const fileUrl = `/api/nextcloud/file?path=${encodeURIComponent(file.path)}`
+                                    return (
+                                        <div key={file.path} className="flex items-center justify-between p-2 border rounded text-sm">
+                                            <div className="flex items-center gap-2 truncate">
+                                                <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                                <span className="truncate max-w-[180px]">{file.name}</span>
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openAttachmentPreview(fileUrl, file.name)}>
                                                     <Eye className="h-3 w-3" />
+                                                </Button>
+                                                <a href={fileUrl} target="_blank" rel="noreferrer" download>
+                                                    <Button variant="ghost" size="icon" className="h-6 w-6">
+                                                        <Download className="h-3 w-3" />
+                                                    </Button>
                                                 </a>
-                                            </Button>
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:text-red-600" onClick={() => deleteLeadDoc(file.path)}>
-                                                <Trash2 className="h-3 w-3" />
-                                            </Button>
+                                                <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:text-red-600" onClick={() => deleteLeadDoc(file.path)}>
+                                                    <Trash2 className="h-3 w-3" />
+                                                </Button>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    )
+                                })}
                             </div>
                         ) : (
                             <p className="text-xs text-muted-foreground text-center py-2">No hay archivos subidos</p>
@@ -2596,7 +2645,7 @@ export function LeadDetailModal({
                setAttachmentPreviewUrl(null)
                setAttachmentPreviewName("")
             }}>
-              <DialogContent className="z-[10005]">
+              <DialogContent className="z-[80000]" overlayClassName="z-[79999]">
                 <DialogHeader>
                   <DialogTitle>Vista previa de archivo</DialogTitle>
                   <DialogDescription>{attachmentPreviewName}</DialogDescription>

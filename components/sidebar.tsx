@@ -92,7 +92,7 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
   }, [isAdmin, supabase])
 
   return (
-    <div className={cn("bg-[#F8FBF8] border-r border-border flex flex-col h-full transition-all duration-300 overflow-y-auto overflow-x-hidden", collapsed ? "w-[70px] items-center" : "w-64")}>
+    <div className={cn("bg-background border-r border-border flex flex-col h-full transition-all duration-300 overflow-y-auto overflow-x-hidden", collapsed ? "w-[70px] items-center" : "w-64")}>
       {/* Header */}
       <div 
         className={cn(

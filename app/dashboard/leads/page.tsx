@@ -6765,7 +6765,7 @@ export default function LeadsPage() {
       </Dialog>
 
       <Dialog open={!!attachmentPreviewUrl} onOpenChange={closeAttachmentPreview}>
-        <DialogContent className="z-[10005]">
+        <DialogContent className="z-[80000]" overlayClassName="z-[79999]">
           <DialogHeader>
             <DialogTitle>Vista previa de archivo</DialogTitle>
             <DialogDescription>{attachmentPreviewName}</DialogDescription>

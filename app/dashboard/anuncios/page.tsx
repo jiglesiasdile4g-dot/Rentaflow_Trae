@@ -4594,6 +4594,18 @@ export default function AnunciosPage() {
                         }
                         placeholder="Referencia del anuncio"
                       />
+                      <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-800 mt-2">
+                        <div className="flex gap-1.5">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-semibold">Campo crítico:</p>
+                            <p className="mt-0.5">
+                              Este campo debe coincidir exactamente con la &quot;Referencia Interna&quot; de Idealista o Fotocasa para
+                              que los leads se listen correctamente y evitar conflictos.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     <div>
                       <Label htmlFor="codPortal">Código del anuncio</Label>
@@ -4608,6 +4620,18 @@ export default function AnunciosPage() {
                         }
                         placeholder="Código del anuncio en el portal"
                       />
+                      <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-800 mt-2">
+                        <div className="flex gap-1.5">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-semibold">Campo crítico:</p>
+                            <p className="mt-0.5">
+                              Este campo debe coincidir exactamente con la &quot;Referencia Interna&quot; de Idealista o Fotocasa para
+                              que los leads se listen correctamente y evitar conflictos.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     <div>
                       <Label htmlFor="direccion">Dirección</Label>
