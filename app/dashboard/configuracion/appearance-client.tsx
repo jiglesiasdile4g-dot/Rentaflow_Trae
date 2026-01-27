@@ -154,14 +154,6 @@ export function AppearanceSettings({ idi, initialSignature, initialWebsite, canE
         <Switch id="dark-mode" checked={isDark} onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')} />
       </div>
       <Separator />
-      <div className="flex items-center justify-between">
-        <div className="space-y-0.5">
-          <Label htmlFor="compact-view">Vista Compacta</Label>
-          <p className="text-sm text-muted-foreground">Reduce el espaciado en las tablas</p>
-        </div>
-        <Switch id="compact-view" checked={compact} onCheckedChange={toggleCompact} />
-      </div>
-
       {canEdit && idi && (
         <>
           <Separator />

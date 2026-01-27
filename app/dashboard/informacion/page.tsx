@@ -239,11 +239,8 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
     return "bg-card border-muted"
   }
   const computeNextRenewal = (base: Date) => {
-    const y = base.getFullYear()
-    const mNext = base.getMonth() + 1
-    const d = base.getDate()
-    const last = new Date(y, mNext + 1, 0).getDate()
-    return new Date(y, mNext, Math.min(d, last))
+    const msPerDay = 24 * 60 * 60 * 1000
+    return new Date(base.getTime() + 30 * msPerDay)
   }
   const isWhatsappIncluded = (plan: any) => {
     const raw =
@@ -332,30 +329,30 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
       const resetAt = inmobiliariaInfo?.PlanResetAt ? new Date(inmobiliariaInfo.PlanResetAt) : null
       const validReset = resetAt && !isNaN(resetAt.getTime()) ? resetAt : null
-      const start = validReset ? validReset : monthStart
+      const base = validReset ? validReset : monthStart
+      const msPerDay = 24 * 60 * 60 * 1000
+      const msPerPeriod = 30 * msPerDay
+      const diff = now.getTime() - base.getTime()
+      const periodsPassed = diff > 0 ? Math.floor(diff / msPerPeriod) : 0
+      const start = new Date(base.getTime() + periodsPassed * msPerPeriod)
       periodStart = start
-      const dbPeriodEnd = inmobiliariaInfo?.PlanNextEffectiveAt ? new Date(inmobiliariaInfo.PlanNextEffectiveAt) : null
-      periodEnd = dbPeriodEnd && !isNaN(dbPeriodEnd.getTime()) ? dbPeriodEnd : computeNextRenewal(start)
-      const { data: leadsData } = await supabase
-        .from("Clientes")
-        .select("IDC")
-        .eq("usuario", inmobiliariaInfo.idi)
-      const leadIDCs = (leadsData || [])
-        .map((l: any) => l.IDC)
-        .filter((id: any) => Number.isFinite(id))
-      if (leadIDCs.length > 0) {
-        const { data: whatsPeriodo } = await supabase
-          .from("Whatsapp")
-          .select("id, created_at")
-          .in("IDC", leadIDCs)
-          .gte("created_at", start.toISOString())
-          .lt("created_at", now.toISOString())
-          .eq("Tipo", "Enviado")
-        whatsappPeriodoCount = (whatsPeriodo || []).length
-        whatsappPeriodoCost = Number((whatsappPeriodoCount * 0.0327).toFixed(2))
-      }
+      const effectiveEnd = new Date(start.getTime() + msPerPeriod)
+      const displayEnd = new Date(effectiveEnd.getTime() - msPerDay)
+      periodEnd = displayEnd
+      const { data: whatsPeriodo } = await supabase
+        .from("Whatsapp")
+        .select("id, created_at, IDI")
+        .eq("IDI", inmobiliariaInfo.idi)
+        .gte("created_at", start.toISOString())
+        .lt("created_at", effectiveEnd.toISOString())
+        .eq("Tipo", "Enviado")
+
+      whatsappPeriodoCount = (whatsPeriodo || []).length
+      whatsappPeriodoCost = Number((whatsappPeriodoCount * 0.0327).toFixed(2))
     }
-  } catch {}
+  } catch (err) {
+    console.error("[v0] Error calculando métricas de WhatsApp:", err)
+  }
 
   return (
     <div className="p-8">
