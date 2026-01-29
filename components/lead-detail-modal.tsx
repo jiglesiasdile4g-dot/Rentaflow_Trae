@@ -247,15 +247,28 @@ export function LeadDetailModal({
     try {
       const { data, error } = await supabase
         .from("Anuncios")
-        .select("ida, Referencia, Precio, Direccion, duracion_visita, tiempo_entre_visitas")
+        .select("ida, Referencia, Direccion, duracion_visita, tiempo_entre_visitas, Activacion")
         .eq("usuario", inmobiliariaId.toString())
-      
+        .eq("Activacion", "Activo")
+        .order("Referencia")
+
       if (error) {
+        if (error.code === "PGRST204" || error.message.includes("duracion_visita") || error.message.includes("does not exist")) {
+          const { data: dataFallback, error: errorFallback } = await supabase
+            .from("Anuncios")
+            .select("ida, Referencia, Direccion, Activacion")
+            .eq("usuario", inmobiliariaId.toString())
+            .order("Referencia")
+
+          if (!errorFallback) {
+            setAdvertisements(dataFallback || [])
+            return
+          }
+        }
         console.error("Error fetching advertisements:", error)
-        return
+      } else {
+        setAdvertisements(data || [])
       }
-      
-      if (data) setAdvertisements(data)
     } catch (error) {
       console.error("Error fetching advertisements:", error)
     }
@@ -307,108 +320,233 @@ export function LeadDetailModal({
       try {
         const { data, error } = await supabase
           .from("Agendas")
-          .select("hora_inicio, hora_fin, anuncio_id, duracion, gap")
+          .select("hora_inicio, hora_fin, anuncio_id, duracion, gap, fecha")
           .eq("agente_id", selectedAgenteId)
           .eq("fecha", newVisitDateDate)
 
         if (error) throw error
 
-        // Normalize date to ISO YYYY-MM-DD
-        let isoDate = newVisitDateDate
-        if (newVisitDateDate.includes('/')) {
-          const [day, month, year] = newVisitDateDate.split('/')
-          isoDate = `${year}-${month}-${day}`
+        const agendaData = data || []
+        if (agendaData.length === 0) {
+          setAvailableSlots([])
+          setAvailabilityReason("no_config")
+          return
         }
 
-        // Fetch existing visits for the agent on this date
+        const dayAvailability = agendaData
+
+        let effectiveDuration = 20
+        let effectiveGap = 5
+        let relatedAd: any = null
+
+        if (lead && lead.Inmueble && advertisements && advertisements.length > 0) {
+          const leadInmueble = String(lead.Inmueble).toLowerCase()
+          relatedAd = advertisements.find((a) => {
+            const ref = (a.Referencia || "").toLowerCase()
+            const dir = (a.Direccion || "").toLowerCase()
+            return (ref && ref === leadInmueble) ||
+              (dir && dir.includes(leadInmueble)) ||
+              (leadInmueble && dir && leadInmueble.includes(dir))
+          })
+
+          if (relatedAd) {
+            if (typeof relatedAd.duracion_visita === "number") {
+              effectiveDuration = relatedAd.duracion_visita || 20
+            }
+            if (relatedAd.tiempo_entre_visitas !== null && relatedAd.tiempo_entre_visitas !== undefined) {
+              effectiveGap = relatedAd.tiempo_entre_visitas
+            }
+          }
+        }
+
+        if (relatedAd) {
+          const slotForAd = dayAvailability.find((slot: any) => {
+            if (!slot.anuncio_id) return false
+            return String(slot.anuncio_id) === String(relatedAd.ida)
+          })
+          if (slotForAd) {
+            if (slotForAd.duracion) {
+              effectiveDuration = Number(slotForAd.duracion) || effectiveDuration
+            }
+            if (slotForAd.gap !== null && slotForAd.gap !== undefined) {
+              effectiveGap = Number(slotForAd.gap)
+            }
+          }
+        } else {
+          const slotWithDuration = dayAvailability.find((slot: any) => slot.duracion)
+          if (slotWithDuration) {
+            effectiveDuration = Number(slotWithDuration.duracion) || effectiveDuration
+            if (slotWithDuration.gap !== null && slotWithDuration.gap !== undefined) {
+              effectiveGap = Number(slotWithDuration.gap)
+            }
+          }
+        }
+
+        let isoDate = newVisitDateDate
+        if (newVisitDateDate.includes("/")) {
+          const parts = newVisitDateDate.split("/")
+          if (parts.length === 3) {
+            const [day, month, year] = parts
+            isoDate = `${year}-${month}-${day}`
+          }
+        }
+
         const startOfDay = `${isoDate}T00:00:00`
         const endOfDay = `${isoDate}T23:59:59`
-        
+
         const { data: existingVisits } = await supabase
           .from("Clientes")
-          .select("fecha_de_visita, Inmueble")
+          .select("id, fecha_de_visita, Inmueble")
           .eq("idag", selectedAgenteId)
           .gte("fecha_de_visita", startOfDay)
           .lte("fecha_de_visita", endOfDay)
-          
-        const busyRanges: { start: number, end: number }[] = []
-        if (existingVisits) {
-          existingVisits.forEach((v: any) => {
-            if (v.fecha_de_visita) {
-              const start = new Date(v.fecha_de_visita).getTime()
-              // Find ad for this visit to get duration
-              const visitAd = advertisements.find(a => 
-                a.Referencia === v.Inmueble || 
-                a.Direccion === v.Inmueble ||
-                (v.Inmueble && a.Direccion && v.Inmueble.includes(a.Direccion)) ||
-                (v.Inmueble && a.Referencia && v.Inmueble.includes(a.Referencia))
-              )
-              // Fix property accessors and defaults (20/5)
-              const dur = (visitAd?.duracion_visita || 20) * 60000
-              const gap = (visitAd?.tiempo_entre_visitas ?? 5) * 60000
-              busyRanges.push({ start, end: start + dur + gap })
+
+        const visitsOnDay = (existingVisits || []).filter((v: any) => {
+          if (!v.fecha_de_visita) return false
+          if (!lead) return true
+          return v.id !== lead.id
+        })
+
+        const baseCandidates = generateSlotCandidates(dayAvailability, advertisements, effectiveDuration, effectiveGap)
+
+        const boundaryTimesSet = new Set<string>()
+        dayAvailability.forEach((slot: any) => {
+          if (!slot.hora_inicio || !slot.hora_fin) return
+          const startStr = String(slot.hora_inicio).slice(0, 5)
+          const endStr = String(slot.hora_fin).slice(0, 5)
+          const [sH, sM] = startStr.split(":").map(Number)
+          const [eH, eM] = endStr.split(":").map(Number)
+          const slotStart = sH * 60 + sM
+          const slotEnd = eH * 60 + eM
+
+          visitsOnDay.forEach((v: any) => {
+            if (!v.fecha_de_visita) return
+            const d = new Date(v.fecha_de_visita)
+            if (isNaN(d.getTime())) return
+            const vH = d.getHours()
+            const vM = d.getMinutes()
+            const vStart = vH * 60 + vM
+
+            let vDuration = effectiveDuration
+            let configFound = false
+
+            const matchingAgendaItem = dayAvailability.find((item: any) => {
+              if (!item.hora_inicio || !item.hora_fin) return false
+              const [sh, sm] = String(item.hora_inicio).slice(0, 5).split(":").map(Number)
+              const [eh, em] = String(item.hora_fin).slice(0, 5).split(":").map(Number)
+              const aStart = sh * 60 + sm
+              const aEnd = eh * 60 + em
+              return vStart >= aStart && vStart < aEnd
+            })
+
+            if (matchingAgendaItem) {
+              if (matchingAgendaItem.duracion) {
+                vDuration = Number(matchingAgendaItem.duracion)
+                configFound = true
+              } else if (matchingAgendaItem.anuncio_id) {
+                const ad = advertisements.find((a) => String(a.ida) === String(matchingAgendaItem.anuncio_id))
+                if (ad && typeof ad.duracion_visita === "number") {
+                  vDuration = ad.duracion_visita || vDuration
+                  configFound = true
+                }
+              }
+            }
+
+            if (!configFound && v.Inmueble && advertisements && advertisements.length > 0) {
+              const vInmueble = String(v.Inmueble).toLowerCase()
+              const vAd = advertisements.find((a) => {
+                const ref = (a.Referencia || "").toLowerCase()
+                const dir = (a.Direccion || "").toLowerCase()
+                return (ref && ref === vInmueble) ||
+                  (dir && dir.includes(vInmueble)) ||
+                  (vInmueble && dir && vInmueble.includes(dir))
+              })
+              if (vAd && typeof vAd.duracion_visita === "number") {
+                vDuration = vAd.duracion_visita || vDuration
+              }
+            }
+
+            const vEndVisit = vStart + vDuration
+            if (vEndVisit >= slotStart && (vEndVisit + effectiveDuration + effectiveGap) <= slotEnd) {
+              const h = Math.floor(vEndVisit / 60)
+              const m = vEndVisit % 60
+              const timeStr = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`
+              boundaryTimesSet.add(timeStr)
             }
           })
-        }
+        })
 
-        // Determine the target anuncio_id for the current lead
-        let targetAnuncioId: string | null = null
-        if (lead && lead.Inmueble) {
-           const ad = advertisements.find(a => 
-             a.Referencia === lead.Inmueble ||
-             a.Direccion === lead.Inmueble ||
-             (lead.Inmueble && a.Direccion && lead.Inmueble.includes(a.Direccion))
-           )
-           if (ad) {
-             targetAnuncioId = ad.ida
-           }
-        }
+        const unionTimesSet = new Set<string>(baseCandidates.map(c => c.time))
+        boundaryTimesSet.forEach(t => unionTimesSet.add(t))
 
-        let hasBlockedSlots = false
-        let relevantSlots: any[] = []
+        const unionTimes = Array.from(unionTimesSet).sort((a, b) => {
+          const [ah, am] = a.split(":").map(Number)
+          const [bh, bm] = b.split(":").map(Number)
+          return ah * 60 + am - (bh * 60 + bm)
+        })
 
-        if (data && data.length > 0) {
-          // Filter slots relevant to this lead
-          relevantSlots = data.filter((range: any) => {
-             if (range.anuncio_id && targetAnuncioId && String(range.anuncio_id) !== String(targetAnuncioId)) {
-                hasBlockedSlots = true
-                return false
-             }
-             return true
+        const finalTimes = unionTimes.filter((t) => {
+          const [th, tm] = t.split(":").map(Number)
+          const tStart = th * 60 + tm
+          const tEndVisit = tStart + effectiveDuration
+          return !visitsOnDay.some((v: any) => {
+            if (!v.fecha_de_visita) return false
+            const d = new Date(v.fecha_de_visita)
+            if (isNaN(d.getTime())) return false
+            const vH = d.getHours()
+            const vM = d.getMinutes()
+            const vStart = vH * 60 + vM
+
+            let vDuration = effectiveDuration
+            let configFound = false
+
+            const matchingAgendaItem = dayAvailability.find((item: any) => {
+              if (!item.hora_inicio || !item.hora_fin) return false
+              const [sh, sm] = String(item.hora_inicio).slice(0, 5).split(":").map(Number)
+              const [eh, em] = String(item.hora_fin).slice(0, 5).split(":").map(Number)
+              const aStart = sh * 60 + sm
+              const aEnd = eh * 60 + em
+              return vStart >= aStart && vStart < aEnd
+            })
+
+            if (matchingAgendaItem) {
+              if (matchingAgendaItem.duracion) {
+                vDuration = Number(matchingAgendaItem.duracion)
+                configFound = true
+              } else if (matchingAgendaItem.anuncio_id) {
+                const ad = advertisements.find((a) => String(a.ida) === String(matchingAgendaItem.anuncio_id))
+                if (ad && typeof ad.duracion_visita === "number") {
+                  vDuration = ad.duracion_visita || vDuration
+                  configFound = true
+                }
+              }
+            }
+
+            if (!configFound && v.Inmueble && advertisements && advertisements.length > 0) {
+              const vInmueble = String(v.Inmueble).toLowerCase()
+              const vAd = advertisements.find((a) => {
+                const ref = (a.Referencia || "").toLowerCase()
+                const dir = (a.Direccion || "").toLowerCase()
+                return (ref && ref === vInmueble) ||
+                  (dir && dir.includes(vInmueble)) ||
+                  (vInmueble && dir && vInmueble.includes(dir))
+              })
+              if (vAd && typeof vAd.duracion_visita === "number") {
+                vDuration = vAd.duracion_visita || vDuration
+              }
+            }
+
+            const vEndVisit = vStart + vDuration
+            return isOverlapping(tStart, tEndVisit, vStart, vEndVisit)
           })
-        } else {
-          relevantSlots = [{
-            hora_inicio: "07:00",
-            hora_fin: "23:00",
-            anuncio_id: targetAnuncioId,
-          }]
-        }
+        })
 
-        // Use shared utility to generate candidates
-        // Map advertisements to AdData shape (already compatible)
-        const candidates = generateSlotCandidates(relevantSlots, advertisements, 20, 5)
+        setAvailableSlots(finalTimes)
 
-        const uniqueSlots = candidates.filter(candidate => {
-           const [h, m] = candidate.time.split(':').map(Number)
-           
-           // Construct start/end time for this candidate slot
-           const slotStart = new Date(`${isoDate}T${candidate.time}`).getTime()
-           const durationMs = candidate.duration * 60000
-           const gapMs = candidate.gap * 60000
-           const slotEnd = slotStart + durationMs + gapMs
-           
-           // Check overlap with busyRanges
-           return !busyRanges.some(range => isOverlapping(slotStart, slotEnd, range.start, range.end))
-        }).map(c => c.time)
-
-        setAvailableSlots(uniqueSlots)
-        
-        if (uniqueSlots.length > 0) {
+        if (finalTimes.length > 0) {
           setAvailabilityReason("available")
-        } else if (hasBlockedSlots) {
-          setAvailabilityReason("blocked_by_property")
         } else {
-           setAvailabilityReason(hasBlockedSlots ? "blocked_by_property" : "no_config") 
+          setAvailabilityReason("no_config")
         }
       } catch (err) {
         console.error("Error fetching availability:", err)
@@ -2168,11 +2306,6 @@ export function LeadDetailModal({
                         )}
                       </div>
                     </div>
-                    {availabilityReason === "blocked_by_property" && (
-                       <p className="text-xs text-amber-600 mt-1">
-                         ⚠️ Este horario está reservado para otro inmueble.
-                       </p>
-                    )}
                   </div>
                 </div>
                 <div className="flex justify-between">

@@ -180,30 +180,34 @@ function AgendarVisitaContent() {
         const dayAgenda = agendaData.filter((a: AgendaItem) => a.fecha === date)
         const dayVisits = existingVisits?.filter((v: any) => v.fecha_de_visita?.startsWith(date)) || []
 
-        // Calculate busy ranges
         const busyRanges: { start: number, end: number }[] = []
-        
+
         dayVisits.forEach((v: any) => {
-            if (v.fecha_de_visita) {
-                const start = new Date(v.fecha_de_visita).getTime()
-                // Find ad duration for THIS visit
-                let dur = 30 * 60000
-                let gap = 0
-                
-                if (allAds) {
-                    const visitAd = allAds.find((a: any) => 
-                        a.Referencia === v.Inmueble || 
-                        a.Direccion === v.Inmueble ||
-                        (v.Inmueble && a.Direccion && v.Inmueble.includes(a.Direccion))
-                    )
-                    if (visitAd) {
-                        dur = (visitAd.Duracion_visita || visitAd.duracion_visita || 30) * 60000
-                        gap = (visitAd.Gap_visita || visitAd.tiempo_entre_visitas || 0) * 60000
-                    }
-                }
-                
-                busyRanges.push({ start, end: start + dur + gap })
+          if (v.fecha_de_visita) {
+            const visitDate = new Date(v.fecha_de_visita)
+            const startMinutes = visitDate.getHours() * 60 + visitDate.getMinutes()
+
+            let durMinutes = 30
+            let gapMinutes = 0
+
+            if (allAds) {
+              const visitAd = allAds.find(
+                (a: any) =>
+                  a.Referencia === v.Inmueble ||
+                  a.Direccion === v.Inmueble ||
+                  (v.Inmueble && a.Direccion && v.Inmueble.includes(a.Direccion)),
+              )
+              if (visitAd) {
+                durMinutes = visitAd.Duracion_visita || visitAd.duracion_visita || 30
+                gapMinutes = visitAd.Gap_visita || visitAd.tiempo_entre_visitas || 0
+              }
             }
+
+            busyRanges.push({
+              start: startMinutes,
+              end: startMinutes + durMinutes + gapMinutes,
+            })
+          }
         })
 
         // Filter agenda items relevant to currentAd
@@ -225,19 +229,17 @@ function AgendarVisitaContent() {
         const now = new Date()
 
         candidates.forEach(candidate => {
-            // Note: candidate.time is "HH:MM"
-            const slotStart = new Date(`${date}T${candidate.time}`).getTime()
-            
-            // Total duration blocked by this slot (visit + gap)
-            const totalDur = (candidate.duration + candidate.gap) * 60000
-            const slotEnd = slotStart + totalDur
+          const [h, m] = candidate.time.split(":").map(Number)
+          const slotStart = h * 60 + m
+          const slotEnd = slotStart + candidate.duration + candidate.gap
 
-            const isBusy = busyRanges.some(r => isOverlapping(slotStart, slotEnd, r.start, r.end))
-            const isPast = new Date(`${date}T${candidate.time}`).getTime() < now.getTime()
+          const candidateDateTime = new Date(`${date}T${candidate.time}`).getTime()
+          const isBusy = busyRanges.some(r => isOverlapping(slotStart, slotEnd, r.start, r.end))
+          const isPast = candidateDateTime < now.getTime()
 
-            if (!isBusy && !isPast) {
-                validSlots.push(candidate.time)
-            }
+          if (!isBusy && !isPast) {
+            validSlots.push(candidate.time)
+          }
         })
 
         if (validSlots.length > 0) {

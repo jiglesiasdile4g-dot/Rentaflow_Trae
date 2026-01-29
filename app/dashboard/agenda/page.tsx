@@ -1895,7 +1895,7 @@ export default function AgendaPage() {
       </Dialog>
 
       <Dialog open={rescheduleDialogOpen} onOpenChange={setRescheduleDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[425px] z-[70000]">
           <DialogHeader>
             <DialogTitle>Reprogramar Visita</DialogTitle>
             <DialogDescription>
