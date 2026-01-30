@@ -6537,7 +6537,7 @@ export default function LeadsPage() {
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         <SelectValue placeholder={loadingDates ? "Cargando..." : "Seleccionar fecha"} />
                       </SelectTrigger>
-                      <SelectContent className="max-h-[300px] z-[40000]">
+                      <SelectContent className="max-h-[300px] z-[80000]">
                       {availableDates.length > 0 ? (
                         availableDates.map((dateStr) => (
                           <SelectItem key={dateStr} value={dateStr}>
@@ -6575,7 +6575,7 @@ export default function LeadsPage() {
                             "Sin disponibilidad"
                           } />
                           </SelectTrigger>
-                          <SelectContent className="max-h-[200px] z-[40000]">
+                          <SelectContent className="max-h-[200px] z-[80000]">
                             {availableSlots.length > 0 ? (
                               availableSlots.map(slot => (
                                 <SelectItem key={slot} value={slot}>{slot}</SelectItem>
