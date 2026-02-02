@@ -3,9 +3,11 @@
 import { useState } from "react"
 import { getMissingPersonalFields } from "@/lib/lead-validation"
 import { CheckCircle, AlertCircle } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 import {
   AlertDialog,
   AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -15,18 +17,29 @@ import {
 
 export interface ApproveButtonProps {
   lead: any | null
-  onApproved?: () => void
+  updateLeadStatus: (id: number, status: string) => Promise<void>
+  onLeadUpdated: (updatedLead: any) => void
 }
 
-export function ApproveCandidateButton({ lead, onApproved }: ApproveButtonProps) {
+export function ApproveCandidateButton({ lead, updateLeadStatus, onLeadUpdated }: ApproveButtonProps) {
   const [showMissingFieldsAlert, setShowMissingFieldsAlert] = useState(false)
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [missingFields, setMissingFields] = useState<string[]>([])
+  const { toast } = useToast()
+  
+  // Calcular si está aprobado basado en el estado actual del lead
+  const isApproved = lead?.Estado === "Aceptado"
 
   async function handleClick() {
     console.log("[v0] ApproveCandidateButton clicked")
 
     if (!lead) {
       console.log("[v0] No lead selected")
+      return
+    }
+
+    if (isApproved) {
+      console.log("[v0] Already approved, skipping")
       return
     }
 
@@ -41,8 +54,25 @@ export function ApproveCandidateButton({ lead, onApproved }: ApproveButtonProps)
       return
     }
 
-    console.log("[v0] All fields complete, calling onApproved")
-    onApproved?.()
+    console.log("[v0] All fields complete, showing confirmation dialog")
+    setShowConfirmDialog(true)
+  }
+
+  async function handleConfirmApproval() {
+    console.log("[v0] User confirmed approval")
+    setShowConfirmDialog(false)
+    
+    if (lead) {
+      console.log("[v0] Updating lead status to Aceptado")
+      await updateLeadStatus(lead.id, "Aceptado")
+      onLeadUpdated({ ...lead, Estado: "Aceptado" })
+      console.log("[v0] Lead approved successfully")
+      
+      toast({
+        title: "Candidato aprobado",
+        description: "El estado ha sido cambiado a Aprobado y se ha enviado un correo de notificación.",
+      })
+    }
   }
 
   return (
@@ -56,22 +86,26 @@ export function ApproveCandidateButton({ lead, onApproved }: ApproveButtonProps)
           padding: "0.5rem 1rem",
           fontSize: "0.875rem",
           fontWeight: "500",
-          color: "#10b981",
-          backgroundColor: "transparent",
-          border: "1px solid #10b981",
+          color: isApproved ? "#16a34a" : "#10b981",
+          backgroundColor: isApproved ? "#dcfce7" : "transparent",
+          border: isApproved ? "1px solid #22c55e" : "1px solid #10b981",
           borderRadius: "0.375rem",
-          cursor: "pointer",
+          cursor: isApproved ? "default" : "pointer",
           transition: "all 0.2s",
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = "#10b98110"
+          if (!isApproved) {
+            e.currentTarget.style.backgroundColor = "#10b98110"
+          }
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = "transparent"
+          if (!isApproved) {
+            e.currentTarget.style.backgroundColor = "transparent"
+          }
         }}
       >
         <CheckCircle size={16} />
-        Aprobar Candidato
+        {isApproved ? "Candidato Aprobado" : "Aprobar Candidato"}
       </button>
 
       <AlertDialog open={showMissingFieldsAlert} onOpenChange={setShowMissingFieldsAlert}>
@@ -98,6 +132,27 @@ export function ApproveCandidateButton({ lead, onApproved }: ApproveButtonProps)
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogAction onClick={() => setShowMissingFieldsAlert(false)}>Entendido</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent style={{ zIndex: 30000 }}>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-orange-600">
+              <AlertCircle className="h-5 w-5" />
+              Confirmar cambio de estado
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base">
+              ¿Estás seguro de cambiar el estado?
+              <br />
+              <br />
+              Cambiar el estado a &quot;Aprobado&quot; activará notificaciones automáticas y otros procesos asociados a este lead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowConfirmDialog(false)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmApproval}>Aprobar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

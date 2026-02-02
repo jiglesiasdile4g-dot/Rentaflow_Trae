@@ -2,7 +2,7 @@
 
 import { createAnuncioAction } from "@/app/actions/anuncios"
 import { createClient } from "@/lib/supabase/client"
-import { useEffect, useState, useRef, useCallback } from "react"
+import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { useRouter, usePathname } from 'next/navigation'
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -26,7 +26,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
-import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink, Copy, History as HistoryIcon } from 'lucide-react'
+import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink, Copy, History as HistoryIcon, MessageSquare } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { loadStripe, type Stripe as StripeJS } from "@stripe/stripe-js"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
@@ -53,6 +53,7 @@ interface AnuncioCard {
   fotoUrl: string // From Anuncios.Foto_Url
   adjuntos?: string[]
   created_at?: string // From Anuncios.created_at
+  whatsapp_activo?: boolean // From Anuncios.whatsapp_activo
   // Calculated metrics
   nuevosHoy: number // Count where created_at is today
   emailsEnviados: number // Count from Correos table
@@ -193,6 +194,7 @@ export default function AnunciosPage() {
   const [showInfoFaqsModal, setShowInfoFaqsModal] = useState(false)
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [selectedAnuncioForStats, setSelectedAnuncioForStats] = useState<AnuncioCard & { statsPeriod?: string } | null>(null)
+  const whatsappActivoRef = useRef<boolean | undefined>(undefined)
   const [statsLeads, setStatsLeads] = useState<any[]>([]) // Leads for the currently selected stats anuncio
   const [showArchiveDialog, setShowArchiveDialog] = useState(false)
   const [archivingAnuncio, setArchivingAnuncio] = useState<AnuncioCard | null>(null)
@@ -610,6 +612,11 @@ export default function AnunciosPage() {
   const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
   const [attachmentPreviewKind, setAttachmentPreviewKind] = useState<"pdf" | "image" | "unknown">("unknown")
   const [attachmentPreviewName, setAttachmentPreviewName] = useState<string>("")
+  
+  // Variables de paginación
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage] = useState(20)
+  const [totalPages, setTotalPages] = useState(1)
 
   
 
@@ -1369,7 +1376,7 @@ export default function AnunciosPage() {
         })
         setShowArchiveDialog(false)
         setArchivingAnuncio(null)
-        await fetchAnuncios() // Refresh the list
+        await fetchAnuncios(undefined, currentPage) // Refresh the list
       }
     } catch (err) {
       console.log("[v0] Error in handleArchiveAnuncio:", err)
@@ -1396,7 +1403,7 @@ export default function AnunciosPage() {
           title: "Éxito",
           description: "Anuncio desarchivado correctamente",
         })
-        await fetchAnuncios() // Refresh the list
+        await fetchAnuncios(undefined, currentPage) // Refresh the list
       }
     } catch (err) {
       console.log("[v0] Error in handleUnarchiveAnuncio:", err)
@@ -1435,7 +1442,7 @@ export default function AnunciosPage() {
         })
         setShowDeleteDialog(false)
         setDeletingAnuncio(null)
-        await fetchAnuncios() // Refresh the list
+        await fetchAnuncios(undefined, currentPage) // Refresh the list
       }
     } catch (err) {
       console.log("[v0] Error in handleDeleteAnuncio:", err)
@@ -1621,9 +1628,9 @@ export default function AnunciosPage() {
     return null
   }, [supabase])
 
-  const fetchAnuncios = useCallback(async (signal?: AbortSignal) => {
+  const fetchAnuncios = useCallback(async (signal?: AbortSignal, page: number = 1) => {
     try {
-      console.log("[v0] Fetching anuncios from database with proper schema mapping...")
+      console.log(`[v0] Fetching anuncios from database with proper schema mapping... Page: ${page}`)
       setLoading(true)
       setCardsLoading(true)
 
@@ -1656,11 +1663,15 @@ export default function AnunciosPage() {
 
       console.log("[v0] Filtering anuncios by agency IDI (inmobiliariaId):", inmobiliariaId)
 
+      // Calcular offset para paginación
+      const offset = (page - 1) * itemsPerPage
+
       let query = supabase
         .from("Anuncios")
-        .select("ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion, duracion_visita, tiempo_entre_visitas")
+        .select("ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion, duracion_visita, tiempo_entre_visitas, whatsapp_activo")
         .order("created_at", { ascending: false })
         .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
+        .range(offset, offset + itemsPerPage - 1) // Límite de 20 anuncios por página
       
       if (signal) query = query.abortSignal(signal)
 
@@ -1698,9 +1709,18 @@ export default function AnunciosPage() {
 
       console.log("[v0] Anuncios fetched for agency IDI", inmobiliariaId, ":", anuncios?.length || 0)
 
+      // Obtener el total de anuncios para la paginación
+      const { count: totalCount } = await supabase
+        .from("Anuncios")
+        .select("*", { count: "exact", head: true })
+        .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
+
+      const totalAnunciosCount = totalCount || 0
+      setTotalAnuncios(totalAnunciosCount)
+      setTotalPages(Math.ceil(totalAnunciosCount / itemsPerPage))
+
       if (!anuncios || anuncios.length === 0) {
         setAnunciosCards([])
-        setTotalAnuncios(0)
         setTotalLeads(0)
         setTotalCompletos(0)
         setTotalEjecuciones(0)
@@ -1720,6 +1740,7 @@ export default function AnunciosPage() {
       const now = new Date()
       const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) // Límite de 30 días para optimizar
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
       let cutoffDate = planResetAt ? planResetAt : monthStart
       if (inmobiliariaId) {
@@ -1757,6 +1778,7 @@ export default function AnunciosPage() {
       let allLeadsRaw: any[] = []
 
       // Fetch leads in parallel (by IDI and by Property Name) to ensure we catch everything
+      // Con límite de 30 días para optimizar el rendimiento
       let qIdi = inmobiliariaId 
         ? supabase
             .from("Clientes")
@@ -1764,6 +1786,7 @@ export default function AnunciosPage() {
               "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos, Inmueble",
             )
             .eq("usuario", inmobiliariaId)
+            .gte("created_at", thirtyDaysAgo.toISOString()) // Solo últimos 30 días
         : null
       
       if (qIdi && signal) qIdi = qIdi.abortSignal(signal)
@@ -1777,6 +1800,7 @@ export default function AnunciosPage() {
               "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos, Inmueble",
             )
             .in("Inmueble", propertyIdentifiers)
+            .gte("created_at", thirtyDaysAgo.toISOString()) // Solo últimos 30 días
         : null
       
       if (qProp && signal) qProp = qProp.abortSignal(signal)
@@ -1807,17 +1831,21 @@ export default function AnunciosPage() {
       if (allEmails.length > 0) {
         // Fetch in chunks to avoid URL limits
         const chunks = []
-        // Reduced chunk size from 500 to 50 to prevent "URI too long" errors
-        for (let i = 0; i < allEmails.length; i += 50) {
-          chunks.push(allEmails.slice(i, i + 50))
+        // Reduced chunk size from 50 to 20 to prevent "URI too long" errors with long email addresses
+        for (let i = 0; i < allEmails.length; i += 20) {
+          chunks.push(allEmails.slice(i, i + 20))
         }
         for (const chunk of chunks) {
           if (signal?.aborted) break
-          let q = supabase.from("Correos").select("id, created_at, to, Tipo").in("to", chunk)
+          let q = supabase.from("Correos").select("id, created_at, to, Tipo").in("to", chunk).gte("created_at", thirtyDaysAgo.toISOString()) // Solo últimos 30 días
           if (signal) q = q.abortSignal(signal)
           const { data, error } = await q
           if (error) {
              console.log("[v0] Error fetching emails chunk:", error)
+             if (error.message.includes('URI too long')) {
+               console.log("[v0] URI too long error - consider reducing chunk size further")
+             }
+             // Continue with other chunks but log the error
           }
           if (data) allCorreosRaw.push(...data)
         }
@@ -1828,17 +1856,21 @@ export default function AnunciosPage() {
       let allWhatsappRaw: any[] = []
       if (allIDCs.length > 0) {
         const chunks = []
-        // Reduced chunk size from 500 to 50
-        for (let i = 0; i < allIDCs.length; i += 50) {
-          chunks.push(allIDCs.slice(i, i + 50))
+        // Reduced chunk size from 50 to 20 to prevent "URI too long" errors
+        for (let i = 0; i < allIDCs.length; i += 20) {
+          chunks.push(allIDCs.slice(i, i + 20))
         }
         for (const chunk of chunks) {
           if (signal?.aborted) break
-          let q = supabase.from("Whatsapp").select("id, created_at, IDC, Tipo").in("IDC", chunk)
+          let q = supabase.from("Whatsapp").select("id, created_at, IDC, Tipo").in("IDC", chunk).gte("created_at", thirtyDaysAgo.toISOString()) // Solo últimos 30 días
           if (signal) q = q.abortSignal(signal)
           const { data, error } = await q
           if (error) {
              console.log("[v0] Error fetching whatsapp chunk:", error)
+             if (error.message.includes('URI too long')) {
+               console.log("[v0] URI too long error - consider reducing chunk size further")
+             }
+             // Continue with other chunks but log the error
           }
           if (data) allWhatsappRaw.push(...data)
         }
@@ -2076,6 +2108,7 @@ export default function AnunciosPage() {
           fechaCreacion: fechaCreacion, // Add fechaCreacion
           created_at: anuncio.created_at,
           fecha_activacion: anuncio.fecha_activacion || null,
+          whatsapp_activo: anuncio.whatsapp_activo ?? true,
           descartados, // Added descartados
           Fecha_Activacion_Programada: anuncio.Fecha_Activacion_Programada || null, // Pass scheduled date
           phaseMetrics: {
@@ -2190,7 +2223,10 @@ export default function AnunciosPage() {
         await fetchAgentes(inmobiliariaId, controller.signal)
       }
       run()
-      return () => controller.abort()
+      return () => {
+        // Delay abort to allow requests to complete
+        setTimeout(() => controller.abort(), 5000)
+      }
     } else {
       console.log("[DEBUG] Skipping fetch calls - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
     }
@@ -2281,12 +2317,22 @@ export default function AnunciosPage() {
       emailsEnviadosCount = emailsEnviados
       
       if (leadIDCs.length > 0 && statsWhatsapps.length > 0) {
-         whatsappsEnviados = statsWhatsapps.filter((w) => 
+         const matchingWhatsapps = statsWhatsapps.filter((w) => 
            leadIDCs.includes(w.IDC) && 
            w.Tipo === "Enviado" &&
            new Date(w.created_at) >= startDate && 
            new Date(w.created_at) <= endDate
-         ).length
+         )
+         whatsappsEnviados = matchingWhatsapps.length
+         
+         console.log("[v0] Debug Consumption: WhatsApp counts", {
+           statsPeriod,
+           totalMatchingWhatsapps: matchingWhatsapps.length,
+           leadIDCsCount: leadIDCs.length,
+           statsWhatsappsCount: statsWhatsapps.length,
+           startDate,
+           endDate
+         })
       }
       
       sentMessagesCount = emailsEnviados + whatsappsEnviados
@@ -2306,8 +2352,8 @@ export default function AnunciosPage() {
   }, [selectedAnuncioForStats, statsPeriod, showStatsModal, statsLeads, planLimit, planResetAt, statsEmails, statsWhatsapps])
 
   useEffect(() => {
-    fetchAnuncios()
-  }, [metricsPeriod, fetchAnuncios])
+    fetchAnuncios(undefined, currentPage)
+  }, [metricsPeriod, fetchAnuncios, currentPage])
 
   const handleToggleEstado = async (anuncioId: string, currentActivacion: string) => {
     setProcessingId(anuncioId)
@@ -2428,7 +2474,7 @@ export default function AnunciosPage() {
           }
         }
         // Refresh anuncios to update counts
-        await fetchAnuncios()
+        await fetchAnuncios(undefined, currentPage)
       }
     } catch (err) {
       console.log("[v0] Error in handleProgramarVisita:", err)
@@ -2513,12 +2559,60 @@ export default function AnunciosPage() {
           description: `Anuncio ${newActivacion.toLowerCase()}`,
         })
         // Refrescar datos
-        await fetchAnuncios()
+        await fetchAnuncios(undefined, currentPage)
       }
     } catch (err) {
       toast({
         title: "Error",
         description: "Error al procesar el anuncio",
+        variant: "destructive",
+      })
+    } finally {
+      setProcessingId(null)
+    }
+  }
+
+  const handleDetenerWhatsApps = async (anuncioId: string, currentStatus?: boolean) => {
+    setProcessingId(anuncioId)
+    try {
+      console.log("[DEBUG] handleDetenerWhatsApps - anuncioId:", anuncioId, "currentStatus:", currentStatus)
+      // Si no se proporciona el estado actual, lo obtenemos del anuncio
+      let isCurrentlyActive = currentStatus;
+      if (isCurrentlyActive === undefined) {
+        const anuncio = anuncios.find(a => a.id === anuncioId);
+        isCurrentlyActive = anuncio?.whatsapp_activo ?? true;
+        console.log("[DEBUG] handleDetenerWhatsApps - anuncio encontrado:", anuncio, "isCurrentlyActive:", isCurrentlyActive)
+      }
+      
+      const newStatus = !isCurrentlyActive;
+      console.log("[DEBUG] handleDetenerWhatsApps - newStatus:", newStatus)
+      const actionText = newStatus ? "activar" : "detener";
+      
+      const { error } = await supabase
+        .from("Anuncios")
+        .update({ whatsapp_activo: newStatus })
+        .eq("ida", anuncioId)
+
+      console.log("[DEBUG] handleDetenerWhatsApps - Resultado de la actualización:", { error })
+
+      if (error) {
+        toast({
+          title: "Error",
+          description: `No se pudo ${actionText} el envío de WhatsApps`,
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Éxito",
+          description: `Envío de WhatsApps ${actionText}do`,
+        })
+        // Refrescar datos
+        await fetchAnuncios(undefined, currentPage)
+      }
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: "Error al actualizar el envío de WhatsApps",
         variant: "destructive",
       })
     } finally {
@@ -2619,12 +2713,12 @@ export default function AnunciosPage() {
         console.log("[v0] Changes saved with fallback")
         toast({ title: "Éxito", description: "Anuncio actualizado correctamente" })
         setEditingAnuncio(null)
-        await fetchAnuncios()
+        await fetchAnuncios(undefined, currentPage)
       } else {
         console.log("[v0] Changes saved successfully")
         toast({ title: "Éxito", description: "Anuncio actualizado correctamente" })
         setEditingAnuncio(null)
-        await fetchAnuncios()
+        await fetchAnuncios(undefined, currentPage)
       }
     } catch (err) {
       console.log("[v0] Error in handleGuardarEdicion:", err)
@@ -2797,8 +2891,12 @@ export default function AnunciosPage() {
 
       if (rawDataRef.current) {
         // Use raw data
-        currentEmails = rawDataRef.current.emails || []
-        currentWhatsapps = rawDataRef.current.whatsapp || []
+        const leadEmails = leads.map((l) => l.Correo).filter(Boolean)
+        const leadIDCs = leads.map((l) => l.IDC).filter((id: any) => Number.isFinite(id))
+        
+        // Filter emails and whatsapps to only include those from current anuncio leads
+        currentEmails = rawDataRef.current.emails?.filter((e) => leadEmails.includes(e.to)) || []
+        currentWhatsapps = rawDataRef.current.whatsapp?.filter((w) => leadIDCs.includes(w.IDC)) || []
       } else {
         // Fetch from DB
         const leadEmails = leads.map((l) => l.Correo).filter(Boolean)
@@ -3061,7 +3159,7 @@ export default function AnunciosPage() {
       })
 
       // Refresh anuncios list
-      await fetchAnuncios()
+      await fetchAnuncios(undefined, currentPage)
     } catch (err) {
       console.log("[v0] Error in handleCrearAnuncio:", err)
       toast({
@@ -3109,29 +3207,69 @@ export default function AnunciosPage() {
     setShowProcessingDrawer(true)
   }
 
+
+
   const getProgressColor = (percentage: number) => {
     if (percentage >= 95) return "bg-red-500"
     if (percentage >= 80) return "bg-orange-500"
     return "bg-blue-500"
   }
 
-  const filteredAnuncios = anunciosCards.filter((anuncio) => {
-    const matchesSearch =
-      anuncio.referencia.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      anuncio.direccion.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesPortal = filterPortal === "all" || anuncio.portal === filterPortal
+  const filteredAnuncios = useMemo(() => {
+    return anunciosCards.filter((anuncio) => {
+      const matchesSearch =
+        anuncio.referencia.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        anuncio.direccion.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchesPortal = filterPortal === "all" || anuncio.portal === filterPortal
 
-    // Filter by activation status
-    if (filterEstado === "archivado") {
-      // When "Archivados" button is clicked, show only archived
-      return matchesSearch && matchesPortal && anuncio.estado === "archivado"
-    } else {
-      // By default, exclude archived ads
-      return matchesSearch && matchesPortal && anuncio.estado !== "archivado"
-    }
-  })
+      // Filter by activation status
+      if (filterEstado === "archivado") {
+        // When "Archivados" button is clicked, show only archived
+        return matchesSearch && matchesPortal && anuncio.estado === "archivado"
+      } else {
+        // By default, exclude archived ads
+        return matchesSearch && matchesPortal && anuncio.estado !== "archivado"
+      }
+    })
+  }, [anunciosCards, searchQuery, filterPortal, filterEstado])
 
-  const uniquePortals = [...new Set(anunciosCards.map((a) => a.portal))]
+  const uniquePortals = useMemo(() => {
+    return [...new Set(anunciosCards.map((a) => a.portal))]
+  }, [anunciosCards])
+
+  // Función auxiliar para formatear tiempo
+  const formatTime = (hours: number) => {
+    const totalMinutes = Math.floor(hours * 60)
+    const h = Math.floor(totalMinutes / 60)
+    const m = totalMinutes % 60
+    return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}h`
+  }
+
+  // Precalcular valores para las tarjetas de anuncios
+  const anunciosCalculados = useMemo(() => {
+    return filteredAnuncios.map(anuncio => {
+      const localPeriod = anuncio.localMetricsPeriod || metricsPeriod
+      const periodText = periodBadgeText(localPeriod)
+      const cardClassName =
+        anuncio.estado === "pausado"
+          ? "transition-all duration-200 hover:shadow-md border-l-4 border-l-yellow-400 bg-muted/30 opacity-75"
+          : anuncio.estado === "activo"
+            ? "transition-all duration-200 hover:shadow-md border-l-4 border-l-primary/20"
+            : "transition-all duration-200 hover:shadow-md border-l-4 border-l-gray-400 bg-muted/50"
+      
+      const planPercentage = planLimit > 0 ? (anuncio.ejecuciones / planLimit) * 100 : 0
+      const tiempoFormateado = formatTime(anuncio.tiempoAhorrado)
+      
+      return {
+        ...anuncio,
+        periodText,
+        localPeriod,
+        cardClassName,
+        planPercentage,
+        tiempoFormateado
+      }
+    })
+  }, [filteredAnuncios, metricsPeriod, planLimit])
 
   useEffect(() => {
     try {
@@ -3140,6 +3278,27 @@ export default function AnunciosPage() {
       return () => clearTimeout(t)
     } catch {}
   }, [searchQuery, filterPortal, filterEstado, anunciosCards, metricsPeriod])
+
+  // Actualizar la referencia cuando cambie el valor de whatsapp_activo
+  useEffect(() => {
+    whatsappActivoRef.current = selectedAnuncioForStats?.whatsapp_activo
+  }, [selectedAnuncioForStats?.whatsapp_activo])
+
+  // Sincronizar selectedAnuncioForStats con anunciosCards cuando cambie la lista
+  useEffect(() => {
+    if (selectedAnuncioForStats && showStatsModal) {
+      // Buscar el anuncio actualizado en la lista
+      const anuncioActualizado = anunciosCards.find(a => a.id === selectedAnuncioForStats.id)
+      console.log("[DEBUG] Sincronización - Anuncio actualizado encontrado:", anuncioActualizado)
+      console.log("[DEBUG] Sincronización - Valor actual en ref:", whatsappActivoRef.current)
+      console.log("[DEBUG] Sincronización - Valor en selectedAnuncioForStats:", selectedAnuncioForStats.whatsapp_activo)
+      if (anuncioActualizado && anuncioActualizado.whatsapp_activo !== whatsappActivoRef.current) {
+        // Actualizar selectedAnuncioForStats con los nuevos datos solo si cambió
+        console.log("[DEBUG] Sincronización - Actualizando selectedAnuncioForStats")
+        setSelectedAnuncioForStats(prev => prev ? { ...prev, whatsapp_activo: anuncioActualizado.whatsapp_activo } : null)
+      }
+    }
+  }, [anunciosCards, selectedAnuncioForStats?.id, showStatsModal])
 
   const getHealthColor = (score: number) => {
     if (score >= 80) return "text-green-600"
@@ -3327,13 +3486,6 @@ export default function AnunciosPage() {
         </div>
       </div>
     )
-  }
-
-  const formatTime = (hours: number) => {
-    const totalMinutes = Math.floor(hours * 60)
-    const h = Math.floor(totalMinutes / 60)
-    const m = totalMinutes % 60
-    return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}h`
   }
 
   const handleScheduleActivation = async (anuncioId: string) => {
@@ -4125,22 +4277,12 @@ export default function AnunciosPage() {
                   <span className="text-sm text-muted-foreground">Cargando anuncios…</span>
                 </div>
               )}
-              {filteredAnuncios.map((anuncio) => {
-                const localPeriod = anuncio.localMetricsPeriod || metricsPeriod
-                const periodText = periodBadgeText(localPeriod)
-
+              {anunciosCalculados.map((anuncio) => {
                 const isExpanded = expandedCard === anuncio.id
-
-                const cardClassName =
-                  anuncio.estado === "pausado"
-                    ? "transition-all duration-200 hover:shadow-md border-l-4 border-l-yellow-400 bg-muted/30 opacity-75"
-                    : anuncio.estado === "activo"
-                      ? "transition-all duration-200 hover:shadow-md border-l-4 border-l-primary/20"
-                      : "transition-all duration-200 hover:shadow-md border-l-4 border-l-gray-400 bg-muted/50"
 
                 return (
                   <div key={anuncio.id} className="space-y-2">
-                    <Card className={cardClassName}>
+                    <Card className={anuncio.cardClassName}>
                       <CardHeader className="pb-0 pt-2">
                         <div className="space-y-1">
                           {/* Title row */}
@@ -4286,37 +4428,37 @@ export default function AnunciosPage() {
                             <h4 className="text-xs font-semibold text-muted-foreground">Rendimiento y actividad</h4>
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-medium text-foreground/80 tabular-nums">
-                                {periodText}
+                                {anuncio.periodText}
                               </span>
                               <div className="flex items-center bg-muted/50 rounded-md p-0.5">
                                 <Button
-                                  variant={localPeriod === "hoy" ? "secondary" : "ghost"}
+                                  variant={anuncio.localPeriod === "hoy" ? "secondary" : "ghost"}
                                   size="sm"
-                                  className={`h-6 text-[10px] px-2 font-medium ${localPeriod === "hoy" ? "bg-background text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground"}`}
+                                  className={`h-6 text-[10px] px-2 font-medium ${anuncio.localPeriod === "hoy" ? "bg-background text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground"}`}
                                   onClick={() => handleLocalMetricsPeriodChange(anuncio.id, "hoy")}
                                 >
                                   Hoy
                                 </Button>
                                 <Button
-                                  variant={localPeriod === "esteMes" ? "secondary" : "ghost"}
+                                  variant={anuncio.localPeriod === "esteMes" ? "secondary" : "ghost"}
                                   size="sm"
-                                  className={`h-6 text-[10px] px-2 font-medium ${localPeriod === "esteMes" ? "bg-background text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground"}`}
+                                  className={`h-6 text-[10px] px-2 font-medium ${anuncio.localPeriod === "esteMes" ? "bg-background text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground"}`}
                                   onClick={() => handleLocalMetricsPeriodChange(anuncio.id, "esteMes")}
                                 >
                                   Mes
                                 </Button>
                                 <Button
-                                  variant={localPeriod === "ultimoMes" ? "secondary" : "ghost"}
+                                  variant={anuncio.localPeriod === "ultimoMes" ? "secondary" : "ghost"}
                                   size="sm"
-                                  className={`h-6 text-[10px] px-2 font-medium ${localPeriod === "ultimoMes" ? "bg-background text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground"}`}
+                                  className={`h-6 text-[10px] px-2 font-medium ${anuncio.localPeriod === "ultimoMes" ? "bg-background text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground"}`}
                                   onClick={() => handleLocalMetricsPeriodChange(anuncio.id, "ultimoMes")}
                                 >
                                   Mes ant.
                                 </Button>
                                 <Button
-                                  variant={localPeriod === "periodoActual" ? "secondary" : "ghost"}
+                                  variant={anuncio.localPeriod === "periodoActual" ? "secondary" : "ghost"}
                                   size="sm"
-                                  className={`h-6 text-[10px] px-2 font-medium ${localPeriod === "periodoActual" ? "bg-background text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground"}`}
+                                  className={`h-6 text-[10px] px-2 font-medium ${anuncio.localPeriod === "periodoActual" ? "bg-background text-foreground shadow-sm" : "text-foreground/70 hover:text-foreground"}`}
                                   onClick={() => handleLocalMetricsPeriodChange(anuncio.id, "periodoActual")}
                                 >
                                   Ciclo
@@ -4335,7 +4477,7 @@ export default function AnunciosPage() {
                             </div>
                             <div className="text-center">
                               <div className="text-lg font-bold text-indigo-600">
-                                {formatTime(anuncio.tiempoAhorrado)}
+                                {anuncio.tiempoFormateado}
                               </div>
                               <div className="text-[10px] text-muted-foreground">Tiempo ahorrado</div>
                             </div>
@@ -4357,12 +4499,21 @@ export default function AnunciosPage() {
                           <div className="flex items-center justify-between mb-0.5">
                             <span className="text-xs">Leads: {anuncio.ejecuciones}</span>
                             <span className="text-xs">
-                              {planLimit > 0 && ((anuncio.ejecuciones / planLimit) * 100).toFixed(1)}% del plan
+                              {planLimit > 0 && anuncio.planPercentage.toFixed(1)}% del plan
                             </span>
                           </div>
 
+                          {anuncio.whatsappsPeriodo > 0 && (
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="text-xs">WhatsApps: {anuncio.whatsappsPeriodo}</span>
+                              <span className="text-xs text-green-600">
+                                €{(anuncio.whatsappsPeriodo * 0.0327).toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+
                           <Progress
-                            value={planLimit > 0 ? (anuncio.ejecuciones / planLimit) * 100 : 0}
+                            value={anuncio.planPercentage}
                             className="h-1"
                           />
                         </div>
@@ -4536,6 +4687,52 @@ export default function AnunciosPage() {
                 )
               })}
             </div>
+
+            {/* Controles de paginación */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-6">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                >
+                  <span className="sr-only">Anterior</span>
+                  ←
+                </Button>
+                
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                    const pageNum = i + 1;
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className="min-w-[32px]"
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                >
+                  <span className="sr-only">Siguiente</span>
+                  →
+                </Button>
+                
+                <span className="text-sm text-muted-foreground ml-4">
+                  Página {currentPage} de {totalPages}
+                </span>
+              </div>
+            )}
 
             {anunciosCards.length === 0 && !loading && (
               <Card>
@@ -5614,7 +5811,19 @@ export default function AnunciosPage() {
 
                   {/* Consumo y Rendimiento */}
                   <div className="space-y-3">
-                    <h4 className="font-semibold">Consumo y Rendimiento</h4>
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-semibold">Consumo y Rendimiento</h4>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDetenerWhatsApps(selectedAnuncioForStats.id, selectedAnuncioForStats.whatsapp_activo)}
+                        disabled={processingId === selectedAnuncioForStats.id}
+                        className="h-7 text-xs"
+                      >
+                        <MessageSquare className="h-3 w-3 mr-1" />
+                        {processingId === selectedAnuncioForStats.id ? "Procesando..." : selectedAnuncioForStats.whatsapp_activo ? "Detener WhatsApps" : "Activar WhatsApps"}
+                      </Button>
+                    </div>
                     <p className="text-xs text-muted-foreground -mt-2 mb-2">
                        Ciclo actual: {planResetAt ? formatDate(planResetAt) : formatDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1))} - {formatDate(new Date())}
                     </p>
@@ -5639,6 +5848,16 @@ export default function AnunciosPage() {
                              <span className="text-xs text-muted-foreground">Whatsapps enviados</span>
                              <span className="text-sm font-semibold text-foreground">{consumptionMetrics.whatsappsEnviados}</span>
                         </div>
+                        
+                        {/* Coste WhatsApps */}
+                        {consumptionMetrics.whatsappsEnviados > 0 && (
+                          <div className="flex justify-between text-sm items-center pt-1">
+                            <span className="text-xs text-muted-foreground">Coste aprox. WhatsApps</span>
+                            <span className="text-sm font-semibold text-green-600">
+                              €{(consumptionMetrics.whatsappsEnviados * 0.0327).toFixed(2)}
+                            </span>
+                          </div>
+                        )}
 
                         {/* Emails */}
                         <div className="flex justify-between text-sm items-center pt-2 border-t">
