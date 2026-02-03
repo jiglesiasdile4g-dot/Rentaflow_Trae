@@ -13,6 +13,7 @@ services:
       - NODE_ENV=production
       - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - NEXTCLOUD_URL=${NEXTCLOUD_URL}
       - NEXTCLOUD_USERNAME=${NEXTCLOUD_USERNAME}
       - NEXTCLOUD_PASSWORD=${NEXTCLOUD_PASSWORD}
@@ -34,6 +35,9 @@ variables:
   - name: NEXT_PUBLIC_SUPABASE_ANON_KEY
     description: API Key anónima de Supabase
     default: tu-clave-anonima-supabase
+  - name: SUPABASE_SERVICE_ROLE_KEY
+    description: Service role key de Supabase
+    default: tu-clave-service-role
   - name: NEXTCLOUD_URL
     description: URL base de Nextcloud (ej: https://nextcloud.tudominio.com)
     default: https://nextcloud.local
