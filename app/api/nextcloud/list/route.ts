@@ -37,6 +37,26 @@ function stripTimestampName(s: string) {
   return m ? m[2] : s
 }
 
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 10000): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+    return response
+  } catch (error: any) {
+    clearTimeout(timeoutId)
+    if (error.name === 'AbortError') {
+      throw new Error(`Timeout después de ${timeoutMs}ms`)
+    }
+    throw error
+  }
+}
+
 export async function GET(req: Request) {
   try {
     let u: URL
@@ -70,20 +90,37 @@ export async function GET(req: Request) {
 
     const body = `<?xml version="1.0" encoding="utf-8"?>\n<d:propfind xmlns:d="DAV:">\n  <d:prop>\n    <d:displayname/>\n    <d:getcontenttype/>\n    <d:getlastmodified/>\n    <d:getcontentlength/>\n    <d:resourcetype/>\n  </d:prop>\n</d:propfind>`
     let res
+    let attemptCount = 0
+    const maxAttempts = 3
+    
+    async function tryFetch(url: string, attemptNum: number): Promise<Response> {
+      console.log(`[Nextcloud List] Intentando fetch #${attemptNum}:`, url)
+      try {
+        return await fetchWithTimeout(url, {
+          method: "PROPFIND",
+          headers: {
+            Authorization: basicAuthHeader(user, pass),
+            Depth: "1",
+            "Content-Type": "text/xml",
+          },
+          body,
+        }, 10000) // 10 segundos de timeout
+      } catch (error: any) {
+        console.error(`[Nextcloud List] Intento #${attemptNum} falló:`, error.message)
+        throw error
+      }
+    }
+    
     try {
-      res = await fetch(webdavUrl, {
-        method: "PROPFIND",
-        headers: {
-          Authorization: basicAuthHeader(user, pass),
-          Depth: "1",
-          "Content-Type": "text/xml",
-        },
-        body,
-      })
+      attemptCount++
+      res = await tryFetch(webdavUrl, attemptCount)
     } catch (fetchErr: any) {
       console.error("[Nextcloud List] Fetch error:", fetchErr)
       const isRefused = fetchErr?.cause?.code === "ECONNREFUSED"
-      const msg = isRefused 
+      const isTimeout = fetchErr.message?.includes("Timeout")
+      const msg = isTimeout
+        ? `Timeout conectando a Nextcloud (10s). El servidor podría estar sobrecargado.`
+        : isRefused 
         ? `No se puede conectar a Nextcloud en ${baseUrl}. ¿Está encendido?` 
         : `Error conectando a Nextcloud: ${fetchErr?.message || "Error desconocido"}`
       
@@ -97,53 +134,72 @@ export async function GET(req: Request) {
     }
     console.log("[Nextcloud List] Primary response status:", res.status)
 
-    if (!res.ok && res.status === 404 && userLowerEnc !== userEnc) {
-      userUsed = userLowerEnc
-      webdavUrl = `${base}${userLowerEnc}/${encodedPath}/`
-      console.log("[Nextcloud List] Retrying with lowercase user:", webdavUrl)
-      res = await fetch(webdavUrl, {
-        method: "PROPFIND",
-        headers: {
-          Authorization: basicAuthHeader(user, pass),
-          Depth: "1",
-          "Content-Type": "text/xml",
-        },
-        body,
+    // Implementar lógica de reintentos con límite de 3 intentos
+    let currentFolderPath = folderPath
+    const retryStrategies = []
+    
+    // Estrategia 1: Usuario en minúsculas (si aplica)
+    if (!res.ok && res.status === 404 && userLowerEnc !== userEnc && attemptCount < maxAttempts) {
+      retryStrategies.push(async () => {
+        attemptCount++
+        userUsed = userLowerEnc
+        webdavUrl = `${base}${userLowerEnc}/${encodedPath}/`
+        console.log(`[Nextcloud List] Intento #${attemptCount} - Usuario minúsculas:`, webdavUrl)
+        return await tryFetch(webdavUrl, attemptCount)
       })
     }
-    if (!res.ok && res.status === 404) {
-      const altSegments = [rootPath, referencia].filter(Boolean)
-      const altEncoded = altSegments.map((s) => encodeURIComponent(s)).join("/")
-      const altFolderPath = altSegments.join("/")
-      let altUrl = `${base}${userUsed}/${altEncoded}/`
-      console.log("[Nextcloud List] Retrying with alt path:", altUrl)
-      res = await fetch(altUrl, {
-        method: "PROPFIND",
-        headers: {
-          Authorization: basicAuthHeader(user, pass),
-          Depth: "1",
-          "Content-Type": "text/xml",
-        },
-        body,
+    
+    // Estrategia 2: Ruta alternativa (sin inmobiliaria)
+    if (!res.ok && res.status === 404 && attemptCount < maxAttempts) {
+      retryStrategies.push(async () => {
+        attemptCount++
+        const altSegments = [rootPath, referencia].filter(Boolean)
+        const altEncoded = altSegments.map((s) => encodeURIComponent(s)).join("/")
+        currentFolderPath = altSegments.join("/")
+        let altUrl = `${base}${userUsed}/${altEncoded}/`
+        console.log(`[Nextcloud List] Intento #${attemptCount} - Ruta alternativa:`, altUrl)
+        return await tryFetch(altUrl, attemptCount)
       })
-      if (!res.ok && res.status === 404 && userLowerEnc !== userUsed) {
+    }
+    
+    // Estrategia 3: Usuario minúsculas con ruta alternativa
+    if (!res.ok && res.status === 404 && userLowerEnc !== userEnc && attemptCount < maxAttempts) {
+      retryStrategies.push(async () => {
+        attemptCount++
+        const altSegments = [rootPath, referencia].filter(Boolean)
+        const altEncoded = altSegments.map((s) => encodeURIComponent(s)).join("/")
+        currentFolderPath = altSegments.join("/")
         userUsed = userLowerEnc
-        altUrl = `${base}${userUsed}/${altEncoded}/`
-        console.log("[Nextcloud List] Retrying alt path with lowercase user:", altUrl)
-        res = await fetch(altUrl, {
-          method: "PROPFIND",
-          headers: {
-            Authorization: basicAuthHeader(user, pass),
-            Depth: "1",
-            "Content-Type": "text/xml",
-          },
-          body,
-        })
+        let altUrl = `${base}${userLowerEnc}/${altEncoded}/`
+        console.log(`[Nextcloud List] Intento #${attemptCount} - Usuario minúsculas + ruta alternativa:`, altUrl)
+        return await tryFetch(altUrl, attemptCount)
+      })
+    }
+    
+    // Ejecutar estrategias de reintento
+    for (const strategy of retryStrategies) {
+      if (!res.ok && attemptCount < maxAttempts) {
+        try {
+          res = await strategy()
+        } catch (strategyErr: any) {
+          console.error(`[Nextcloud List] Estrategia de reintento falló:`, strategyErr.message)
+          // Continuar con la siguiente estrategia
+        }
       }
-      if (!res.ok) {
-        console.log("[Nextcloud List] All attempts failed. Status:", res.status)
-        return NextResponse.json({ folder: altFolderPath, files: [], recent: [] })
-      }
+    }
+    
+    // Si después de todos los intentos sigue sin estar ok, retornar lista vacía
+    if (!res.ok) {
+      console.log(`[Nextcloud List] Todos los intentos fallaron (${attemptCount}/${maxAttempts}). Status:`, res.status)
+      return NextResponse.json({ 
+        folder: folderPath, 
+        files: [], 
+        recent: [], 
+        error: "No se pudieron listar los archivos de Nextcloud después de varios intentos",
+        attempts: attemptCount,
+        maxAttempts: maxAttempts
+      })
+    }
       const xml = await res.text()
       console.log("[Nextcloud List] XML length:", xml.length)
       if (debug) {

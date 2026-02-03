@@ -3,6 +3,22 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
+
+// Función auxiliar para fetch con timeout
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 8000): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal })
+    clearTimeout(timeoutId)
+    return response
+  } catch (error: any) {
+    clearTimeout(timeoutId)
+    if (error.name === 'AbortError') throw new Error(`Timeout después de ${timeoutMs}ms`)
+    throw error
+  }
+}
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -807,7 +823,7 @@ export function LeadDetailModal({
 
       if (newStatus === "Descartado") {
         try {
-          await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/descartado", {
+          await fetchWithTimeout("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/descartado", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -877,18 +893,50 @@ export function LeadDetailModal({
     setDocsLoading(true)
     const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
     const referencia = String(lead.id)
+    
+    // Crear un controller para manejar el timeout
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 segundos de timeout
+    
     try {
       const params = new URLSearchParams({ referencia, inmobiliaria: inmo })
-      const res = await fetch(`/api/nextcloud/list?${params.toString()}`)
+      const res = await fetch(`/api/nextcloud/list?${params.toString()}`, {
+        signal: controller.signal,
+      })
+      
+      clearTimeout(timeoutId)
+      
       if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: "Error desconocido" }))
+        console.error("[LeadDetailModal] Error al cargar documentos:", errorData)
+        toast({
+          title: "Error al cargar documentos",
+          description: errorData.error || "No se pudieron cargar los documentos de Nextcloud",
+          variant: "destructive",
+        })
         setDocsList([])
       } else {
         const j = await res.json()
         setDocsList(j.files || [])
       }
-    } catch {
-      // ignore
+    } catch (error: any) {
+      console.error("[LeadDetailModal] Error en loadLeadDocsList:", error)
+      if (error.name === 'AbortError') {
+        toast({
+          title: "Timeout al cargar documentos",
+          description: "La conexión con Nextcloud tardó demasiado tiempo. Los documentos no se cargarán.",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Error de conexión",
+          description: "No se pudo conectar con Nextcloud para cargar los documentos",
+          variant: "destructive",
+        })
+      }
+      setDocsList([])
     } finally {
+      clearTimeout(timeoutId)
       setDocsLoading(false)
     }
   }

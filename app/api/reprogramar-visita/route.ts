@@ -1,5 +1,20 @@
 import { NextResponse } from "next/server"
 
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 8000): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal })
+    clearTimeout(timeoutId)
+    return response
+  } catch (error: any) {
+    clearTimeout(timeoutId)
+    if (error.name === 'AbortError') throw new Error(`Timeout después de ${timeoutMs}ms`)
+    throw error
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json()
@@ -10,7 +25,7 @@ export async function POST(req: Request) {
       const webhookUrl = "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/reprogramar_visita_por_cliente"
       console.log("[Webhook] Forwarding to:", webhookUrl)
       
-      const response = await fetch(webhookUrl, {
+      const response = await fetchWithTimeout(webhookUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
