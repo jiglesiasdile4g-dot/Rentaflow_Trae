@@ -15,7 +15,16 @@ export function createClient() {
     throw new Error("Missing Supabase environment variables. Please check your environment configuration.")
   }
 
-  client = createBrowserClient(supabaseUrl, supabaseAnonKey)
+  client = createBrowserClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+      fetch: (url, options = {}) => {
+        return fetch(url, {
+          ...options,
+          signal: AbortSignal.timeout(20000),
+        })
+      },
+    },
+  })
   return client
 }
 

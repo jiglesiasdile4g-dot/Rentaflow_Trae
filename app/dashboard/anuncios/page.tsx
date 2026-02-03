@@ -597,18 +597,7 @@ export default function AnunciosPage() {
   const [creatingAnuncio, setCreatingAnuncio] = useState(false)
   const [metricsPeriod, setMetricsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual">("hoy")
   const [statsPeriod, setStatsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual" | "esteAno">("esteMes")
-  const periodBadgeText = (metricsPeriod: "hoy" | "esteMes" | "ultimoMes" | "periodoActual") => {
-    const now = new Date()
-    const dayStart = new Date(now)
-    dayStart.setHours(0, 0, 0, 0)
-    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    const start = metricsPeriod === "hoy" ? dayStart : metricsPeriod === "ultimoMes" ? prevMonthStart : metricsPeriod === "esteMes" ? thisMonthStart : (planResetAt ? new Date(planResetAt) : thisMonthStart)
-    const end = metricsPeriod === "hoy" ? now : metricsPeriod === "ultimoMes" ? prevMonthEnd : now
-    const fmt = (d: Date) => formatDate(d)
-    return metricsPeriod === "hoy" ? fmt(start) : `${fmt(start)} - ${fmt(end)}`
-  }
+
   const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
   const [attachmentPreviewKind, setAttachmentPreviewKind] = useState<"pdf" | "image" | "unknown">("unknown")
   const [attachmentPreviewName, setAttachmentPreviewName] = useState<string>("")
@@ -905,10 +894,7 @@ export default function AnunciosPage() {
   }, [inmobiliariaId, planResetAt])
 
   const fetchQualityMetrics = async (anuncioReferencia: string, period: string, activationDateStr?: string | null) => {
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    const supabase = createClient()
 
     // Calculate date range based on period
     const now = new Date()
@@ -1030,10 +1016,7 @@ export default function AnunciosPage() {
     anuncioRef: string,
     phase: string,
   ) => {
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    const supabase = createClient()
 
     let status = ""
     if (phase === "aceptado") status = "Aceptado"
@@ -1044,7 +1027,7 @@ export default function AnunciosPage() {
 
     let query = supabase
       .from("Clientes")
-      .select("*, Agentes(Nombre), status_history")
+      .select("*, status_history")
       .ilike("Inmueble", anuncioRef)
       .order("created_at", { ascending: false })
 
@@ -1065,13 +1048,10 @@ export default function AnunciosPage() {
   }
 
   const fetchLeadsByStatus = async (anuncioId: string, status: string) => {
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    ) // Use createBrowserClient here
+    const supabase = createClient()
     const { data, error } = await supabase
       .from("Clientes")
-      .select("*, Agentes(Nombre), status_history")
+      .select("*, status_history")
       .eq("idi", anuncioId) // Assuming 'idi' is the foreign key to Anuncios
       .eq("Estado", "Datos Completos")
       .order("created_at", { ascending: false })
@@ -2203,7 +2183,7 @@ export default function AnunciosPage() {
         setCardsLoading(false)
       }
     }
-  }, [supabase, inmobiliariaId, planResetAt, metricsPeriod])
+  }, [supabase, inmobiliariaId, planResetAt, metricsPeriod, itemsPerPage])
 
   useEffect(() => {
     console.log("[DEBUG] useEffect triggered - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
@@ -3247,6 +3227,19 @@ export default function AnunciosPage() {
 
   // Precalcular valores para las tarjetas de anuncios
   const anunciosCalculados = useMemo(() => {
+    const periodBadgeText = (metricsPeriod: "hoy" | "esteMes" | "ultimoMes" | "periodoActual") => {
+      const now = new Date()
+      const dayStart = new Date(now)
+      dayStart.setHours(0, 0, 0, 0)
+      const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      const start = metricsPeriod === "hoy" ? dayStart : metricsPeriod === "ultimoMes" ? prevMonthStart : metricsPeriod === "esteMes" ? thisMonthStart : (planResetAt ? new Date(planResetAt) : thisMonthStart)
+      const end = metricsPeriod === "hoy" ? now : metricsPeriod === "ultimoMes" ? prevMonthEnd : now
+      const fmt = (d: Date) => formatDate(d)
+      return metricsPeriod === "hoy" ? fmt(start) : `${fmt(start)} - ${fmt(end)}`
+    }
+    
     return filteredAnuncios.map(anuncio => {
       const localPeriod = anuncio.localMetricsPeriod || metricsPeriod
       const periodText = periodBadgeText(localPeriod)
@@ -3269,7 +3262,7 @@ export default function AnunciosPage() {
         tiempoFormateado
       }
     })
-  }, [filteredAnuncios, metricsPeriod, planLimit])
+  }, [filteredAnuncios, metricsPeriod, planLimit, planResetAt])
 
   useEffect(() => {
     try {
@@ -3298,7 +3291,7 @@ export default function AnunciosPage() {
         setSelectedAnuncioForStats(prev => prev ? { ...prev, whatsapp_activo: anuncioActualizado.whatsapp_activo } : null)
       }
     }
-  }, [anunciosCards, selectedAnuncioForStats?.id, showStatsModal])
+  }, [anunciosCards, selectedAnuncioForStats, showStatsModal])
 
   const getHealthColor = (score: number) => {
     if (score >= 80) return "text-green-600"

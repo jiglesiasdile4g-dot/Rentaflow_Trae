@@ -16,7 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { useState, useEffect, useRef, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { createClient, createBrowserClient } from "@/lib/supabase/client"
+import { createClient } from "@/lib/supabase/client"
 import Image from "next/image"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
@@ -270,10 +270,7 @@ export default function LeadsPage() {
       }
       setLoadingDates(true)
       try {
-        const supabase = createBrowserClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
+        const supabase = createClient()
         const today = new Date().toISOString().split('T')[0]
         const { data, error } = await supabase
           .from("Agendas")
@@ -308,10 +305,7 @@ export default function LeadsPage() {
       setLoadingAvailability(true)
       setAvailabilityReason("none")
       try {
-        const supabaseBrowser = createBrowserClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
+        const supabaseBrowser = createClient()
 
         const { data, error } = await supabaseBrowser
           .from("Agendas")

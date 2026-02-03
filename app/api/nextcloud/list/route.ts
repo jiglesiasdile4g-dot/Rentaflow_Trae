@@ -79,11 +79,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "referencia e inmobiliaria requeridas" }, { status: 400 })
     }
     const segments = [rootPath, inmobiliaria, referencia].filter(Boolean)
+    const userValue = user as string
+    const passValue = pass as string
     const encodedPath = segments.map((s) => encodeURIComponent(s)).join("/")
     const folderPath = segments.join("/")
     const base = `${baseUrl.replace(/\/$/, "")}/remote.php/dav/files/`
-    const userEnc = encodeURIComponent(user)
-    const userLowerEnc = encodeURIComponent(user.toLowerCase())
+    const userEnc = encodeURIComponent(userValue)
+    const userLowerEnc = encodeURIComponent(userValue.toLowerCase())
     let userUsed = userEnc
     let webdavUrl = `${base}${userEnc}/${encodedPath}/`
     console.log("[Nextcloud List] Requesting:", webdavUrl)
@@ -99,7 +101,7 @@ export async function GET(req: Request) {
         return await fetchWithTimeout(url, {
           method: "PROPFIND",
           headers: {
-            Authorization: basicAuthHeader(user, pass),
+            Authorization: basicAuthHeader(userValue, passValue),
             Depth: "1",
             "Content-Type": "text/xml",
           },
@@ -200,65 +202,9 @@ export async function GET(req: Request) {
         maxAttempts: maxAttempts
       })
     }
-      const xml = await res.text()
-      console.log("[Nextcloud List] XML length:", xml.length)
-      if (debug) {
-        return NextResponse.json({ folder: altFolderPath, xml })
-      }
-      const responses = xml.match(/<d:response[\s\S]*?<\/d:response>/gi) || []
-      const userCandidates = userEnc !== userLowerEnc ? [userEnc, userLowerEnc] : [userEnc]
-      const prefixes = [
-        ...userCandidates.map((u) => `/remote.php/dav/files/${u}/`),
-        `/remote.php/webdav/`,
-      ]
-      const now = Date.now()
-      const files = [] as Array<{ name: string; path: string; href: string; lastModified: string; size: number; contentType: string }>
-      for (const r of responses) {
-      let href = tag(r, "d:href") || tag(r, "href")
-      if (href && /^https?:\/\//i.test(href)) {
-        try { href = new URL(href).pathname } catch {}
-      }
-      const resType = tag200(r, "d:resourcetype") || tag200(r, "resourcetype")
-      const isDir = /<d:collection\b/i.test(resType) || /\/$/.test(href || "")
-      if (isDir) continue
-      const displayname = tag200(r, "d:displayname") || tag200(r, "displayname")
-      const last = tag200(r, "d:getlastmodified") || tag200(r, "getlastmodified")
-      const ctype = tag200(r, "d:getcontenttype") || tag200(r, "getcontenttype") || ""
-      const clen = parseInt(tag200(r, "d:getcontentlength") || "0", 10) || 0
-      let rel = href || ""
-      for (const p of prefixes) {
-        if (rel.startsWith(p)) { rel = rel.slice(p.length); break }
-      }
-      const safeLast = rel ? rel.split("/").pop() || "" : ""
-      const name = displayname || safeLast || (href ? href.split("/").pop() || "" : "")
-      if (!rel) {
-        const basePath = altFolderPath
-        const baseName = name || (href ? href.split("/").pop() || "" : "")
-        rel = [basePath, baseName].filter(Boolean).join("/")
-      }
-      files.push({ name, path: rel, href, lastModified: last, size: clen, contentType: ctype })
-      }
-      const byBase = new Map<string, { name: string; path: string; href: string; lastModified: string; size: number; contentType: string }>()
-      for (const f of files) {
-        const base = stripTimestampName(f.name || "")
-        const key = base.toLowerCase()
-        const prev = byBase.get(key)
-        const ct = Date.parse(f.lastModified) || 0
-        const pt = prev ? (Date.parse(prev.lastModified) || 0) : -1
-        if (!prev || ct >= pt) {
-          byBase.set(key, { ...f, name: base })
-        }
-      }
-      const dedup = Array.from(byBase.values())
-      dedup.sort((a, b) => (Date.parse(b.lastModified) || 0) - (Date.parse(a.lastModified) || 0))
-      const recentWindowMs = 24 * 60 * 60 * 1000
-      const recent = dedup.filter((f) => now - (Date.parse(f.lastModified) || 0) <= recentWindowMs)
-      return NextResponse.json({ folder: altFolderPath, files: dedup, recent })
-    }
-    if (!res.ok) {
-      return NextResponse.json({ error: `Error WebDAV ${res.status}` }, { status: 502 })
-    }
+    
     const xml = await res.text()
+    console.log("[Nextcloud List] XML length:", xml.length)
     if (debug) {
       return NextResponse.json({ folder: folderPath, xml })
     }
