@@ -63,8 +63,8 @@ export async function getBookingData(leadId: string) {
       
       if (ads) {
         advertisement = ads.find((a: any) => 
-          a.Referencia === lead.Inmueble || 
-          a.Direccion === lead.Inmueble || 
+          (a.Referencia && lead.Inmueble && a.Referencia.trim() === lead.Inmueble.trim()) || 
+          (a.Direccion && lead.Inmueble && a.Direccion.trim() === lead.Inmueble.trim()) || 
           (lead.Inmueble && a.Direccion && lead.Inmueble.includes(a.Direccion))
         ) || null
       }
@@ -119,7 +119,8 @@ export async function confirmVisit(leadId: string, visitDate: string) {
       .from("Clientes")
       .update({
         fecha_de_visita: visitDate,
-        visita_completada: "pendiente"
+        visita_completada: "pendiente",
+        Estado: "Visita Confirmada"
       })
       .eq("id", leadId)
       .select()
@@ -151,9 +152,10 @@ export async function rescheduleVisit(leadId: string, newDate: string) {
       const { data, error } = await supabase
         .from("Clientes")
         .update({
-          fecha_de_visita: newDate,
-          visita_completada: "reprogramada"
-        })
+        fecha_de_visita: newDate,
+        visita_completada: "reprogramada",
+        Estado: "Visita Confirmada"
+      })
         .eq("id", leadId)
         .select()
   

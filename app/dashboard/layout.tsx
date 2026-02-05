@@ -16,9 +16,15 @@ export default async function DashboardLayout({
   }
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user
+  try {
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    if (userError) throw userError
+    user = userData.user
+  } catch (error) {
+    // If auth fails (e.g. invalid refresh token), redirect to login
+    redirect("/login")
+  }
 
   if (!user) {
     redirect("/login")

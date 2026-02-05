@@ -98,6 +98,7 @@ export default function AgendaPage() {
   const [currentSlots, setCurrentSlots] = useState<TimeSlot[]>([])
   const [dayVisits, setDayVisits] = useState<ScheduledVisit[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isStateRestored, setIsStateRestored] = useState(false)
   const calendarTouchStartX = useRef<number | null>(null)
   
   // Visit completion state
@@ -215,11 +216,63 @@ export default function AgendaPage() {
     setCalendarOffset(Math.max(0, prevWeekDaysCount - 7))
     
     // Set default selected date to today or next available day
-    const validDay = current.find(d => d.id === todayStr) || current[0] || next[0]
-    if (validDay) {
-      setSelectedDateStr(validDay.id)
+    // Check for saved state first
+    let targetDate = ""
+    try {
+      const savedState = sessionStorage.getItem("rf_agenda_view_state")
+      if (savedState) {
+        const parsed = JSON.parse(savedState)
+        if (parsed.selectedDateStr) {
+          targetDate = parsed.selectedDateStr
+        }
+      }
+    } catch (e) {
+      console.error("Error reading saved date state:", e)
+    }
+
+    if (targetDate) {
+      setSelectedDateStr(targetDate)
+    } else {
+      const validDay = current.find(d => d.id === todayStr) || current[0] || next[0]
+      if (validDay) {
+        setSelectedDateStr(validDay.id)
+      }
     }
   }, [])
+
+  // Restore Agent ID state and handle saving
+  useEffect(() => {
+    const restoreAgentState = () => {
+      try {
+        const savedState = sessionStorage.getItem("rf_agenda_view_state")
+        if (savedState) {
+          const parsed = JSON.parse(savedState)
+          if (parsed.agentId) {
+             setAgentId(parsed.agentId)
+          }
+        }
+      } catch (e) {
+        console.error("Error restoring agent state:", e)
+      } finally {
+        setIsStateRestored(true)
+      }
+    }
+    restoreAgentState()
+  }, [])
+
+  useEffect(() => {
+    if (!isStateRestored) return
+
+    // Save state when relevant filters change
+    // Only save if we have valid values (to avoid saving nulls during init if that happens)
+    if (selectedDateStr) {
+        const stateToSave = {
+            agentId,
+            selectedDateStr
+        }
+        sessionStorage.setItem("rf_agenda_view_state", JSON.stringify(stateToSave))
+    }
+  }, [agentId, selectedDateStr, isStateRestored])
 
   // Fetch available anuncios for the selector
   useEffect(() => {
@@ -519,37 +572,52 @@ export default function AgendaPage() {
 
       let activeAgentId = targetId || agentId
 
-      // Initial load or permission check
-      if (!activeAgentId && inmobiliariaId) {
-          const { data: profile } = await supabase
-            .from("Perfiles")
-            .select("role, is_admin")
-            .ilike("usuario", user.email || "")
-            .maybeSingle()
+      // Logic to ensure agents list is loaded and permissions are checked
+      // We do this if we have inmobiliariaId, regardless of whether we have an activeAgentId
+      if (inmobiliariaId) {
+          // Check permissions and load list if not loaded or if we need to check permissions
+          // We use a check on agentsList.length to avoid re-fetching, but we need to know permissions first.
+          // Since we don't persist 'canManageOthers', we should probably check it on mount.
           
-          const isAdmin = profile?.is_admin === true
-          const isSupervisor = profile?.role === 'supervisor'
-          const canManage = isAdmin || isSupervisor
-          setCanManageOthers(canManage)
+          // To avoid complexity, we'll re-check profile/permissions if agentsList is empty
+          if (agentsList.length === 0) {
+              const { data: profile } = await supabase
+                .from("Perfiles")
+                .select("role, is_admin")
+                .ilike("usuario", user.email || "")
+                .maybeSingle()
+              
+              const isAdmin = profile?.is_admin === true
+              const isSupervisor = profile?.role === 'supervisor'
+              const canManage = isAdmin || isSupervisor
+              setCanManageOthers(canManage)
 
-          if (canManage) {
-             const { data: mappedAgents } = await getAgentsByIdi(inmobiliariaId)
-             
-             if (mappedAgents && mappedAgents.length > 0) {
-                setAgentsList(mappedAgents)
-                const self = mappedAgents.find((a: any) => a.Email.toLowerCase() === user.email?.toLowerCase())
-                activeAgentId = self ? self.idag : mappedAgents[0].idag
-             }
-          } else {
-             const { data: agent } = await getAgentByEmail(user.email || "")
-             if (agent && (!inmobiliariaId || Number(agent.idi) === Number(inmobiliariaId))) {
-                 activeAgentId = agent.idag
-             }
+              if (canManage) {
+                 const { data: mappedAgents } = await getAgentsByIdi(inmobiliariaId)
+                 
+                 if (mappedAgents && mappedAgents.length > 0) {
+                    setAgentsList(mappedAgents)
+                    
+                    // Only set default if we don't have one yet (e.g. not restored from state)
+                    if (!activeAgentId) {
+                        const self = mappedAgents.find((a: any) => a.Email.toLowerCase() === user.email?.toLowerCase())
+                        activeAgentId = self ? self.idag : mappedAgents[0].idag
+                        setAgentId(activeAgentId)
+                    }
+                 }
+              } else {
+                 // Not a manager, ensure we have the correct ID for self if not set
+                 if (!activeAgentId) {
+                     const { data: agent } = await getAgentByEmail(user.email || "")
+                     if (agent && (!inmobiliariaId || Number(agent.idi) === Number(inmobiliariaId))) {
+                         activeAgentId = agent.idag
+                         setAgentId(activeAgentId)
+                     }
+                 }
+              }
           }
-          
-          if (activeAgentId) setAgentId(activeAgentId)
       } else if (!activeAgentId) {
-          // Fallback if no inmobiliariaId yet
+          // Fallback if no inmobiliariaId yet (e.g. direct access or loading)
           const { data: agent } = await getAgentByEmail(user.email || "")
           
           if (agent) {
@@ -627,11 +695,13 @@ export default function AgendaPage() {
     } finally {
       if (showLoader) setLoading(false)
     }
-  }, [agentId, inmobiliariaId, nextWeekDaysCount, prevWeekDaysCount, supabase, toast])
+  }, [agentId, inmobiliariaId, nextWeekDaysCount, prevWeekDaysCount, supabase, toast, agentsList])
 
   useEffect(() => {
-    fetchAgentAndSchedule()
-  }, [fetchAgentAndSchedule])
+    if (isStateRestored) {
+        fetchAgentAndSchedule()
+    }
+  }, [fetchAgentAndSchedule, isStateRestored])
 
   const handleAddSlot = () => {
     // Find first available 1-hour slot
@@ -930,8 +1000,9 @@ export default function AgendaPage() {
         }
 
         const currentAd = availableAnuncios.find(a => 
-            (visitToReschedule.Inmueble && a.Referencia === visitToReschedule.Inmueble) ||
-            (visitToReschedule.Inmueble && a.Direccion === visitToReschedule.Inmueble)
+            (a.Referencia && visitToReschedule.Inmueble && a.Referencia.trim() === visitToReschedule.Inmueble.trim()) || 
+            (a.Direccion && visitToReschedule.Inmueble && a.Direccion.trim() === visitToReschedule.Inmueble.trim()) ||
+            (visitToReschedule.Inmueble && a.Direccion && visitToReschedule.Inmueble.includes(a.Direccion))
         )
         
         // Fetch Agent Data
@@ -951,7 +1022,11 @@ export default function AgendaPage() {
         const payload = {
             "Link de Agendamiento": bookingLink,
             "Nombre de lead": `${fullLead?.Nombre || visitToReschedule.Nombre} ${fullLead?.Apellidos || visitToReschedule.Apellidos || ''}`.trim(),
-            "Inmueble/Anuncio": currentAd || { Referencia: visitToReschedule.Inmueble },
+            "Inmueble/Anuncio": currentAd 
+              ? { ...currentAd, Direccion: currentAd.Direccion || "Pregunta a tu agente" } 
+              : { Referencia: visitToReschedule.Inmueble, Direccion: "Pregunta a tu agente" },
+            "Direccion": currentAd?.Direccion || "Pregunta a tu agente",
+            "Direccion del Anuncio": currentAd?.Direccion || "Pregunta a tu agente",
             "Nombre Inmobiliaria": inmobiliariaNombre || (inmobiliariaData as any)?.nombre_inmobiliaria || "Sin nombre",
             "Inmobiliaria": inmobiliariaData || null,
             "Firma": (inmobiliariaData as any)?.firma_html || "",
@@ -1010,7 +1085,8 @@ export default function AgendaPage() {
         .from("Clientes")
         .update({
           visita_completada: "cancelada",
-          fecha_de_visita: null
+          fecha_de_visita: null,
+          Estado: "Aceptado"
         })
         .eq("id", visitToCancel.id)
 
@@ -1033,8 +1109,9 @@ export default function AgendaPage() {
         }
 
         const currentAd = availableAnuncios.find(a => 
-            (visitToCancel.Inmueble && a.Referencia === visitToCancel.Inmueble) ||
-            (visitToCancel.Inmueble && a.Direccion === visitToCancel.Inmueble)
+            (a.Referencia && visitToCancel.Inmueble && a.Referencia.trim() === visitToCancel.Inmueble.trim()) || 
+            (a.Direccion && visitToCancel.Inmueble && a.Direccion.trim() === visitToCancel.Inmueble.trim()) ||
+            (visitToCancel.Inmueble && a.Direccion && visitToCancel.Inmueble.includes(a.Direccion))
         )
         
         // Fetch Agent Data
@@ -1049,7 +1126,11 @@ export default function AgendaPage() {
         const cancelPayload = {
             "Link de Agendamiento": bookingLink,
             "Nombre de lead": `${fullLead?.Nombre || visitToCancel.Nombre} ${fullLead?.Apellidos || visitToCancel.Apellidos || ''}`.trim(),
-            "Inmueble/Anuncio": currentAd || { Referencia: visitToCancel.Inmueble },
+            "Inmueble/Anuncio": currentAd 
+              ? { ...currentAd, Direccion: currentAd.Direccion || "Pregunta a tu agente" } 
+              : { Referencia: visitToCancel.Inmueble, Direccion: "Pregunta a tu agente" },
+            "Direccion": currentAd?.Direccion || "Pregunta a tu agente",
+            "Direccion del Anuncio": currentAd?.Direccion || "Pregunta a tu agente",
             "Nombre Inmobiliaria": inmobiliariaNombre || (inmobiliariaData as any)?.nombre_inmobiliaria || "Sin nombre",
             "Inmobiliaria": inmobiliariaData || null,
             "Firma": (inmobiliariaData as any)?.firma_html || "",
@@ -1062,7 +1143,8 @@ export default function AgendaPage() {
             ...fullLead,
             ...visitToCancel, 
             visita_completada: "cancelada",
-            fecha_de_visita: null
+            fecha_de_visita: null,
+            Estado: "Aceptado"
         }
 
         const { status_history, ...webhookPayload } = cancelPayload as any
@@ -1582,7 +1664,12 @@ export default function AgendaPage() {
                           </div>
                         ) : (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {currentSlots.map((slot, index) => (
+                            {currentSlots.map((slot, index) => {
+                              const selectedAd = slot.anuncio_id ? availableAnuncios.find(a => String(a.ida) === String(slot.anuncio_id)) : null
+                              const placeholderDuration = selectedAd?.duracion_visita || 20
+                              const placeholderGap = (selectedAd?.tiempo_entre_visitas !== null && selectedAd?.tiempo_entre_visitas !== undefined) ? selectedAd.tiempo_entre_visitas : 5
+                              
+                              return (
                               <div key={index} className="flex flex-col gap-2 p-3 border rounded-lg bg-card text-card-foreground shadow-sm relative group hover:border-primary/50 transition-colors">
                                 <div className="flex flex-col gap-2">
                                   <div className="flex items-center gap-2">
@@ -1658,7 +1745,7 @@ export default function AgendaPage() {
                                         <Input 
                                             id={`duration-${index}`}
                                             type="number" 
-                                            placeholder="Defecto" 
+                                            placeholder={String(placeholderDuration)} 
                                             className="h-8 text-xs"
                                             value={slot.duracion || ""}
                                             onChange={(e) => handleSlotChange(index, "duracion", e.target.value ? Number(e.target.value) : null)}
@@ -1669,7 +1756,7 @@ export default function AgendaPage() {
                                         <Input 
                                             id={`gap-${index}`}
                                             type="number" 
-                                            placeholder="Defecto" 
+                                            placeholder={String(placeholderGap)} 
                                             className="h-8 text-xs"
                                             value={slot.gap !== null ? slot.gap : ""}
                                             onChange={(e) => handleSlotChange(index, "gap", e.target.value ? Number(e.target.value) : null)}
@@ -1690,7 +1777,7 @@ export default function AgendaPage() {
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
                               </div>
-                            ))}
+                            )})}
                           </div>
                         )}
                       </div>
@@ -1918,7 +2005,7 @@ export default function AgendaPage() {
                     {newRescheduleDate ? format(newRescheduleDate, "PPP", { locale: es }) : <span>Seleccionar fecha</span>}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
+                <PopoverContent className="w-auto p-0 z-[70002]" align="start">
                   <Calendar
                     mode="single"
                     selected={newRescheduleDate}
@@ -1944,7 +2031,7 @@ export default function AgendaPage() {
                 <SelectTrigger id="time">
                   <SelectValue placeholder={availableTimes.length === 0 ? "Sin horarios disponibles" : "Seleccionar hora"} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="z-[70002]">
                   {availableTimes.map(time => (
                     <SelectItem key={time} value={time}>
                       {time}

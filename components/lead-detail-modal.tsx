@@ -19,7 +19,9 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
     throw error
   }
 }
+import { resolveUserName } from "@/app/actions/get-agents"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -31,7 +33,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Checkbox } from "@/components/ui/checkbox"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import Image from "next/image"
 import { 
   User, Building, Phone, Mail, Euro, FileText, Calendar, 
@@ -200,6 +201,60 @@ export function LeadDetailModal({
 
   const { toast } = useToast()
   const supabase = createClient()
+  
+  // Delete Note Confirmation
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null)
+  const [deleteNoteConfirm, setDeleteNoteConfirm] = useState<{ open: boolean, index: number } | null>(null)
+
+  useEffect(() => {
+    const fetchUserName = async () => {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user && user.email) {
+            const res = await resolveUserName(user.email)
+            if (res.name) setCurrentUserName(res.name)
+        }
+    }
+    fetchUserName()
+  }, [])
+
+  const canDeleteNote = (header: string) => {
+    const clean = header.replace(/^\[|\]$/g, "")
+    const parts = clean.split(" • ")
+    const author = parts.length > 1 ? parts[1].trim() : ""
+    
+    if (!author) return isAdmin || role === 'super' || role === 'admin'
+    if (isAdmin || role === 'super' || role === 'admin') return true
+    
+    if (userEmail && author === userEmail) return true
+    if (currentUserName && author === currentUserName) return true
+    if (userEmail && author.toLowerCase() === userEmail.toLowerCase()) return true
+    
+    return false
+  }
+
+  const handleDeleteNoteRequest = (index: number) => {
+    if (!lead) return
+    const currentNotes = String(lead.Obsevaciones || lead.Observaciones || "")
+    const parts = splitNotes(currentNotes)
+    if (index >= parts.length) return
+    
+    const note = parts[index]
+    if (canDeleteNote(note.header)) {
+       setDeleteNoteConfirm({ open: true, index })
+    } else {
+       toast({
+           title: "Acceso denegado",
+           description: "Solo el autor o un administrador puede eliminar esta nota.",
+           variant: "destructive"
+       })
+    }
+  }
+
+  const executeDeleteNote = async () => {
+      if (!deleteNoteConfirm) return
+      await deleteNoteEntry(deleteNoteConfirm.index)
+      setDeleteNoteConfirm(null)
+  }
 
   useEffect(() => {
     const getUser = async () => {
@@ -587,8 +642,21 @@ export function LeadDetailModal({
         .single()
 
       if (error) throw error
-      setLead(data)
-      setEditFormData(data)
+      const candidates = ["Obsevaciones", "Observaciones", "obsevaciones", "observaciones"]
+      const mergedObservaciones =
+        candidates
+          .map((key) => {
+            const v = (data as any)[key]
+            return typeof v === "string" ? v.trim() : ""
+          })
+          .find((v) => v.length > 0) || ""
+      const normalizedLead = {
+        ...data,
+        Observaciones: mergedObservaciones,
+        Obsevaciones: mergedObservaciones,
+      }
+      setLead(normalizedLead as Lead)
+      setEditFormData(normalizedLead as Lead)
       setSelectedPersona(1)
       setIsEditingPersonalInfo(false)
       
@@ -773,8 +841,8 @@ export function LeadDetailModal({
   const updateLeadStatus = async (newStatus: string) => {
     if (!lead) return
 
-    // Special handling for "Visita Propuesta"
-    if (newStatus === "Visita Propuesta") {
+    // Special handling for "Visita Propuesta" or "Visita Confirmada"
+    if (newStatus === "Visita Propuesta" || newStatus === "Visita Confirmada") {
       setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
       setIsAgentSelectionOnly(true)
       setVisitDateDialogOpen(true)
@@ -783,7 +851,7 @@ export function LeadDetailModal({
 
     // Logic to cancel visit if moving to previous status
     const previousStatuses = ["Datos Incompletos", "Datos Completos", "Necesidad de Aval", "Pedir Aval", "Aceptado"];
-    const shouldCancelVisit = lead.Estado === "Visita Propuesta" && previousStatuses.includes(newStatus);
+    const shouldCancelVisit = (lead.Estado === "Visita Propuesta" || lead.Estado === "Visita Confirmada") && previousStatuses.includes(newStatus);
 
     try {
       const updateData: any = { Estado: newStatus };
@@ -1064,7 +1132,7 @@ export function LeadDetailModal({
 
   const deleteNoteEntry = async (index: number) => {
     if (!lead) return
-    const currentNotes = lead.Observaciones ?? lead.Obsevaciones ?? ""
+    const currentNotes = String(lead.Obsevaciones || lead.Observaciones || "")
     const parts = splitNotes(currentNotes)
     
     // Remove the entry at index
@@ -1103,16 +1171,64 @@ export function LeadDetailModal({
 
   const handleAddNote = async () => {
     if (!lead || !inlineNote.trim()) return
+    
+    // Default fallback
+    let userStr = "Usuario Desconocido"
+    
+    try {
+      // 1. Get fresh user
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (user) {
+        // Update state if needed (side effect)
+        if (!currentUser) setCurrentUser(user)
+        
+        let foundName: string | null = null
+
+        if (user.email) {
+            // Strategy: Server Action (Bypass RLS)
+            const result = await resolveUserName(user.email)
+            if (result.name) {
+                foundName = result.name
+            }
+        }
+
+        // Strategy 2: User Metadata (Fallback)
+        if (!foundName) {
+            const meta = (user.user_metadata || {}) as any
+            const metaName = meta.nombre || meta.name || meta.full_name
+            if (metaName && metaName.trim() !== "" && metaName.trim().toLowerCase() !== "usuario") {
+                foundName = metaName
+            }
+        }
+
+        // Strategy 3: Email
+        if (!foundName && user.email) {
+            foundName = user.email
+        }
+
+        // Final assignment
+        if (foundName && foundName.trim().toLowerCase() !== "usuario") {
+            userStr = foundName
+        } else {
+            userStr = user.email || "Usuario (Sin Datos)"
+        }
+      } else {
+         userStr = "Sin Sesión"
+      }
+    } catch (e) {
+      console.error("Error determining user for note:", e)
+      userStr = "Error Auth"
+    }
 
     const now = new Date()
     const dateStr = now.toLocaleDateString("es-ES", { day: '2-digit', month: '2-digit', year: 'numeric' })
     const timeStr = now.toLocaleTimeString("es-ES", { hour: '2-digit', minute: '2-digit' })
-    const userStr = "Usuario" 
     
     const newEntryHeader = `[${dateStr} ${timeStr} • ${userStr}]`
     const newEntry = `${newEntryHeader}\n${inlineNote.trim()}`
     
-    const currentNotes = lead.Observaciones ?? lead.Obsevaciones ?? ""
+    const currentNotes = String(lead.Obsevaciones || lead.Observaciones || "")
     const updatedNotes = currentNotes ? `${newEntry}\n\n${currentNotes}` : newEntry
 
     try {
@@ -1131,7 +1247,7 @@ export function LeadDetailModal({
 
       toast({
         title: "Nota añadida",
-        description: "La nota se ha guardado correctamente.",
+        description: `La nota se ha guardado correctamente.`,
       })
     } catch (error) {
       console.error("Error adding note:", error)
@@ -1175,8 +1291,14 @@ export function LeadDetailModal({
       }
 
       // History tracking
+      let newStatus = "Visita Propuesta";
+      if (!isAgentSelectionOnly && newVisitDateDate && newVisitDateTime) {
+          newStatus = "Visita Confirmada";
+      }
+      updateData.Estado = newStatus;
+
       const visitHistoryEntry: LeadHistoryEntry = {
-        status: "Visita Propuesta",
+        status: newStatus,
         timestamp: new Date().toISOString(),
         agent_id: currentUser?.id,
         agent_name: currentUser?.email
@@ -1201,7 +1323,7 @@ export function LeadDetailModal({
         const valueWithOffset = `${newVisitDateDate}T${newVisitDateTime}:00${offset}`
         
         updateData.fecha_de_visita = valueWithOffset
-        updateData.visita_completada = "visita propuesta"
+        updateData.visita_completada = "visita confirmada"
       } else if (isAgentSelectionOnly) {
          // If agent only, clear the visit date
          updateData.fecha_de_visita = null
@@ -1225,12 +1347,13 @@ export function LeadDetailModal({
 
 
 
-      // Trigger Webhook if status is "Visita Propuesta"
-      if (updateData.Estado === "Visita Propuesta") {
+      // Trigger Webhook if status is "Visita Propuesta" or "Visita Confirmada"
+      if (updateData.Estado === "Visita Propuesta" || updateData.Estado === "Visita Confirmada") {
         const assignedAgent = agentes.find(a => String(a.idag) === String(selectedAgenteId))
         const currentAd = advertisements.find(a => 
-           (lead.Inmueble && a.Referencia === lead.Inmueble) || 
-           (lead.Inmueble && a.Direccion === lead.Inmueble)
+           (a.Referencia && lead.Inmueble && a.Referencia.trim() === lead.Inmueble.trim()) || 
+           (a.Direccion && lead.Inmueble && a.Direccion.trim() === lead.Inmueble.trim()) ||
+           (lead.Inmueble && a.Direccion && lead.Inmueble.includes(a.Direccion))
         )
         
         const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
@@ -1255,7 +1378,11 @@ export function LeadDetailModal({
           "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
           "Agente Asignado": assignedAgent || null,
           "Agente Email": assignedAgent?.Email || null,
-          "Inmueble/Anuncio": currentAd || null,
+          "Inmueble/Anuncio": currentAd 
+            ? { ...currentAd, Direccion: currentAd.Direccion || "Pregunta a tu agente" } 
+            : { Referencia: lead.Inmueble, Direccion: "Pregunta a tu agente" },
+          "Direccion": currentAd?.Direccion || "Pregunta a tu agente",
+          "Direccion del Anuncio": currentAd?.Direccion || "Pregunta a tu agente",
           "Nombre Inmobiliaria": inmobiliariaNombre || (inmobiliariaData as any)?.nombre_inmobiliaria || "Sin nombre",
           "Inmobiliaria": inmobiliariaData || null,
           "Firma": (inmobiliariaData as any)?.firma_html || "",
@@ -1308,7 +1435,8 @@ export function LeadDetailModal({
         .from("Clientes")
         .update({
           visita_completada: "cancelada",
-          fecha_de_visita: null
+          fecha_de_visita: null,
+          Estado: "Aceptado"
         })
         .eq("id", lead.id)
 
@@ -1332,8 +1460,9 @@ export function LeadDetailModal({
         }
 
         const currentAd = advertisements.find(a => 
-            (lead.Inmueble && a.Referencia === lead.Inmueble) ||
-            (lead.Inmueble && a.Direccion === lead.Inmueble)
+            (a.Referencia && lead.Inmueble && a.Referencia.trim() === lead.Inmueble.trim()) || 
+            (a.Direccion && lead.Inmueble && a.Direccion.trim() === lead.Inmueble.trim()) ||
+            (lead.Inmueble && a.Direccion && lead.Inmueble.includes(a.Direccion))
         )
 
         const { date: formattedDate, time: formattedTime } = formatWebhookDate(lead.fecha_de_visita)
@@ -1343,7 +1472,11 @@ export function LeadDetailModal({
         const cancelPayload = {
             "Link de Agendamiento": bookingLink,
             "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
-            "Inmueble/Anuncio": currentAd || { Referencia: lead.Inmueble },
+            "Inmueble/Anuncio": currentAd 
+              ? { ...currentAd, Direccion: currentAd.Direccion || "Pregunta a tu agente" } 
+              : { Referencia: lead.Inmueble, Direccion: "Pregunta a tu agente" },
+            "Direccion": currentAd?.Direccion || "Pregunta a tu agente",
+            "Direccion del Anuncio": currentAd?.Direccion || "Pregunta a tu agente",
             "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
             "Inmobiliaria": inmobiliariaData || null,
             "Firma": (inmobiliariaData as any)?.firma_html || "",
@@ -1355,7 +1488,8 @@ export function LeadDetailModal({
             "Motivo": "Cancelado por agente",
             ...lead,
             visita_completada: "cancelada",
-            fecha_de_visita: null
+            fecha_de_visita: null,
+            Estado: "Aceptado"
         }
 
         const { status_history, ...webhookPayload } = cancelPayload as any
@@ -1377,7 +1511,8 @@ export function LeadDetailModal({
       const updatedLead = { 
         ...lead, 
         fecha_de_visita: undefined,
-        visita_completada: "cancelada"
+        visita_completada: "cancelada",
+        Estado: "Aceptado"
       }
       setLead(updatedLead as Lead)
       if (onLeadUpdate) onLeadUpdate(updatedLead as Lead)
@@ -1607,42 +1742,53 @@ export function LeadDetailModal({
                 <div className="flex items-center gap-2">
                    <div className="flex flex-col items-end">
                      <div className="relative">
-                      <Select
-                        value={lead.Estado || "Pendiente"}
-                        onValueChange={(value) => {
-                          setPendingStatus(value)
-                          setStatusConfirmOpen(true)
-                        }}
-                      >
-                        <SelectTrigger 
-                          className={cn(
-                            "h-auto w-auto px-3 py-1 rounded-md text-sm font-medium border-0 focus:ring-0 focus:outline-none transition-colors gap-2 [&>svg]:hidden",
-                            lead.Estado === "Completado" || lead.Estado === "Aceptado" ? "bg-green-100 text-green-800 hover:bg-green-200" :
-                            lead.Estado === "Descartado" ? "bg-red-100 text-red-800 hover:bg-red-200" :
-                            "bg-blue-100 text-blue-800 hover:bg-blue-200"
-                          )}
-                        >
-                           <SelectValue placeholder="Estado" />
-                        </SelectTrigger>
-                        <SelectContent className="z-[50000]">
-                          {[
-                            "Pendiente", 
-                            "Datos Incompletos", 
-                            "Datos Completos", 
-                            "Completo", 
-                            "Validado", 
-                            "Visita Propuesta", 
-                            "Aceptado", 
-                            "Rechazado", 
-                            "Descartado", 
-                            "Necesidad de Aval"
-                          ].map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {status === "Aceptado" ? "Aprobado" : status}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {(() => {
+                        const currentStatus = String(lead.Estado || "").trim()
+                        const effectiveStatus = (currentStatus === "Visita Propuesta" && lead.fecha_de_visita) 
+                          ? "Visita Confirmada" 
+                          : (lead.Estado || "Pendiente")
+
+                        return (
+                          <Select
+                            value={effectiveStatus}
+                            onValueChange={(value) => {
+                              setPendingStatus(value)
+                              setStatusConfirmOpen(true)
+                            }}
+                          >
+                            <SelectTrigger 
+                              className={cn(
+                                "h-auto w-auto px-3 py-1 rounded-md text-sm font-medium border-0 focus:ring-0 focus:outline-none transition-colors gap-2 [&>svg]:hidden",
+                                effectiveStatus === "Aceptado" ? "bg-green-100 text-green-800 hover:bg-green-200" :
+                                effectiveStatus === "Descartado" ? "bg-red-100 text-red-800 hover:bg-red-200" :
+                                effectiveStatus === "Visita Confirmada" ? "bg-indigo-100 text-indigo-800 hover:bg-indigo-200" :
+                                effectiveStatus === "Visita Completada" ? "bg-purple-100 text-purple-800 hover:bg-purple-200" :
+                                "bg-blue-100 text-blue-800 hover:bg-blue-200"
+                              )}
+                            >
+                               <SelectValue placeholder="Estado">
+                                 {effectiveStatus === "Aceptado" ? "Aprobado" : effectiveStatus}
+                               </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent className="z-[50000]">
+                              {[
+                                "Datos Completos", 
+                                "Datos Incompletos", 
+                                "Pedir Aval", 
+                                "Aceptado", 
+                                "Descartado", 
+                                "Visita Propuesta", 
+                                "Visita Completada",
+                                "Visita Confirmada"
+                              ].map((status) => (
+                                <SelectItem key={status} value={status}>
+                                  {status === "Aceptado" ? "Aprobado" : status}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )
+                      })()}
                      </div>
 
                    </div>
@@ -2050,15 +2196,20 @@ export function LeadDetailModal({
                         <div className="p-3 border-b flex justify-between items-center bg-muted/30">
                             <div className="flex items-center gap-2">
                                 <StickyNote className="h-4 w-4 text-primary" />
-                                <h3 className="font-semibold text-sm">Anotaciones</h3>
+                                <h3 className="font-semibold text-sm">
+                                    Anotaciones
+                                    <span className="ml-2 text-[9px] text-muted-foreground font-normal">
+                                        (Debug: {currentUser?.email || "..."})
+                                    </span>
+                                </h3>
                             </div>
                             <Badge variant="secondary" className="text-[10px] h-5 bg-background border shadow-sm">
-                                {lead.Observaciones ? splitNotes(lead.Observaciones).length : 0}
+                                {splitNotes(String(lead.Obsevaciones || lead.Observaciones || "").trim()).length}
                             </Badge>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
-                             {lead.Observaciones && splitNotes(lead.Observaciones).length > 0 ? (
-                                splitNotes(lead.Observaciones).map((n, idx) => {
+                             {splitNotes(String(lead.Obsevaciones || lead.Observaciones || "").trim()).length > 0 ? (
+                                splitNotes(String(lead.Obsevaciones || lead.Observaciones || "")).map((n, idx) => {
                                     const cleanHeader = n.header.replace(/^\[|\]$/g, "")
                                     const [dateStr, userStr] = cleanHeader.includes(" • ")
                                         ? cleanHeader.split(" • ")
@@ -2071,15 +2222,16 @@ export function LeadDetailModal({
                                                         <User className="h-3.5 w-3.5 text-primary" />
                                                     </div>
                                                     <div className="flex flex-col">
-                                                        <span className="font-semibold text-foreground text-[11px]">{userStr || "Usuario"}</span>
+                                                        <span className="font-semibold text-foreground text-[11px]">{userStr || "Usuario (Sin Datos)"}</span>
                                                         <span className="text-[10px] text-muted-foreground">{dateStr}</span>
+                                                        <span className="text-[9px] text-muted-foreground/50 font-mono mt-0.5">Raw: {n.header}</span>
                                                     </div>
                                                 </div>
                                                 <Button 
                                                     variant="ghost" 
                                                     size="icon" 
                                                     className="h-6 w-6 text-muted-foreground hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity -mr-1 -mt-1"
-                                                    onClick={() => deleteNoteEntry(idx)}
+                                                    onClick={() => handleDeleteNoteRequest(idx)}
                                                 >
                                                     <Trash2 className="h-3.5 w-3.5" />
                                                 </Button>
@@ -2114,6 +2266,12 @@ export function LeadDetailModal({
                              >
                                 Añadir Nota
                              </Button>
+                             {/* VISIBLE DEBUG FOR USER - REMOVED */}
+                             {/* 
+                             <div className="text-[10px] text-muted-foreground text-center mt-1 p-1 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-200 dark:border-yellow-900/50">
+                                <strong>Debug Usuario:</strong> {currentUser?.email || "Sin email"}
+                             </div> 
+                             */}
                         </div>
                     </div>
 
@@ -2709,11 +2867,11 @@ export function LeadDetailModal({
                       Guardar
                     </Button>
                   </div>
-                  {lead && splitNotes(lead.Observaciones || "").length > 0 && (
+                  {lead && splitNotes(String(lead.Obsevaciones || lead.Observaciones || "").trim()).length > 0 && (
                     <div className="space-y-2">
                       <div className="text-xs text-muted-foreground font-medium">Anotaciones existentes</div>
                       <div className="space-y-2">
-                        {splitNotes(lead.Observaciones || "").map((n, idx) => {
+                        {splitNotes(String(lead.Obsevaciones || lead.Observaciones || "")).map((n, idx) => {
                           const cleanHeader = n.header.replace(/^\[|\]$/g, "")
                           const [dateStr, userStr] = cleanHeader.includes(" • ")
                             ? cleanHeader.split(" • ")
@@ -2727,7 +2885,7 @@ export function LeadDetailModal({
                                     <User className="h-3 w-3 text-primary" />
                                   </div>
                                   <div className="flex flex-col">
-                                    <span className="font-semibold text-foreground">{userStr || "Usuario"}</span>
+                                    <span className="font-semibold text-foreground">{userStr || "Usuario (Sin Datos)"}</span>
                                     <span className="text-[10px] text-muted-foreground">{dateStr}</span>
                                   </div>
                                 </div>
@@ -2735,7 +2893,7 @@ export function LeadDetailModal({
                                   size="sm"
                                   variant="ghost"
                                   className="h-6 w-6 text-muted-foreground hover:text-red-500"
-                                  onClick={() => deleteNoteEntry(idx)}
+                                  onClick={() => handleDeleteNoteRequest(idx)}
                                 >
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
@@ -2866,6 +3024,24 @@ export function LeadDetailModal({
                     setStatusConfirmOpen(false)
                   }}>
                     Confirmar
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Note Deletion Confirmation Dialog */}
+            <AlertDialog open={!!deleteNoteConfirm} onOpenChange={(open) => !open && setDeleteNoteConfirm(null)}>
+              <AlertDialogContent style={{ zIndex: 60000 }}>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Eliminar anotación?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta acción no se puede deshacer. ¿Estás seguro de que quieres eliminar esta nota?
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel onClick={() => setDeleteNoteConfirm(null)}>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction onClick={executeDeleteNote} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    Eliminar
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

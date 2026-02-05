@@ -8,7 +8,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-import { getAgentsByIdi } from "@/app/actions/get-agents"
+import { getAgentsByIdi, resolveUserName } from "@/app/actions/get-agents"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -69,6 +69,7 @@ type Lead = {
     | "Descartado"
     | "Pedir Aval"
     | "Visita Propuesta" // Added for new status
+    | "Visita Confirmada" // Added for confirmed visits
   "Pedir Aval"?: boolean
   Apellidos?: string
   Nombre?: string
@@ -248,6 +249,107 @@ export default function LeadsPage() {
   const [visitDateDialogOpen, setVisitDateDialogOpen] = useState(false)
   const [selectedLeadForVisit, setSelectedLeadForVisit] = useState<Lead | null>(null)
   const [newVisitDateDate, setNewVisitDateDate] = useState("")
+
+  // Persistencia de estado (filtros)
+  const [isStateRestored, setIsStateRestored] = useState(false)
+
+  useEffect(() => {
+    const restoreState = () => {
+      try {
+        // Intentar recuperar el estado guardado al montar el componente
+        const savedState = sessionStorage.getItem("rf_leads_view_state")
+        if (savedState) {
+          const parsed = JSON.parse(savedState)
+          
+          // Solo restaurar si no hay parámetros explícitos en la URL que deban tener prioridad
+          const hasUrlParams = searchParams.has("q") || searchParams.has("status") || searchParams.has("ad")
+          
+          if (!hasUrlParams) {
+            if (parsed.searchTerm !== undefined) setSearchTerm(parsed.searchTerm)
+            if (parsed.statusFilter !== undefined) setStatusFilter(parsed.statusFilter)
+            if (parsed.selectedAdvertisement !== undefined) setSelectedAdvertisement(parsed.selectedAdvertisement)
+          }
+        }
+      } catch (e) {
+        console.error("Error restaurando estado de leads:", e)
+      } finally {
+        setIsStateRestored(true)
+      }
+    }
+    
+    restoreState()
+  }, []) // Se ejecuta solo una vez al montar
+
+  useEffect(() => {
+    if (!isStateRestored) return
+
+    // Guardar el estado cada vez que cambien los filtros relevantes
+    const stateToSave = {
+      searchTerm,
+      statusFilter,
+      selectedAdvertisement
+    }
+    sessionStorage.setItem("rf_leads_view_state", JSON.stringify(stateToSave))
+  }, [searchTerm, statusFilter, selectedAdvertisement, isStateRestored])
+
+  // Delete Note Confirmation
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null)
+  const [deleteNoteConfirm, setDeleteNoteConfirm] = useState<{ open: boolean, index: number, type: 'sidebar' | 'dialog' } | null>(null)
+
+  useEffect(() => {
+    const fetchUserName = async () => {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user && user.email) {
+            const res = await resolveUserName(user.email)
+            if (res.name) setCurrentUserName(res.name)
+        }
+    }
+    fetchUserName()
+  }, [])
+
+  const canDeleteNote = (header: string) => {
+    // header format: [DD/MM/YYYY HH:mm • Author]
+    const clean = header.replace(/^\[|\]$/g, "")
+    const parts = clean.split(" • ")
+    const author = parts.length > 1 ? parts[1].trim() : ""
+    
+    if (!author) return isAdmin || role === 'super' || role === 'admin'
+    if (isAdmin || role === 'super' || role === 'admin') return true
+    
+    if (userEmail && author === userEmail) return true
+    if (currentUserName && author === currentUserName) return true
+    if (userEmail && author.toLowerCase() === userEmail.toLowerCase()) return true
+    
+    return false
+  }
+
+  const handleDeleteNoteRequest = (index: number, notesStr: string, type: 'sidebar' | 'dialog') => {
+      const parts = splitNotes(notesStr)
+      if (index >= parts.length) return
+      
+      const note = parts[index]
+      if (canDeleteNote(note.header)) {
+          setDeleteNoteConfirm({ open: true, index, type })
+      } else {
+          toast({
+              title: "Acceso denegado",
+              description: "Solo el autor o un administrador puede eliminar esta nota.",
+              variant: "destructive"
+          })
+      }
+  }
+
+  const executeDeleteNote = async () => {
+      if (!deleteNoteConfirm) return
+      
+      if (deleteNoteConfirm.type === 'sidebar') {
+          await deleteLeadNoteEntry(deleteNoteConfirm.index)
+      } else {
+          await deleteNoteEntry(deleteNoteConfirm.index)
+      }
+      setDeleteNoteConfirm(null)
+  }
+
   const [newVisitDateTime, setNewVisitDateTime] = useState("")
   const [selectedAgenteId, setSelectedAgenteId] = useState("")
   const [isAgentSelectionOnly, setIsAgentSelectionOnly] = useState(false)
@@ -585,10 +687,51 @@ export default function LeadsPage() {
   const handleAddLeadNote = async () => {
     if (!selectedLead || !inlineNote.trim()) return
 
+    // Default fallback
+    let userStr = "Usuario (Sin Datos)"
+    
+    try {
+      // 1. Get fresh user
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (user) {
+        let foundName: string | null = null
+
+        if (user.email) {
+             // Strategy: Server Action
+             const result = await resolveUserName(user.email)
+             if (result.name) {
+                 foundName = result.name
+             }
+        }
+        
+        // Strategy 2: Metadata
+        if (!foundName && user.user_metadata) {
+             const metaName = user.user_metadata.name || user.user_metadata.full_name || user.user_metadata.nombre
+             if (metaName) {
+                 foundName = metaName
+             }
+        }
+        
+        // Strategy 3: Email
+        if (!foundName && user.email) {
+            foundName = user.email
+        }
+
+        if (foundName) {
+            userStr = foundName
+        }
+      } else {
+         userStr = "Sin Sesión"
+      }
+    } catch (e) {
+      console.error("Error determining user for note:", e)
+      userStr = "Error Auth"
+    }
+
     const now = new Date()
     const dateStr = now.toLocaleDateString("es-ES", { day: '2-digit', month: '2-digit', year: 'numeric' })
     const timeStr = now.toLocaleTimeString("es-ES", { hour: '2-digit', minute: '2-digit' })
-    const userStr = "Usuario" 
     
     const newEntryHeader = `[${dateStr} ${timeStr} • ${userStr}]`
     const newEntry = `${newEntryHeader}\n${inlineNote.trim()}`
@@ -611,7 +754,7 @@ export default function LeadsPage() {
       
       toast({
         title: "Nota añadida",
-        description: "La nota se ha guardado correctamente.",
+        description: `La nota se ha guardado correctamente.`,
       })
     } catch (error) {
       console.error("Error adding note:", error)
@@ -810,13 +953,54 @@ export default function LeadsPage() {
       const target = leads.find((l) => String(l.id) === idStr) || selectedLead
       const idVal = Number.isFinite(Number(noteDialog.leadId)) ? Number(noteDialog.leadId) : idStr
       const supabaseUser = await supabase.auth.getUser()
-      const userEmail = supabaseUser?.data?.user?.email || ""
+      const user = supabaseUser?.data?.user
+      
+      let displayName = "Usuario Desconocido"
+      let debugSource = "Init"
+      if (user) {
+         let foundName: string | null = null
+         
+         if (user.email) {
+            // Strategy: Server Action
+            const result = await resolveUserName(user.email)
+            if (result.name) {
+                foundName = result.name
+                debugSource = result.source
+            } else {
+                debugSource = `Server: ${result.source}`
+            }
+         }
+
+         // Strategy 2: User Metadata
+         if (!foundName) {
+             const meta = (user.user_metadata || {}) as any
+             const metaName = meta.nombre || meta.name || meta.full_name
+             if (metaName && metaName.trim() !== "" && metaName.trim().toLowerCase() !== "usuario") {
+                 foundName = metaName
+                 debugSource = "Metadata"
+             }
+         }
+
+         // Strategy 3: Email
+         if (!foundName && user.email) {
+             foundName = user.email
+             debugSource += " -> Email Fallback"
+         }
+
+         if (foundName && foundName.trim().toLowerCase() !== "usuario") {
+             displayName = foundName
+         } else {
+             displayName = user.email || "Usuario (Sin Datos)"
+         }
+      }
+      
       const now = new Date()
-      const two = (n: number) => String(n).padStart(2, "0")
-      const ts = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())} ${two(now.getHours())}:${two(now.getMinutes())}`
+      const dateStr = now.toLocaleDateString("es-ES", { day: '2-digit', month: '2-digit', year: 'numeric' })
+      const timeStr = now.toLocaleTimeString("es-ES", { hour: '2-digit', minute: '2-digit' })
+      const entry = `[${dateStr} ${timeStr} • ${displayName}] ${noteDialog.value}`
+      
       const existingText = String((target as any)?.Observaciones ?? (target as any)?.Obsevaciones ?? "")
-      const entry = `[${ts}${userEmail ? ` • ${userEmail}` : ""}] ${noteDialog.value}`
-      const joined = existingText ? `${entry}\n${existingText}` : entry
+      const joined = existingText ? `${entry}\n\n${existingText}` : entry
       
       const { error } = await supabase
         .from("Clientes")
@@ -839,7 +1023,7 @@ export default function LeadsPage() {
         prev && String(prev.id) === idStr ? { ...prev, Observaciones: joined, Obsevaciones: joined } : prev,
       )
       setNoteDialog((prev) => ({ ...prev, open: false }))
-      toast({ title: "Anotación guardada", description: "Se guardó en Observaciones", duration: 2000 })
+      toast({ title: "Anotación guardada", description: `La nota se ha guardado correctamente.` })
       console.log("[observ] dialog_save_success", { id: noteDialog.leadId })
     } catch (err) {
       console.error("[observ] dialog_save_error", err)
@@ -1480,10 +1664,35 @@ export default function LeadsPage() {
       if (leadsError) throw leadsError
       console.log("[leads] leadsData:fetched", leadsData?.length || 0)
 
-      let baseRows: any[] = (leadsData || []).map((lead: any) => ({
-        ...lead,
-        origen: lead?.origen ?? lead?.Origen ?? lead?.origin ?? null,
-      }))
+      let baseRows: any[] = (leadsData || []).map((lead: any) => {
+        // Normalize virtual statuses
+        const currentStatus = String(lead?.Estado || "").trim()
+        const hasDate = Boolean(lead?.fecha_de_visita)
+        const isCancelled = lead?.visita_completada === "cancelada"
+
+        let effectiveStatus = (lead?.Estado || null)
+
+        if (currentStatus === "Visita Propuesta" && hasDate) {
+          effectiveStatus = "Visita Confirmada"
+        }
+
+        // Fix for cancelled visits showing as Visita Propuesta
+        // If visit is cancelled, it should show as "Aprobado" (Aceptado), not Visita Propuesta
+        if (isCancelled && (effectiveStatus === "Visita Propuesta" || effectiveStatus === "Visita Confirmada")) {
+             effectiveStatus = "Aceptado"
+        }
+
+        return {
+          ...lead,
+          Estado: effectiveStatus,
+          origen: lead?.origen ?? lead?.Origen ?? lead?.origin ?? null,
+        }
+      })
+      
+      console.log("[leads] processed baseRows:", { 
+        total: baseRows.length,
+        visitaConfirmada: baseRows.filter(l => l.Estado === "Visita Confirmada").length
+      })
       
       if (signal?.aborted) return
 
@@ -1520,6 +1729,9 @@ export default function LeadsPage() {
           "Descartado",
           "Rechazado",
           "Visita Propuesta",
+          "Visita Confirmada",
+          "Visita Completada",
+          "Pedir Aval"
         ])
         rows = rows.filter((lead: any) => processed.has(String(lead?.Estado || "")))
       }
@@ -1527,7 +1739,13 @@ export default function LeadsPage() {
       setLeads(rows)
 
       if (leadsData) {
-        const uniqueStatuses = Array.from(new Set((rows || []).map((lead) => lead.Estado).filter(Boolean)))
+        const uniqueStatuses = Array.from(new Set((rows || []).map((lead) => {
+          const currentStatus = String(lead.Estado || "").trim()
+          const hasDate = Boolean(lead.fecha_de_visita)
+          return (currentStatus === "Visita Propuesta" && hasDate) 
+             ? "Visita Confirmada" 
+             : currentStatus
+        }).filter(Boolean)))
         setAvailableStatuses(uniqueStatuses)
       }
     } catch (err: any) {
@@ -1732,7 +1950,15 @@ export default function LeadsPage() {
     }
 
     if (statusFilter !== "all") {
-      filtered = filtered.filter((lead) => lead.Estado === statusFilter)
+      filtered = filtered.filter((lead) => {
+        const currentStatus = String(lead.Estado || "").trim()
+        const hasDate = Boolean(lead.fecha_de_visita)
+        const effectiveStatus = (currentStatus === "Visita Propuesta" && hasDate) 
+           ? "Visita Confirmada" 
+           : currentStatus
+        
+        return effectiveStatus === statusFilter
+      })
     }
 
     if (planInactive) {
@@ -1897,11 +2123,11 @@ export default function LeadsPage() {
   }
 
   const updateLeadStatus = async (leadId: number, newStatus: string) => {
-    // Intercept "Visita Propuesta" to force dialog flow
-    if (newStatus === "Visita Propuesta") {
+    // Intercept "Visita Propuesta" or "Visita Confirmada" to force dialog flow
+    if (newStatus === "Visita Propuesta" || newStatus === "Visita Confirmada") {
       const lead = leads.find(l => String(l.id) === String(leadId))
       if (lead) {
-          console.log("[v0] updateLeadStatus: Visita Propuesta selected. Opening dialog.")
+          console.log("[v0] updateLeadStatus: Visita Propuesta/Confirmada selected. Opening dialog.")
           setSelectedLeadForVisit(lead)
           setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
           setIsAgentSelectionOnly(true)
@@ -2077,8 +2303,24 @@ export default function LeadsPage() {
         text: "#2563eb",
         label: "Visita Propuesta",
       }
+
+    case "Visita Confirmada":
+      return {
+        bg: "#e0e7ff", // indigo-100
+        border: "#6366f1", // indigo-500
+        text: "#4338ca", // indigo-700
+        label: "Visita Confirmada",
+      }
+
+    case "Visita Completada":
+      return {
+        bg: "#f3e8ff", // purple-100
+        border: "#a855f7", // purple-500
+        text: "#7e22ce", // purple-700
+        label: "Visita Completada",
+      }
     
-      case "Aceptado":
+    case "Aceptado":
         return {
           bg: "#d1fae5",
           border: "#10b981",
@@ -2676,14 +2918,17 @@ export default function LeadsPage() {
       try {
         const supabase = createClient()
         
+        const hasDate = !isAgentSelectionOnly && newVisitDateDate && newVisitDateTime
+        const targetStatus = hasDate ? "Visita Confirmada" : "Visita Propuesta"
+
         let updateData: any = {
-          Estado: "Visita Propuesta",
+          Estado: targetStatus,
           idag: selectedAgenteId ? Number(selectedAgenteId) : null,
         }
 
         // History tracking
         const historyEntry: LeadHistoryEntry = {
-          status: "Visita Propuesta",
+          status: targetStatus,
           timestamp: new Date().toISOString(),
           agent_id: currentUser?.id,
           agent_name: currentUser?.email
@@ -2698,7 +2943,7 @@ export default function LeadsPage() {
         const updatedHistory = [...currentHistory, historyEntry]
         updateData.status_history = updatedHistory
 
-        if (!isAgentSelectionOnly && newVisitDateDate && newVisitDateTime) {
+        if (hasDate) {
           const d = new Date(`${isoDate}T${newVisitDateTime}`)
           const off = d.getTimezoneOffset()
           const sign = off <= 0 ? "+" : "-"
@@ -2708,7 +2953,7 @@ export default function LeadsPage() {
           const valueWithOffset = `${isoDate}T${newVisitDateTime}:00${offset}`
           
           updateData.fecha_de_visita = valueWithOffset
-          updateData.visita_completada = "visita propuesta"
+          updateData.visita_completada = "visita confirmada"
         } else if (isAgentSelectionOnly) {
           // If agent only, clear the visit date
           updateData.fecha_de_visita = null
@@ -2733,7 +2978,7 @@ export default function LeadsPage() {
         // Log success
         console.log("[v0] Update successful", data)
 
-        // Trigger Webhook if status is "Visita Propuesta"
+        // Trigger Webhook if status is "Visita Propuesta" or "Visita Confirmada"
         // (Logic moved to async block below to avoid double sending and UI blocking)
 
 
@@ -2751,7 +2996,8 @@ export default function LeadsPage() {
           idag: selectedAgenteId ? Number(selectedAgenteId) : (selectedLeadForVisit as any).idag,
         } as any
 
-        setLeads((prev) => prev.map((l) => (l.id === selectedLeadForVisit.id ? { ...l, ...updatedLead } : l)))
+        setLeads((prev) => prev.map((l) => (String(l.id) === String(selectedLeadForVisit.id) ? { ...l, ...updatedLead } : l)))
+        setFilteredLeads((prev) => prev.map((l) => (String(l.id) === String(selectedLeadForVisit.id) ? { ...l, ...updatedLead } : l)))
         
         // Update selectedLead panel immediately
         setSelectedLead((prev) => {
@@ -2768,13 +3014,13 @@ export default function LeadsPage() {
             fetchLeads()
         }, 500)
         
-        if (updateData.Estado === "Visita Propuesta") {
+        if (updateData.Estado === "Visita Propuesta" || updateData.Estado === "Visita Confirmada") {
             // Async webhook call (fire and forget)
             (async () => {
                 try {
                     const currentAd = advertisements.find(a => 
-                      a.Referencia === selectedLeadForVisit.Inmueble || 
-                      a.Direccion === selectedLeadForVisit.Inmueble ||
+                      (a.Referencia && selectedLeadForVisit.Inmueble && a.Referencia.trim() === selectedLeadForVisit.Inmueble.trim()) || 
+                      (a.Direccion && selectedLeadForVisit.Inmueble && a.Direccion.trim() === selectedLeadForVisit.Inmueble.trim()) ||
                       (selectedLeadForVisit.Inmueble && a.Direccion && selectedLeadForVisit.Inmueble.includes(a.Direccion))
                     )
 
@@ -2799,18 +3045,24 @@ export default function LeadsPage() {
 
                     console.log("[v0] Triggering Webhook...")
                     
+                    const { date: formattedDate, time: formattedTime } = formatWebhookDate(updateData.fecha_de_visita)
+
                     const payload = {
                       "Nombre de lead": `${selectedLeadForVisit.Nombre || ''} ${selectedLeadForVisit.Apellidos || ''}`.trim(),
                       "Agente Asignado": assignedAgent || { idag: selectedAgenteId },
                       "Agente Email": assignedAgent?.Email || null,
-                      "Inmueble/Anuncio": currentAd || { Referencia: selectedLeadForVisit.Inmueble },
+                      "Inmueble/Anuncio": currentAd 
+                        ? { ...currentAd, Direccion: currentAd.Direccion || "Pregunta a tu agente" } 
+                        : { Referencia: selectedLeadForVisit.Inmueble, Direccion: "Pregunta a tu agente" },
+                      "Direccion": currentAd?.Direccion || "Pregunta a tu agente",
+                      "Direccion del Anuncio": currentAd?.Direccion || "Pregunta a tu agente",
                       "Nombre Inmobiliaria": inmobiliariaNombre || (inmobiliariaData as any)?.nombre_inmobiliaria || "Sin nombre",
                       "Inmobiliaria": inmobiliariaData || null,
                       "Firma": (inmobiliariaData as any)?.firma_html || "",
                       "Franjas/Huecos libres": futureSlots,
                       "Link de Agendamiento": bookingLink,
-                      "Fecha Visita": newVisitDateDate || null,
-                      "Hora Visita": newVisitDateTime || null,
+                      "Fecha Visita": formattedDate,
+                      "Hora Visita": formattedTime,
                       "Fecha Completa": updateData.fecha_de_visita || null,
                       ...selectedLeadForVisit,
                       ...updateData
@@ -2859,7 +3111,8 @@ export default function LeadsPage() {
           .from("Clientes")
           .update({
             visita_completada: "cancelada",
-            fecha_de_visita: null
+            fecha_de_visita: null,
+            Estado: "Aceptado"
           })
           .eq("id", selectedLeadForVisit.id)
 
@@ -2881,10 +3134,17 @@ export default function LeadsPage() {
                  agentData = data
             }
 
-            const currentAd = advertisements.find(a => 
-                (selectedLeadForVisit.Inmueble && a.Referencia === selectedLeadForVisit.Inmueble) ||
-                (selectedLeadForVisit.Inmueble && a.Direccion === selectedLeadForVisit.Inmueble)
-            )
+            const currentAd = advertisements.find(a => {
+              if (!selectedLeadForVisit.Inmueble) return false
+              const leadInmueble = selectedLeadForVisit.Inmueble.trim().toLowerCase()
+              const adRef = (a.Referencia || "").trim().toLowerCase()
+              const adDir = (a.Direccion || "").trim().toLowerCase()
+              
+              return leadInmueble === adRef || 
+                     leadInmueble === adDir ||
+                     leadInmueble.includes(adDir) ||
+                     adDir.includes(leadInmueble)
+            })
 
             const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${selectedLeadForVisit.id}`
 
@@ -2892,6 +3152,8 @@ export default function LeadsPage() {
                 "Link de Agendamiento": bookingLink,
                 "Nombre de lead": `${selectedLeadForVisit.Nombre || ''} ${selectedLeadForVisit.Apellidos || ''}`.trim(),
                 "Inmueble/Anuncio": currentAd || { Referencia: selectedLeadForVisit.Inmueble },
+                "Direccion": currentAd?.Direccion || "Pregunta a tu agente",
+                "Direccion del Anuncio": currentAd?.Direccion || "Pregunta a tu agente",
                 "Nombre Inmobiliaria": inmobiliariaNombre || "Sin nombre",
                 "Inmobiliaria": inmobiliariaData || null,
                 "Firma": (inmobiliariaData as any)?.firma_html || "",
@@ -2903,7 +3165,8 @@ export default function LeadsPage() {
                 "Motivo": "Cancelado por agente",
                 ...selectedLeadForVisit,
                 visita_completada: "cancelada",
-                fecha_de_visita: null
+                fecha_de_visita: null,
+                Estado: "Aceptado"
             }
 
             const { status_history, ...webhookPayload } = cancelPayload as any
@@ -2931,6 +3194,7 @@ export default function LeadsPage() {
             ...prev,
             fecha_de_visita: null as any,
             visita_completada: "cancelada" as any,
+            Estado: "Aceptado",
           }
         })
         setVisitDateDialogOpen(false)
@@ -3354,17 +3618,23 @@ export default function LeadsPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="start">
-                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Pendiente")}>
-                                Pendiente
+                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Datos Incompletos")}>
+                                Datos Incompletos
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Validado")}>
-                                Validado
+                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Datos Completos")}>
+                                Datos Completos
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Completado")}>
-                                Completado
+                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Pedir Aval")}>
+                                Pedir Aval
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Rechazado")}>
-                                Rechazado
+                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Visita Propuesta")}>
+                                Visita Propuesta
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Visita Confirmada")}>
+                                Visita Confirmada
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Visita Completada")}>
+                                Visita Completada
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => updateBulkLeadStatus("Aceptado")}>
                                 Aprobado
@@ -3459,7 +3729,14 @@ export default function LeadsPage() {
 
                                           <div className="flex items-center gap-1.5">
                                             {(() => {
-                                              const statusColors = getStatusColors(lead.Estado)
+                                              // Promote "Visita Propuesta" with a date to "Visita Confirmada" for display
+                                              const currentStatus = String(lead.Estado || "").trim()
+                                              const hasDate = Boolean(lead.fecha_de_visita)
+                                              const effectiveStatus = (currentStatus === "Visita Propuesta" && hasDate) 
+                                                ? "Visita Confirmada" 
+                                                : lead.Estado
+
+                                              const statusColors = getStatusColors(effectiveStatus)
                                               const showEstadoBadge =
                                                 lead.Estado &&
                                                 lead.Estado !== "Datos Incompletos" &&
@@ -3469,7 +3746,7 @@ export default function LeadsPage() {
                                               return (
                                                 <div
                                                   className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
-                                                    ["Visita Propuesta", "Completo", "Completado"].includes(String(lead.Estado || "")) ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
+                                                    ["Visita Propuesta", "Visita Confirmada", "Completo", "Completado"].includes(String(effectiveStatus || "")) ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
                                                   }`}
                                                   style={{
                                                     backgroundColor: statusColors.bg,
@@ -3477,7 +3754,7 @@ export default function LeadsPage() {
                                                   }}
                                                   onClick={async () => {
                                                     console.log("[v0] Estado div clicked, Estado:", lead.Estado)
-                                                    if (lead.Estado === "Visita Propuesta") {
+                                                    if (lead.Estado === "Visita Propuesta" || lead.Estado === "Visita Confirmada") {
                                                       console.log("[v0] Opening visit date dialog for lead:", lead.Nombre, lead.Apellidos)
                                                       console.log("[v0] Current fecha_de_visita:", lead.fecha_de_visita)
                                                   setSelectedLeadForVisit(lead)
@@ -3521,10 +3798,10 @@ export default function LeadsPage() {
                                                       className="text-xs font-semibold"
                                                       style={{ color: statusColors.text }}
                                                     >
-                                                      {lead.Estado === "Aceptado" ? "✓ " : ""}
-                                                      {lead.Estado === "Visita Propuesta" && lead.fecha_de_visita ? (
+                                                      {effectiveStatus === "Aceptado" ? "✓ " : ""}
+                                                      {(effectiveStatus === "Visita Propuesta" || effectiveStatus === "Visita Confirmada") && lead.fecha_de_visita ? (
                                                         <>
-                                                          Visita Propuesta -{" "}
+                                                          {effectiveStatus} -{" "}
                                                           {formatDate(lead.fecha_de_visita) + " " + new Date(lead.fecha_de_visita).toLocaleTimeString("es-ES", {
                                                             hour: "2-digit",
                                                             minute: "2-digit"
@@ -3933,7 +4210,7 @@ export default function LeadsPage() {
                                               return (
                                                 <div
                                                     className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
-                                                      ["Visita Propuesta", "Datos Completos", "Completo", "Completado"].includes(String(lead.Estado || "")) ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
+                                                      ["Visita Propuesta", "Visita Confirmada", "Datos Completos", "Completo", "Completado"].includes(String(lead.Estado || "")) ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
                                                     }`}
                                                   style={{
                                                     backgroundColor: statusColors.bg,
@@ -3941,8 +4218,8 @@ export default function LeadsPage() {
                                                   }}
                                                     onClick={async () => {
                                                       console.log("[v0] Estado div clicked, Estado:", lead.Estado)
-                                                      if (lead.Estado === "Visita Propuesta") {
-                                                      console.log("[v0] Opening visit date dialog for lead:", lead.Nombre, lead.Apellidos)
+                                                      if (lead.Estado === "Visita Propuesta" || lead.Estado === "Visita Confirmada") {
+                                                        console.log("[v0] Opening visit date dialog for lead:", lead.Nombre, lead.Apellidos)
                                                       console.log("[v0] Current fecha_de_visita:", lead.fecha_de_visita)
                                                     setSelectedLeadForVisit(lead)
                                                       setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
@@ -3989,9 +4266,9 @@ export default function LeadsPage() {
                                                   >
                                                     {lead.Estado === "Aceptado" ? "✓ " : ""}
                                                     {/* Show only the visit date without "Visita Propuesta" text */}
-                                                    {lead.Estado === "Visita Propuesta" && lead.fecha_de_visita ? (
+                                                    {(lead.Estado === "Visita Propuesta" || lead.Estado === "Visita Confirmada") && lead.fecha_de_visita ? (
                                                       <>
-                                                          Visita Propuesta -{" "}
+                                                          {lead.Estado} -{" "}
                                                           {formatDate(lead.fecha_de_visita) + " " + new Date(lead.fecha_de_visita).toLocaleTimeString("es-ES", {
                                                             hour: "2-digit",
                                                             minute: "2-digit"
@@ -4357,7 +4634,11 @@ export default function LeadsPage() {
                       <LeadApproveWrapper
                         lead={selectedLead}
                         updateLeadStatus={updateLeadStatus}
-                        onLeadUpdated={(updatedLead) => setSelectedLead(updatedLead)}
+                        onLeadUpdated={(updatedLead) => {
+                          setSelectedLead(updatedLead)
+                          setLeads((prev) => prev.map((l) => (String(l.id) === String(updatedLead.id) ? { ...l, ...updatedLead } : l)))
+                          setFilteredLeads((prev) => prev.map((l) => (String(l.id) === String(updatedLead.id) ? { ...l, ...updatedLead } : l)))
+                        }}
                       />
                       <button
                         className={`flex items-center gap-0.5 px-3 py-2 text-sm font-medium border border-blue-700 text-blue-700 dark:border-blue-400 dark:text-blue-400 rounded-md transition-all ${planInactive ? "pointer-events-none opacity-50 cursor-not-allowed" : "hover:bg-blue-100 hover:border-blue-800 hover:text-blue-800 dark:hover:bg-blue-900/40"}`}
@@ -4373,7 +4654,11 @@ export default function LeadsPage() {
                       <LeadDenyWrapper
                         lead={selectedLead}
                         updateLeadStatus={updateLeadStatus}
-                        onLeadUpdated={(updatedLead) => setSelectedLead(updatedLead)}
+                        onLeadUpdated={(updatedLead) => {
+                          setSelectedLead(updatedLead)
+                          setLeads((prev) => prev.map((l) => (String(l.id) === String(updatedLead.id) ? { ...l, ...updatedLead } : l)))
+                          setFilteredLeads((prev) => prev.map((l) => (String(l.id) === String(updatedLead.id) ? { ...l, ...updatedLead } : l)))
+                        }}
                       />
 
                     </div>
@@ -4418,10 +4703,10 @@ export default function LeadsPage() {
                                 ${
                                   selectedPersona === 2
                                     ? selectedLead.tipo2 === "Avalista"
-                                      ? "bg-green-50 text-green-900 border-green-500 border-b-transparent z-10 -mb-px shadow-md"
+                                      ? "bg-emerald-100 text-emerald-950 border-emerald-600 border-b-transparent z-10 -mb-px shadow-md font-bold dark:bg-emerald-800 dark:text-white dark:border-emerald-400"
                                       : "bg-background text-foreground border-b-transparent z-10 -mb-px shadow-sm"
                                     : selectedLead.tipo2 === "Avalista"
-                                      ? "bg-green-100/50 text-green-700 border-green-300 hover:bg-green-100 hover:border-green-400"
+                                      ? "bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400 dark:bg-emerald-950/40 dark:text-emerald-100 dark:border-emerald-700 dark:hover:bg-emerald-900/60"
                                       : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
                                 }
                               `}
@@ -4446,10 +4731,10 @@ export default function LeadsPage() {
                                 ${
                                   selectedPersona === 3
                                     ? selectedLead.tipo3 === "Avalista"
-                                      ? "bg-green-50 text-green-900 border-green-500 border-b-transparent z-10 -mb-px shadow-md"
+                                      ? "bg-emerald-100 text-emerald-950 border-emerald-600 border-b-transparent z-10 -mb-px shadow-md font-bold dark:bg-emerald-800 dark:text-white dark:border-emerald-400"
                                       : "bg-background text-foreground border-b-transparent z-10 -mb-px shadow-sm"
                                     : selectedLead.tipo3 === "Avalista"
-                                      ? "bg-green-100/50 text-green-700 border-green-300 hover:bg-green-100 hover:border-green-400"
+                                      ? "bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400 dark:bg-emerald-950/40 dark:text-emerald-100 dark:border-emerald-700 dark:hover:bg-emerald-900/60"
                                       : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
                                 }
                               `}
@@ -4475,10 +4760,10 @@ export default function LeadsPage() {
                               ${
                                 selectedPersona === 4
                                   ? selectedLead.tipo4 === "Avalista" 
-                                    ? "bg-green-50 text-green-900 border-green-500 border-b-transparent z-10 -mb-px shadow-md dark:bg-green-950/50 dark:text-green-100 dark:border-green-500"
+                                    ? "bg-emerald-100 text-emerald-950 border-emerald-600 border-b-transparent z-10 -mb-px shadow-md font-bold dark:bg-emerald-800 dark:text-white dark:border-emerald-400"
                                     : "bg-amber-50 text-amber-900 border-amber-500 border-b-transparent z-10 -mb-px shadow-md dark:bg-amber-950/50 dark:text-amber-100 dark:border-amber-500"
                                   : selectedLead.tipo4 === "Avalista"
-                                    ? "bg-green-100/50 text-green-700 border-green-300 hover:bg-green-100 hover:border-green-400 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800 dark:hover:bg-green-900/40"
+                                    ? "bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400 dark:bg-emerald-950/40 dark:text-emerald-100 dark:border-emerald-700 dark:hover:bg-emerald-900/60"
                                     : "bg-amber-100/50 text-amber-700 border-amber-300 hover:bg-amber-100 hover:border-amber-400 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800 dark:hover:bg-amber-900/40"
                               }
                             `}
@@ -5549,88 +5834,106 @@ export default function LeadsPage() {
                           {/* Status Card */}
                           <div className="border border-border rounded-lg p-3 flex-1 flex flex-col">
                             <div className="text-xs font-semibold uppercase tracking-wider mb-2 pl-1">Estado</div>
-                            <Select
-                              value={selectedLead.Estado || "Pendiente"}
-                              onValueChange={(value) => updateLeadStatus(Number(selectedLead.id), value)}
-                            >
-                              <SelectTrigger 
-                                className="w-full h-auto flex-1 p-4 border-2 rounded-lg flex flex-col items-center justify-center gap-2 hover:opacity-90 transition-all focus:ring-0 shadow-sm outline-none [&>svg]:hidden"
-                                style={{
-                                  backgroundColor: getStatusColors(selectedLead.Estado).bg,
-                                  borderColor: getStatusColors(selectedLead.Estado).border,
-                                }}
-                              >
-                                <div 
-                                  className="text-xl font-bold text-center leading-tight whitespace-pre-wrap"
-                                  style={{ color: getStatusColors(selectedLead.Estado).text }}
-                                >
-                                  {selectedLead.Estado === "Datos Completos" ? (
-                                    <>
-                                      Datos<br />Completos
-                                    </>
-                                  ) : (
-                                    selectedLead.Estado === "Aceptado" ? "Aprobado" : (selectedLead.Estado || "Pendiente")
-                                  )}
-                                </div>
-                                
-                                {selectedLead.Estado === "Visita Propuesta" && selectedLead.fecha_de_visita && (
-                                  <div 
-                                    className="font-medium text-sm mt-1"
-                                    style={{ color: getStatusColors(selectedLead.Estado).text }}
-                                  >
-                                    {new Date(selectedLead.fecha_de_visita).toLocaleString("es-ES", {
-                                      day: "2-digit",
-                                      month: "2-digit",
-                                      year: "numeric",
-                                      hour: "2-digit",
-                                      minute: "2-digit"
-                                    })}
-                                  </div>
-                                )}
-                                
-                                <div 
-                                  className="text-[10px] uppercase tracking-wider opacity-60 mt-2 font-medium"
-                                  style={{ color: getStatusColors(selectedLead.Estado).text }}
-                                >
-                                  Click para cambiar el estado
-                                </div>
+                            {(() => {
+                              const currentStatus = String(selectedLead.Estado || "").trim()
+                              const effectiveStatus = (currentStatus === "Visita Propuesta" && selectedLead.fecha_de_visita) 
+                                ? "Visita Confirmada" 
+                                : selectedLead.Estado
+                              const colors = getStatusColors(effectiveStatus)
 
-                                {(selectedLead.status_history && selectedLead.status_history.length > 0) && (() => {
-                                  const last = selectedLead.status_history[selectedLead.status_history.length - 1]
-                                  return (
-                                    <div className="mt-2 pt-2 border-t w-full text-center" style={{ borderColor: getStatusColors(selectedLead.Estado).border + "40" }}>
-                                      <div className="text-[10px] flex flex-col items-center justify-center gap-0.5" style={{ color: getStatusColors(selectedLead.Estado).text }}>
-                                        <span className="font-semibold">
-                                          {(() => {
-                                              try {
-                                                  return new Date(last.timestamp).toLocaleString("es-ES", {
-                                                      day: "2-digit",
-                                                      month: "2-digit",
-                                                      year: "numeric",
-                                                      hour: "2-digit",
-                                                      minute: "2-digit"
-                                                  })
-                                              } catch { return "" }
-                                          })()}
-                                        </span>
-                                        <span className="opacity-80">
-                                          Por: {(last.agent_name?.split('@')[0] === "Sistema" || !last.agent_name) ? "RaF" : last.agent_name.split('@')[0]}
-                                        </span>
-                                      </div>
+                              return (
+                                <Select
+                                  value={selectedLead.Estado || "Pendiente"}
+                                  onValueChange={(value) => updateLeadStatus(Number(selectedLead.id), value)}
+                                >
+                                  <SelectTrigger 
+                                    className="w-full h-auto flex-1 p-4 border-2 rounded-lg flex flex-col items-center justify-center gap-2 hover:opacity-90 transition-all focus:ring-0 shadow-sm outline-none [&>svg]:hidden"
+                                    style={{
+                                      backgroundColor: colors.bg,
+                                      borderColor: colors.border,
+                                    }}
+                                  >
+                                    <div 
+                                      className="text-xl font-bold text-center leading-tight whitespace-pre-wrap"
+                                      style={{ color: colors.text }}
+                                    >
+                                      {effectiveStatus === "Datos Completos" ? (
+                                        <>
+                                          Datos<br />Completos
+                                        </>
+                                      ) : (
+                                        effectiveStatus === "Aceptado" ? "Aprobado" : (effectiveStatus || "Pendiente")
+                                      )}
                                     </div>
-                                  )
-                                })()}
-                              </SelectTrigger>
-                              <SelectContent className="z-[99999] max-h-[300px]">
-                                {(availableStatuses.length > 0 ? availableStatuses : [
-                                  "Pendiente", "Datos Completos", "Visita Propuesta", "Validado", "Descartado", "Aceptado"
-                                ]).map((status) => (
-                                  <SelectItem key={status} value={status}>
-                                    {status === "Aceptado" ? "Aprobado" : status}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                                    
+                                    {((effectiveStatus === "Visita Propuesta" || effectiveStatus === "Visita Confirmada") && selectedLead.fecha_de_visita) && (
+                                      <div 
+                                        className="font-medium text-sm mt-1"
+                                        style={{ color: colors.text }}
+                                      >
+                                        {new Date(selectedLead.fecha_de_visita).toLocaleString("es-ES", {
+                                          day: "2-digit",
+                                          month: "2-digit",
+                                          year: "numeric",
+                                          hour: "2-digit",
+                                          minute: "2-digit"
+                                        })}
+                                      </div>
+                                    )}
+                                    
+                                    <div 
+                                      className="text-[10px] uppercase tracking-wider opacity-60 mt-2 font-medium"
+                                      style={{ color: colors.text }}
+                                    >
+                                      Click para cambiar el estado
+                                    </div>
+
+                                    {(selectedLead.status_history && selectedLead.status_history.length > 0) && (() => {
+                                      const last = selectedLead.status_history[selectedLead.status_history.length - 1]
+                                      return (
+                                        <div className="mt-2 pt-2 border-t w-full text-center" style={{ borderColor: colors.border + "40" }}>
+                                          <div className="text-[10px] flex flex-col items-center justify-center gap-0.5" style={{ color: colors.text }}>
+                                            <span className="font-semibold">
+                                              {(() => {
+                                                  try {
+                                                      return new Date(last.timestamp).toLocaleString("es-ES", {
+                                                          day: "2-digit",
+                                                          month: "2-digit",
+                                                          year: "numeric",
+                                                          hour: "2-digit",
+                                                          minute: "2-digit"
+                                                      })
+                                                  } catch { return "" }
+                                              })()}
+                                            </span>
+                                            <span className="opacity-80">
+                                              Por: {(last.agent_name?.split('@')[0] === "Sistema" || !last.agent_name) ? "RaF" : last.agent_name.split('@')[0]}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )
+                                    })()}
+                                  </SelectTrigger>
+                                  <SelectContent className="z-[99999] max-h-[300px]">
+                                       {Array.from(new Set([
+                                         ...availableStatuses,
+                                         "Datos Completos", 
+                                         "Datos Incompletos", 
+                                         "Pedir Aval", 
+                                         "Aceptado", 
+                                         "Descartado", 
+                                         "Visita Propuesta", 
+                                         "Visita Completada",
+                                         "Visita Confirmada"
+                                       ])).map((status) => (
+                                         <SelectItem key={status} value={status}>
+                                           {status === "Aceptado" ? "Aprobado" : status}
+                                         </SelectItem>
+                                       ))}
+                                     </SelectContent>
+                                </Select>
+                              )
+                            })()}
                           </div>
 
                           {/* Visit Information - Full Width */}
@@ -5855,12 +6158,12 @@ export default function LeadsPage() {
                             <h3 className="font-semibold text-sm">Anotaciones</h3>
                           </div>
                           <Badge variant="secondary" className="text-[10px] h-5 bg-background border shadow-sm">
-                            {selectedLead.Observaciones ? splitNotes(selectedLead.Observaciones).length : 0}
+                            {splitNotes((selectedLead.Observaciones ?? selectedLead.Obsevaciones ?? "").trim()).length}
                           </Badge>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
-                          {selectedLead.Observaciones && splitNotes(selectedLead.Observaciones).length > 0 ? (
-                            splitNotes(selectedLead.Observaciones).map((n, idx) => {
+                          {splitNotes((selectedLead.Observaciones ?? selectedLead.Obsevaciones ?? "").trim()).length > 0 ? (
+                            splitNotes(selectedLead.Observaciones ?? selectedLead.Obsevaciones ?? "").map((n, idx) => {
                               const cleanHeader = n.header.replace(/^\[|\]$/g, "")
                               const [dateStr, userStr] = cleanHeader.includes(" • ")
                                 ? cleanHeader.split(" • ")
@@ -5881,7 +6184,7 @@ export default function LeadsPage() {
                                       variant="ghost"
                                       size="icon"
                                       className="h-6 w-6 text-muted-foreground hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity -mr-1 -mt-1"
-                                      onClick={() => deleteLeadNoteEntry(idx)}
+                                      onClick={() => handleDeleteNoteRequest(idx, selectedLead.Observaciones ?? selectedLead.Obsevaciones ?? "", 'sidebar')}
                                     >
                                       <Trash2 className="h-3.5 w-3.5" />
                                     </Button>
@@ -7057,9 +7360,11 @@ export default function LeadsPage() {
                   Cancelar
                 </Button>
               </DialogClose>
-              <Button className="flex-1" onClick={saveNoteDialog}>
-                Guardar
-              </Button>
+              <div className="flex-1 flex flex-col gap-1">
+                 <Button className="w-full" onClick={saveNoteDialog}>
+                   Guardar
+                 </Button>
+              </div>
             </div>
             {splitNotes(noteDialog.existing).length > 0 && (
               <div className="space-y-2">
@@ -7086,7 +7391,7 @@ export default function LeadsPage() {
                             size="sm"
                             variant="outline"
                             className="h-7 px-2"
-                            onClick={() => deleteNoteEntry(idx)}
+                            onClick={() => handleDeleteNoteRequest(idx, noteDialog.existing, 'dialog')}
                           >
                             <Trash className="h-3.5 w-3.5 mr-1" />
                             Eliminar
@@ -7140,6 +7445,25 @@ export default function LeadsPage() {
               Cancelar
             </AlertDialogCancel>
             <AlertDialogAction onClick={executeSingleStatusChange}>Confirmar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!deleteNoteConfirm} onOpenChange={(open) => !open && setDeleteNoteConfirm(null)}>
+        <AlertDialogContent className="z-[30000]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar anotación?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. ¿Estás seguro de que quieres eliminar esta nota?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteNoteConfirm(null)}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={executeDeleteNote} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Eliminar
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

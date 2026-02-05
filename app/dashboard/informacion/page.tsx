@@ -342,7 +342,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
       const { data: whatsPeriodo } = await supabase
         .from("Whatsapp")
         .select("id, created_at, IDI")
-        .eq("IDI", inmobiliariaInfo.idi)
+        .eq("IDI", inmobiliariaInfo?.idi)
         .gte("created_at", start.toISOString())
         .lt("created_at", effectiveEnd.toISOString())
         .eq("Tipo", "Enviado")
@@ -407,7 +407,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                     <Building2 className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-xs font-medium">Inmobiliaria</p>
-                      <p className="text-sm text-muted-foreground">{inmobiliariaInfo.Nombre}</p>
+                      <p className="text-sm text-muted-foreground">{inmobiliariaInfo?.Nombre}</p>
                     </div>
                   </div>
                 )}
@@ -498,7 +498,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancelar</AlertDialogCancel>
                                 <form action={disableWhatsappAction}>
-                                  <input type="hidden" name="idi" value={String(inmobiliariaInfo.idi)} />
+                                  <input type="hidden" name="idi" value={String(inmobiliariaInfo?.idi ?? "")} />
                                   <AlertDialogAction asChild>
                                     <Button type="submit" variant="destructive" size="sm">Confirmar y detener</Button>
                                   </AlertDialogAction>
@@ -508,7 +508,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                           </AlertDialog>
                         ) : (
                           <form action={enableWhatsappAction}>
-                            <input type="hidden" name="idi" value={String(inmobiliariaInfo.idi)} />
+                            <input type="hidden" name="idi" value={String(inmobiliariaInfo?.idi ?? "")} />
                             <Button type="submit" variant="default" size="sm" aria-label="Reactivar envíos de WhatsApp" title="Reactivar envíos de WhatsApp">
                               Reactivar envíos de WhatsApp
                             </Button>
@@ -523,9 +523,9 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                             {(orderedPlans.length > 0 ? orderedPlans : fallbackOrderedPlans).map((p) => (
                               <form id={`change-plan-form-${String(p.idp)}`} key={p.idp} action={changePlanAction} className={`rounded-md`}>
-                                <input type="hidden" name="idi" value={String(inmobiliariaInfo.idi)} />
+                                <input type="hidden" name="idi" value={String(inmobiliariaInfo?.idi ?? "")} />
                                 <input type="hidden" name="planId" value={String(p.idp)} />
-                                <Card className={`cursor-pointer overflow-hidden transition-all ${inmobiliariaInfo.Plan === p.idp ? "border-primary border-2 bg-primary/5 ring-2 ring-primary/40 shadow-md" : planStyle(p.Nombre)} rounded-lg`}>
+                                <Card className={`cursor-pointer overflow-hidden transition-all ${inmobiliariaInfo?.Plan === p.idp ? "border-primary border-2 bg-primary/5 ring-2 ring-primary/40 shadow-md" : planStyle(p.Nombre)} rounded-lg`}>
                                   <CardContent className="p-4 flex flex-col gap-3">
                                     <div className="flex items-center justify-between gap-2">
                                       <div className="flex items-center gap-2">
@@ -545,12 +545,12 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                                     </div>
                                   </div>
                                     <div className="flex items-center justify-between gap-2">
-                                      {inmobiliariaInfo.Plan === p.idp ? (
+                                      {inmobiliariaInfo?.Plan === p.idp ? (
                                         <Badge variant="secondary" className="text-xs shrink-0">Plan actual</Badge>
                                       ) : (
                                         <span />
                                       )}
-                                      <ChangePlanButton idi={Number(inmobiliariaInfo.idi)} planId={Number(p.idp)} current={inmobiliariaInfo.Plan === p.idp} />
+                                      <ChangePlanButton idi={Number(inmobiliariaInfo?.idi)} planId={Number(p.idp)} current={inmobiliariaInfo?.Plan === p.idp} />
                                     </div>
                                   </CardContent>
                                 </Card>
@@ -563,7 +563,7 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                   </>
                 ) : (
                   <div className="text-center py-4">
-                    <p className="text-sm text-muted-foreground">Plan ID: {inmobiliariaInfo.Plan}</p>
+                    <p className="text-sm text-muted-foreground">Plan ID: {inmobiliariaInfo?.Plan}</p>
                     <p className="text-xs text-muted-foreground mt-2">No se pudieron cargar los detalles del plan</p>
                   </div>
                 )}

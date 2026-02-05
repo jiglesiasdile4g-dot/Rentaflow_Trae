@@ -11,6 +11,23 @@ export async function GET(req: Request) {
     if (allowInsecure) {
       process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
     }
+    
+    // Validate target URL to prevent local file access or other schemes
+    try {
+      const parsedTarget = new URL(target)
+      if (parsedTarget.protocol !== 'http:' && parsedTarget.protocol !== 'https:') {
+        return NextResponse.json({ error: "protocolo no permitido" }, { status: 400 })
+      }
+    } catch {
+       // If it's not a valid URL, it might be a relative path which is handled below, 
+       // but we should be careful.
+       // The original code allowed relative paths by appending to host.
+       // We'll keep that but ensure it doesn't contain suspicious characters.
+       if (target.includes("..") || target.includes(";") || target.includes("$") || target.includes("`")) {
+          return NextResponse.json({ error: "url invalida" }, { status: 400 })
+       }
+    }
+
     const baseUrl = process.env.NEXTCLOUD_URL
     const user = process.env.NEXTCLOUD_USERNAME
     const pass = process.env.NEXTCLOUD_PASSWORD

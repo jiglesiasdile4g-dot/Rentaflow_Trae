@@ -97,3 +97,55 @@ export async function getAgentByEmail(email: string) {
         return { data: null, error: err.message }
     }
 }
+
+export async function resolveUserName(email: string) {
+    const supabase = createAdminClient()
+    try {
+        let debugInfo = ""
+        
+        // 1. Try Perfiles (Try multiple casing variations to be safe)
+        // Note: PostgREST error "column X does not exist" means we are requesting a column that isn't there.
+        // We will try to select * to inspect available columns or just try lowercase/uppercase separately if needed.
+        // But safer is to try standard columns we know exist or catch the error.
+        
+        // Let's try a safer query first for Perfiles
+        const { data: profile, error: profileError } = await supabase
+            .from("Perfiles")
+            .select("*") // Fetch all to avoid column error
+            .ilike("usuario", email)
+            .maybeSingle()
+            
+        if (profileError) debugInfo += `PerfilesErr:${profileError.message};`
+        
+        if (profile) {
+            // Check variations manually
+            const name = profile.nombre || profile.Nombre || profile.name || profile.Name
+            if (name && name.trim()) return { name: name.trim(), source: "Perfiles (Admin)" }
+            debugInfo += "Perfiles:FoundButNoName;"
+        } else {
+            debugInfo += "Perfiles:NotFound;"
+        }
+
+        // 2. Try Agentes (Legacy)
+        const { data: agent, error: agentError } = await supabase
+            .from("Agentes")
+            .select("*") // Fetch all to avoid column error
+            .ilike("Email", email)
+            .maybeSingle()
+            
+        if (agentError) debugInfo += `AgentesErr:${agentError.message};`
+
+        if (agent) {
+            const name = agent.Nombre || agent.nombre || agent.name || agent.Name
+            if (name && name.trim()) return { name: name.trim(), source: "Agentes (Admin)" }
+            debugInfo += "Agentes:FoundButNoName;"
+        } else {
+            debugInfo += "Agentes:NotFound;"
+        }
+
+        return { name: null, source: `Not Found (${debugInfo})` }
+    } catch (err: any) {
+        console.error("Error resolving user name:", err)
+        return { name: null, source: `Exception: ${err.message}` }
+    }
+}

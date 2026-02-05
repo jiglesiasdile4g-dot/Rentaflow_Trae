@@ -16,6 +16,16 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -191,6 +201,7 @@ export default function AnunciosPage() {
   })
   const [filterPortal, setFilterPortal] = useState<string>("all")
   const [filterEstado, setFilterEstado] = useState<string>("all")
+  const [metricsPeriod, setMetricsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual">("hoy")
   const [showInfoFaqsModal, setShowInfoFaqsModal] = useState(false)
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [selectedAnuncioForStats, setSelectedAnuncioForStats] = useState<AnuncioCard & { statsPeriod?: string } | null>(null)
@@ -234,6 +245,41 @@ export default function AnunciosPage() {
   const [loadingAvailability, setLoadingAvailability] = useState(false)
   const [availableDates, setAvailableDates] = useState<string[]>([])
   const [loadingDates, setLoadingDates] = useState(false)
+  
+  // Persistencia de estado (filtros)
+  const [isStateRestored, setIsStateRestored] = useState(false)
+
+  useEffect(() => {
+    const restoreState = () => {
+      try {
+        const savedState = sessionStorage.getItem("rf_anuncios_view_state")
+        if (savedState) {
+          const parsed = JSON.parse(savedState)
+          if (parsed.searchQuery !== undefined) setSearchQuery(parsed.searchQuery)
+          if (parsed.filterPortal !== undefined) setFilterPortal(parsed.filterPortal)
+          if (parsed.filterEstado !== undefined) setFilterEstado(parsed.filterEstado)
+          if (parsed.metricsPeriod !== undefined) setMetricsPeriod(parsed.metricsPeriod)
+        }
+      } catch (e) {
+        console.error("Error restaurando estado de anuncios:", e)
+      } finally {
+        setIsStateRestored(true)
+      }
+    }
+    restoreState()
+  }, [])
+
+  useEffect(() => {
+    if (!isStateRestored) return
+
+    const stateToSave = {
+      searchQuery,
+      filterPortal,
+      filterEstado,
+      metricsPeriod
+    }
+    sessionStorage.setItem("rf_anuncios_view_state", JSON.stringify(stateToSave))
+  }, [searchQuery, filterPortal, filterEstado, metricsPeriod, isStateRestored])
 
   // Fetch agent available dates
   useEffect(() => {
@@ -584,6 +630,7 @@ export default function AnunciosPage() {
 
   // Add isStatsModalOpen state to track the visibility of the stats modal
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false)
+  const [confirmStopWhatsApp, setConfirmStopWhatsApp] = useState<{open: boolean, anuncioId: string | null}>({open: false, anuncioId: null})
   const [statsEmails, setStatsEmails] = useState<any[]>([])
   const [statsWhatsapps, setStatsWhatsapps] = useState<any[]>([])
 
@@ -595,7 +642,6 @@ export default function AnunciosPage() {
 
   // Variables needed for linting fixes
   const [creatingAnuncio, setCreatingAnuncio] = useState(false)
-  const [metricsPeriod, setMetricsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual">("hoy")
   const [statsPeriod, setStatsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual" | "esteAno">("esteMes")
 
   const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
@@ -1019,8 +1065,10 @@ export default function AnunciosPage() {
     const supabase = createClient()
 
     let status = ""
+    let statuses: string[] = []
+    
     if (phase === "aceptado") status = "Aceptado"
-    else if (phase === "visita_propuesta") status = "Visita Propuesta"
+    else if (phase === "visita_propuesta") statuses = ["Visita Propuesta", "Visita Confirmada"]
     else if (phase === "visita_completada") status = "Visita Completada"
     else if (phase === "datos_completos") status = "Datos Completos"
     else if (phase === "descartado") status = "Descartado"
@@ -1031,7 +1079,11 @@ export default function AnunciosPage() {
       .ilike("Inmueble", anuncioRef)
       .order("created_at", { ascending: false })
 
-    if (status) {
+    if (phase === "total") {
+      // No filter
+    } else if (statuses.length > 0) {
+      query = query.in("Estado", statuses)
+    } else if (status) {
       query = query.eq("Estado", status)
     } else {
       return []
@@ -1105,7 +1157,7 @@ export default function AnunciosPage() {
     const total = filteredLeads.length
     const completos = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "datos completos").length
     const aceptados = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "aceptado").length
-    const visitaPropuesta = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "visita propuesta").length
+    const visitaPropuesta = filteredLeads.filter(l => ["visita propuesta", "visita confirmada"].includes(String(l.Estado || "").toLowerCase())).length
     const visitaCompletada = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "visita completada").length
     const descartados = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "descartado").length
     
@@ -1130,6 +1182,7 @@ export default function AnunciosPage() {
       visita_completada: "Visita Completada",
       datos_completos: "Datos Completos",
       descartado: "Descartados",
+      total: "Todos los Leads",
     }
 
     setPhaseLeadsDialog({
@@ -1167,9 +1220,9 @@ export default function AnunciosPage() {
 
         total++
         const est = String(lead.Estado || "").toLowerCase()
-        if (["datos completos", "aceptado", "visita propuesta", "pedir aval"].includes(est)) completos++
+        if (["datos completos", "aceptado", "visita propuesta", "visita confirmada", "pedir aval"].includes(est)) completos++
         if (est === "aceptado") aceptados++
-        if (est === "visita propuesta") visitaPropuesta++
+        if (["visita propuesta", "visita confirmada"].includes(est)) visitaPropuesta++
         if (est === "visita completada") visitaCompletada++
         if (est === "descartado") descartados++
       }
@@ -1684,7 +1737,7 @@ export default function AnunciosPage() {
           setAnunciosError("Error al cargar anuncios")
           return
         }
-        anuncios = anunciosFallback || []
+        anuncios = (anunciosFallback || []) as any
       }
 
       console.log("[v0] Anuncios fetched for agency IDI", inmobiliariaId, ":", anuncios?.length || 0)
@@ -2556,11 +2609,11 @@ export default function AnunciosPage() {
     setProcessingId(anuncioId)
     try {
       console.log("[DEBUG] handleDetenerWhatsApps - anuncioId:", anuncioId, "currentStatus:", currentStatus)
-      // Si no se proporciona el estado actual, lo obtenemos del anuncio
-      let isCurrentlyActive = currentStatus;
+      // Si no se proporciona el estado actual, lo obtenemos del anuncio en memoria
+      let isCurrentlyActive = currentStatus
       if (isCurrentlyActive === undefined) {
-        const anuncio = anuncios.find(a => a.id === anuncioId);
-        isCurrentlyActive = anuncio?.whatsapp_activo ?? true;
+        const anuncio = anunciosCards.find((a) => a.id === anuncioId)
+        isCurrentlyActive = anuncio?.whatsapp_activo ?? true
         console.log("[DEBUG] handleDetenerWhatsApps - anuncio encontrado:", anuncio, "isCurrentlyActive:", isCurrentlyActive)
       }
       
@@ -5435,7 +5488,7 @@ export default function AnunciosPage() {
                           <Button 
                             variant="outline"
                             className="w-full h-auto text-center p-4 bg-muted rounded-lg border hover:bg-muted/80 hover:border-primary/50 transition-colors flex flex-col items-center gap-1 focus-visible:ring-0 focus-visible:ring-offset-0"
-                            onClick={() => handlePhaseMetricClick("descartado")}
+                            onClick={() => handlePhaseMetricClick("total")}
                             tabIndex={-1}
                           >
                             <span className="text-3xl font-bold text-foreground">{selectedAnuncioForStats.leadsTotales}</span>
@@ -5808,8 +5861,14 @@ export default function AnunciosPage() {
                       <h4 className="font-semibold">Consumo y Rendimiento</h4>
                       <Button
                         size="sm"
-                        variant="outline"
-                        onClick={() => handleDetenerWhatsApps(selectedAnuncioForStats.id, selectedAnuncioForStats.whatsapp_activo)}
+                        variant={selectedAnuncioForStats.whatsapp_activo ? "destructive" : "outline"}
+                        onClick={() => {
+                          if (selectedAnuncioForStats.whatsapp_activo) {
+                            setConfirmStopWhatsApp({ open: true, anuncioId: selectedAnuncioForStats.id })
+                          } else {
+                            handleDetenerWhatsApps(selectedAnuncioForStats.id, selectedAnuncioForStats.whatsapp_activo)
+                          }
+                        }}
                         disabled={processingId === selectedAnuncioForStats.id}
                         className="h-7 text-xs"
                       >
@@ -5929,8 +5988,8 @@ export default function AnunciosPage() {
                             {lead.Telefono && <p className="text-xs text-muted-foreground">{lead.Telefono}</p>}
                           </div>
                           <div className="flex flex-col items-end gap-2 ml-2 shrink-0">
-                              <Badge variant="secondary">
-                                {phaseLeadsDialog.status}
+                              <Badge variant={lead.Estado === 'Descartado' ? "destructive" : "secondary"}>
+                                {lead.Estado || "Desconocido"}
                               </Badge>
                               <Button 
                                 variant="default" 
@@ -6440,8 +6499,31 @@ export default function AnunciosPage() {
           </DialogContent>
         </Dialog>
         
+        <AlertDialog open={confirmStopWhatsApp.open} onOpenChange={(open) => !open && setConfirmStopWhatsApp({open: false, anuncioId: null})}>
+          <AlertDialogContent className="z-[200]">
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Detener envío de WhatsApps?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Se dejarán de enviar mensajes automáticos para este anuncio. Podrás reactivarlo en cualquier momento.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={() => {
+                  if (confirmStopWhatsApp.anuncioId) {
+                     handleDetenerWhatsApps(confirmStopWhatsApp.anuncioId, true)
+                  }
+                  setConfirmStopWhatsApp({open: false, anuncioId: null})
+                }}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Detener
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
-        
       </div>
     </TooltipProvider>
   )

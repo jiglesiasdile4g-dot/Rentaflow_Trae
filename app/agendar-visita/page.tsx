@@ -324,8 +324,12 @@ function AgendarVisitaContent() {
                 "Agente Asignado": agent || (agentName ? { Nombre: agentName, Email: agentEmail } : null),
                 "Agente Email": agentEmail || null,
                 "Link de Agendamiento": bookingLink,
-                "Direccion de inmueble": advertisement?.Direccion || lead.Inmueble,
-                "Inmueble/Anuncio": advertisement || { Referencia: lead.Inmueble },
+                "Direccion de inmueble": advertisement?.Direccion || "Pregunta a tu agente",
+                "Direccion": advertisement?.Direccion || "Pregunta a tu agente",
+                "Direccion del Anuncio": advertisement?.Direccion || "Pregunta a tu agente",
+                "Inmueble/Anuncio": advertisement 
+                    ? { ...advertisement, Direccion: advertisement.Direccion || "Pregunta a tu agente" } 
+                    : { Referencia: lead.Inmueble, Direccion: "Pregunta a tu agente" },
                 "Inmobiliaria": inmobiliaria || null,
                 "Firma": (inmobiliaria as any)?.firma_html || "",
                 "Fecha Visita": formattedDate,
@@ -386,9 +390,12 @@ function AgendarVisitaContent() {
                 "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
                 "Agente Asignado": agent || (agentName ? { Nombre: agentName, Email: agentEmail } : null),
                 "Agente Email": agentEmail || null,
-                "Direccion de inmueble": advertisement?.Direccion || lead.Inmueble,
-                "Direccion": advertisement?.Direccion || lead.Inmueble,
-                "Inmueble/Anuncio": advertisement || { Referencia: lead.Inmueble },
+                "Direccion de inmueble": advertisement?.Direccion || "Pregunta a tu agente",
+                "Direccion": advertisement?.Direccion || "Pregunta a tu agente",
+                "Direccion del Anuncio": advertisement?.Direccion || "Pregunta a tu agente",
+                "Inmueble/Anuncio": advertisement 
+                    ? { ...advertisement, Direccion: advertisement.Direccion || "Pregunta a tu agente" } 
+                    : { Referencia: lead.Inmueble, Direccion: "Pregunta a tu agente" },
                 "Inmobiliaria": inmobiliaria || null,
                 "Firma": (inmobiliaria as any)?.firma_html || "",
                 "Link de Agendamiento": bookingLink,
