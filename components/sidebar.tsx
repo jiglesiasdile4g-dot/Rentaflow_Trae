@@ -96,21 +96,24 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
       {/* Header */}
       <div 
         className={cn(
-          "border-b border-border flex flex-col transition-colors", 
-          collapsed ? "p-2 items-center justify-center h-[88px]" : "p-6"
+          "border-b border-border flex flex-col transition-colors relative", 
+          collapsed ? "p-2 pt-4 items-center justify-start h-[88px]" : "p-6"
         )}
       >
         <div className="flex items-center justify-between w-full">
             {!collapsed ? (
               <>
-                <div className="flex flex-col overflow-hidden mr-2 w-full relative">
+                <div 
+                    className="flex flex-col overflow-hidden mr-2 w-full relative items-center cursor-pointer"
+                    onClick={onToggle}
+                >
                     {logoUrl && !logoError ? (
                         <div className="relative h-12 w-full max-w-[180px]">
                             <Image 
                                 src={logoUrl} 
                                 alt={APP_NAME} 
                                 fill 
-                                className="object-contain object-left"
+                                className="object-contain object-center"
                                 onError={() => setLogoError(true)}
                                 unoptimized
                             />
@@ -118,18 +121,32 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
                     ) : (
                         <>
                             <h1 className="text-xl font-bold truncate text-primary tracking-tight">{APP_NAME}</h1>
-                            <p className="text-xs text-muted-foreground">Versión {APP_VERSION}</p>
                         </>
                     )}
                 </div>
-                <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={onToggle}>
+                <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 absolute right-2 top-2 z-10" onClick={onToggle}>
                     <ChevronsLeft className="h-4 w-4" />
                 </Button>
               </>
             ) : (
               <div className="flex flex-col items-center gap-1 cursor-pointer w-full" onClick={onToggle}>
-                  <span className="font-bold text-lg">RF</span>
-                  <Menu className="h-4 w-4 text-muted-foreground" />
+                  {logoUrl && !logoError ? (
+                    <div className="relative h-8 w-8">
+                        <Image 
+                            src={logoUrl} 
+                            alt="RF" 
+                            fill 
+                            className="object-contain"
+                            onError={() => setLogoError(true)}
+                            unoptimized
+                        />
+                    </div>
+                  ) : (
+                    <>
+                        <span className="font-bold text-lg">RF</span>
+                        <Menu className="h-4 w-4 text-muted-foreground" />
+                    </>
+                  )}
               </div>
             )}
         </div>
@@ -225,6 +242,11 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
             </div>
           )}
         </div>
+        {!collapsed && (
+          <div className="mb-2">
+            <p className="text-xs text-muted-foreground">Versión {APP_VERSION}</p>
+          </div>
+        )}
         <div className={cn("flex", collapsed ? "justify-center" : "")}>
            <LogoutButton />
         </div>

@@ -37,6 +37,7 @@ import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { LeadApproveWrapper } from "@/components/lead-approve-wrapper"
 import { LeadDenyWrapper } from "@/components/lead-deny-wrapper"
+import { ProposeVisitDialog } from "@/components/propose-visit-dialog"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
 import { 
   generateSlotCandidates, 
@@ -247,6 +248,7 @@ export default function LeadsPage() {
   const [pendingSingleStatus, setPendingSingleStatus] = useState<{id: number, status: string} | null>(null)
 
   const [visitDateDialogOpen, setVisitDateDialogOpen] = useState(false)
+  const [proposeVisitDialogOpen, setProposeVisitDialogOpen] = useState(false)
   const [selectedLeadForVisit, setSelectedLeadForVisit] = useState<Lead | null>(null)
   const [newVisitDateDate, setNewVisitDateDate] = useState("")
 
@@ -3611,6 +3613,15 @@ export default function LeadsPage() {
                             {selectedLeadIds.length} lead{selectedLeadIds.length > 1 ? "s" : ""} seleccionado
                             {selectedLeadIds.length > 1 ? "s" : ""}
                           </span>
+                          <Button 
+                            size="sm" 
+                            variant="default"
+                            className="ml-2 bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={() => setProposeVisitDialogOpen(true)}
+                          >
+                            <CalendarIcon className="h-4 w-4 mr-2" />
+                            Proponer Visita
+                          </Button>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button size="sm" variant="outline">
@@ -7468,6 +7479,17 @@ export default function LeadsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <ProposeVisitDialog 
+        open={proposeVisitDialogOpen}
+        onOpenChange={setProposeVisitDialogOpen}
+        selectedLeadIds={selectedLeadIds}
+        selectedAdvertisement={
+          selectedAdvertisement 
+            ? advertisements.find(a => a.ida === selectedAdvertisement) 
+            : null
+        }
+        inmobiliariaId={inmobiliariaId || 0}
+      />
       </>
     )
   }
