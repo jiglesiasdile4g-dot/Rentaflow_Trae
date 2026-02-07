@@ -8,9 +8,9 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-import { getAgentsByIdi, resolveUserName } from "@/app/actions/get-agents"
+import { getAgentsByIdi, resolveUserName, getAgentByEmail } from "@/app/actions/get-agents"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
 
 import { useState, useEffect, useRef, useCallback } from "react"
@@ -185,7 +185,7 @@ export default function LeadsPage() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [availableStatuses, setAvailableStatuses] = useState<string[]>([])
   const [totalLeads, setTotalLeads] = useState(0)
   const [newLeadsToday, setNewLeadsToday] = useState(0)
@@ -268,7 +268,14 @@ export default function LeadsPage() {
           
           if (!hasUrlParams) {
             if (parsed.searchTerm !== undefined) setSearchTerm(parsed.searchTerm)
-            if (parsed.statusFilter !== undefined) setStatusFilter(parsed.statusFilter)
+            if (parsed.statusFilter !== undefined) {
+              const sf = parsed.statusFilter
+              if (Array.isArray(sf)) {
+                setStatusFilter(sf)
+              } else if (typeof sf === 'string') {
+                setStatusFilter(sf === 'all' ? [] : [sf])
+              }
+            }
             if (parsed.selectedAdvertisement !== undefined) setSelectedAdvertisement(parsed.selectedAdvertisement)
           }
         }
@@ -296,14 +303,25 @@ export default function LeadsPage() {
 
   // Delete Note Confirmation
   const [currentUserName, setCurrentUserName] = useState<string | null>(null)
+  const [currentAgentId, setCurrentAgentId] = useState<number | null>(null)
   const [deleteNoteConfirm, setDeleteNoteConfirm] = useState<{ open: boolean, index: number, type: 'sidebar' | 'dialog' } | null>(null)
 
   useEffect(() => {
     const fetchUserName = async () => {
         const { data: { user } } = await supabase.auth.getUser()
-        if (user && user.email) {
-            const res = await resolveUserName(user.email)
-            if (res.name) setCurrentUserName(res.name)
+        if (user) {
+            setCurrentUser(user)
+            if (user.email) {
+                // Resolve name
+                const res = await resolveUserName(user.email)
+                if (res.name) setCurrentUserName(res.name)
+                
+                // Resolve agent ID
+                const agentRes = await getAgentByEmail(user.email)
+                if (agentRes.data && agentRes.data.idag) {
+                    setCurrentAgentId(agentRes.data.idag)
+                }
+            }
         }
     }
     fetchUserName()
@@ -787,7 +805,6 @@ export default function LeadsPage() {
   const [deleteConfirmInput, setDeleteConfirmInput] = useState("")
   const [isDeletingLead, setIsDeletingLead] = useState(false)
   const [noteDialog, setNoteDialog] = useState<{ open: boolean; leadId: number; leadName: string; value: string; existing: string }>({ open: false, leadId: 0, leadName: "", value: "", existing: "" })
-  const [currentAgentId, setCurrentAgentId] = useState<number | null>(null)
   const [currentUser, setCurrentUser] = useState<{id: string, email: string} | null>(null)
 
   useEffect(() => {
@@ -1378,9 +1395,9 @@ export default function LeadsPage() {
     }
     if (st) {
       if (st === "completos") {
-        setStatusFilter("Datos Completos")
+        setStatusFilter(["Datos Completos"])
       } else if (st === "all") {
-        setStatusFilter("all")
+        setStatusFilter([])
       }
     }
   }, [searchParams, advertisements])
@@ -1740,7 +1757,16 @@ export default function LeadsPage() {
 
       setLeads(rows)
 
-      if (leadsData) {
+        const statusOrder = [
+          "Datos Incompletos",
+          "Datos Completos",
+          "Pedir Aval",
+          "Aceptado",
+          "Visita Propuesta",
+          "Visita Confirmada",
+          "Descartado"
+        ]
+
         const uniqueStatuses = Array.from(new Set((rows || []).map((lead) => {
           const currentStatus = String(lead.Estado || "").trim()
           const hasDate = Boolean(lead.fecha_de_visita)
@@ -1748,8 +1774,18 @@ export default function LeadsPage() {
              ? "Visita Confirmada" 
              : currentStatus
         }).filter(Boolean)))
+        
+        uniqueStatuses.sort((a, b) => {
+           const indexA = statusOrder.indexOf(a)
+           const indexB = statusOrder.indexOf(b)
+           
+           if (indexA !== -1 && indexB !== -1) return indexA - indexB
+           if (indexA !== -1) return -1
+           if (indexB !== -1) return 1
+           return a.localeCompare(b)
+        })
+        
         setAvailableStatuses(uniqueStatuses)
-      }
     } catch (err: any) {
       const msg = typeof err?.message === "string" ? err.message : String(err)
       if (/Abort|ERR_ABORTED/i.test(msg) || err?.name === 'AbortError') {
@@ -1951,7 +1987,7 @@ export default function LeadsPage() {
       )
     }
 
-    if (statusFilter !== "all") {
+    if (statusFilter.length > 0) {
       filtered = filtered.filter((lead) => {
         const currentStatus = String(lead.Estado || "").trim()
         const hasDate = Boolean(lead.fecha_de_visita)
@@ -1959,7 +1995,7 @@ export default function LeadsPage() {
            ? "Visita Confirmada" 
            : currentStatus
         
-        return effectiveStatus === statusFilter
+        return statusFilter.includes(effectiveStatus)
       })
     }
 
@@ -2684,20 +2720,33 @@ export default function LeadsPage() {
       })
 
       const results = await Promise.all(updates)
-      const hasError = results.some(r => r.error)
+      const successIds: string[] = []
+      const failedIds: string[] = []
 
-      if (hasError) {
+      results.forEach((r, index) => {
+        if (r.error) {
+          failedIds.push(selectedLeadIds[index])
+          console.error(`[bulk-update] Error updating lead ${selectedLeadIds[index]}:`, r.error)
+        } else {
+          successIds.push(selectedLeadIds[index])
+        }
+      })
+
+      if (failedIds.length > 0) {
         toast({
-          title: "Error",
-          description: "No se pudo actualizar el estado de algunos leads",
+          title: successIds.length > 0 ? "Actualización parcial" : "Error",
+          description: `Se actualizaron ${successIds.length} leads. Fallaron ${failedIds.length}. Revise la consola para más detalles.`,
           variant: "destructive",
         })
+      }
+
+      if (successIds.length === 0) {
         return
       }
 
       if (pendingBulkStatus === "Descartado") {
         const timestamp = new Date().toISOString()
-        const payloads = selectedLeadIds.map((id) => {
+        const payloads = successIds.map((id) => {
           const lead = leads.find((l) => String(l.id) === String(id))
           const currentHistory = (lead?.status_history as LeadHistoryEntry[]) || []
           return {
@@ -2715,7 +2764,7 @@ export default function LeadsPage() {
 
       setLeads((prevLeads) =>
         prevLeads.map((lead) => {
-           if (selectedLeadIds.includes(lead.id)) {
+           if (successIds.includes(String(lead.id))) {
               const currentHistory = (lead.status_history as LeadHistoryEntry[]) || []
               return { 
                 ...lead, 
@@ -2727,10 +2776,12 @@ export default function LeadsPage() {
         }),
       )
 
-      toast({
-        title: "Estado actualizado",
-        description: `Se actualizó el estado de ${selectedLeadIds.length} lead(s) a ${pendingBulkStatus === "Aceptado" ? "Aprobado" : pendingBulkStatus}`,
-      })
+      if (successIds.length > 0) {
+        toast({
+          title: "Estado actualizado",
+          description: `Se actualizó el estado de ${successIds.length} lead(s) a ${pendingBulkStatus === "Aceptado" ? "Aprobado" : pendingBulkStatus}`,
+        })
+      }
 
       setSelectedLeadIds([])
       setIsBulkSelectionMode(false)
@@ -2882,7 +2933,7 @@ export default function LeadsPage() {
       
       const collision = leads.find(lead => {
         // Skip current lead
-        if (lead.id === selectedLeadForVisit.id) return false
+        if (String(lead.id) === String(selectedLeadForVisit.id)) return false
         // Must have a visit date
         if (!lead.fecha_de_visita) return false
         
@@ -3539,20 +3590,84 @@ export default function LeadsPage() {
                     </button>
                   )}
                 </div>
-                    <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value)}>
-                      <SelectTrigger className="w-full sm:w-48">
-                        <Filter className="h-4 w-4 mr-2" />
-                        <SelectValue placeholder="Filtrar por estado" />
-                      </SelectTrigger>
-                      <SelectContent>
-                    <SelectItem value="all">Todos los estados</SelectItem>
-                    {availableStatuses.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {status === "Pedir Aval" ? "Aval Pedido" : status === "Visita Propuesta" ? "Visita Propuesta" : status === "Aceptado" ? "Aprobado" : status}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="w-full sm:w-auto justify-between border-dashed">
+                        <div className="flex items-center">
+                          <Filter className="mr-2 h-4 w-4" />
+                          <span>Estados</span>
+                          {statusFilter.length > 0 && (
+                            <Badge variant="secondary" className="ml-2 h-5 rounded-sm px-1 font-normal lg:hidden">
+                              {statusFilter.length}
+                            </Badge>
+                          )}
+                        </div>
+                        {statusFilter.length > 0 && (
+                          <div className="hidden space-x-1 lg:flex ml-2">
+                             {statusFilter.length > 2 ? (
+                                <Badge variant="secondary" className="h-5 rounded-sm px-1 font-normal">
+                                  {statusFilter.length} seleccionados
+                                </Badge>
+                             ) : (
+                                statusFilter.map((option) => (
+                                  <Badge
+                                    variant="secondary"
+                                    key={option}
+                                    className="h-5 rounded-sm px-1 font-normal"
+                                  >
+                                    {option === "Pedir Aval" ? "Aval Pedido" : option === "Visita Propuesta" ? "Visita Propuesta" : option === "Aceptado" ? "Aprobado" : option}
+                                  </Badge>
+                                ))
+                             )}
+                          </div>
+                        )}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-[200px]">
+                      <DropdownMenuItem
+                        className="justify-center text-center font-medium text-primary cursor-pointer"
+                        onClick={() => setStatusFilter([])}
+                      >
+                        Limpiar filtros
+                      </DropdownMenuItem>
+                      {(() => {
+                        const statusOrder = [
+                          "Datos Incompletos",
+                          "Datos Completos",
+                          "Pedir Aval",
+                          "Aceptado",
+                          "Visita Propuesta",
+                          "Visita Confirmada",
+                          "Descartado"
+                        ]
+                        
+                        const sortedStatuses = Array.from(new Set([...availableStatuses, ...statusOrder])).sort((a, b) => {
+                          const indexA = statusOrder.indexOf(a)
+                          const indexB = statusOrder.indexOf(b)
+                          if (indexA !== -1 && indexB !== -1) return indexA - indexB
+                          if (indexA !== -1) return -1
+                          if (indexB !== -1) return 1
+                          return a.localeCompare(b)
+                        })
+
+                        return sortedStatuses.map((status) => (
+                        <DropdownMenuCheckboxItem
+                          key={status}
+                          checked={statusFilter.includes(status)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setStatusFilter([...statusFilter, status])
+                            } else {
+                              setStatusFilter(statusFilter.filter((s) => s !== status))
+                            }
+                          }}
+                        >
+                          {status === "Pedir Aval" ? "Aval Pedido" : status === "Visita Propuesta" ? "Visita Propuesta" : status === "Aceptado" ? "Aprobado" : status}
+                        </DropdownMenuCheckboxItem>
+                      ))
+                      })()}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
@@ -3617,7 +3732,22 @@ export default function LeadsPage() {
                             size="sm" 
                             variant="default"
                             className="ml-2 bg-blue-600 hover:bg-blue-700 text-white"
-                            onClick={() => setProposeVisitDialogOpen(true)}
+                            onClick={() => {
+                              const selectedLeadsList = leads.filter(lead => selectedLeadIds.includes(lead.id))
+                              const invalidLeads = selectedLeadsList.filter(lead => 
+                                lead.Estado !== "Aceptado" && lead.Estado !== "Visita Propuesta"
+                              )
+                              
+                              if (invalidLeads.length > 0) {
+                                toast({
+                                  title: "Acción no permitida",
+                                  description: "Solo se puede proponer visita a leads con estado 'Aprobado' o 'Visita Propuesta'.",
+                                  variant: "destructive"
+                                })
+                                return
+                              }
+                              setProposeVisitDialogOpen(true)
+                            }}
                           >
                             <CalendarIcon className="h-4 w-4 mr-2" />
                             Proponer Visita
@@ -3636,19 +3766,16 @@ export default function LeadsPage() {
                                 Datos Completos
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => updateBulkLeadStatus("Pedir Aval")}>
-                                Pedir Aval
+                                Aval Pedido
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Aceptado")}>
+                                Aprobado
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => updateBulkLeadStatus("Visita Propuesta")}>
                                 Visita Propuesta
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => updateBulkLeadStatus("Visita Confirmada")}>
                                 Visita Confirmada
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Visita Completada")}>
-                                Visita Completada
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => updateBulkLeadStatus("Aceptado")}>
-                                Aprobado
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => updateBulkLeadStatus("Descartado")}>
                                 Descartado
@@ -5854,7 +5981,7 @@ export default function LeadsPage() {
 
                               return (
                                 <Select
-                                  value={selectedLead.Estado || "Pendiente"}
+                                  value={String(selectedLead.Estado || "Pendiente")}
                                   onValueChange={(value) => updateLeadStatus(Number(selectedLead.id), value)}
                                 >
                                   <SelectTrigger 
@@ -5926,22 +6053,45 @@ export default function LeadsPage() {
                                     })()}
                                   </SelectTrigger>
                                   <SelectContent className="z-[99999] max-h-[300px]">
-                                       {Array.from(new Set([
-                                         ...availableStatuses,
-                                         "Datos Completos", 
-                                         "Datos Incompletos", 
-                                         "Pedir Aval", 
-                                         "Aceptado", 
-                                         "Descartado", 
-                                         "Visita Propuesta", 
-                                         "Visita Completada",
-                                         "Visita Confirmada"
-                                       ])).map((status) => (
-                                         <SelectItem key={status} value={status}>
-                                           {status === "Aceptado" ? "Aprobado" : status}
-                                         </SelectItem>
-                                       ))}
-                                     </SelectContent>
+                                      {(() => {
+                                        const statusOrder = [
+                                          "Datos Incompletos",
+                                          "Datos Completos",
+                                          "Pedir Aval",
+                                          "Aceptado",
+                                          "Visita Propuesta",
+                                          "Visita Confirmada",
+                                          "Descartado"
+                                        ]
+                                        
+                                        const uniqueStatuses = Array.from(new Set([
+                                          ...availableStatuses,
+                                          "Datos Completos", 
+                                          "Datos Incompletos", 
+                                          "Pedir Aval", 
+                                          "Aceptado", 
+                                          "Descartado", 
+                                          "Visita Propuesta", 
+                                          "Visita Completada",
+                                          "Visita Confirmada"
+                                        ]))
+
+                                        const sortedStatuses = uniqueStatuses.sort((a, b) => {
+                                          const indexA = statusOrder.indexOf(a)
+                                          const indexB = statusOrder.indexOf(b)
+                                          if (indexA !== -1 && indexB !== -1) return indexA - indexB
+                                          if (indexA !== -1) return -1
+                                          if (indexB !== -1) return 1
+                                          return a.localeCompare(b)
+                                        })
+
+                                        return sortedStatuses.map((status) => (
+                                          <SelectItem key={status} value={status}>
+                                            {status === "Aceptado" ? "Aprobado" : status === "Pedir Aval" ? "Aval Pedido" : status}
+                                          </SelectItem>
+                                        ))
+                                      })()}
+                                    </SelectContent>
                                 </Select>
                               )
                             })()}
@@ -6353,7 +6503,7 @@ export default function LeadsPage() {
                     <div className="space-y-1">
                       <label className="text-xs font-medium text-muted-foreground">Tipo de Documento</label>
                       <Select
-                        value={newLeadFormData.Tipo_Documento || ""}
+                        value={String(newLeadFormData.Tipo_Documento || "")}
                         onValueChange={(value) => setNewLeadFormData({ ...newLeadFormData, Tipo_Documento: value })}
                       >
                         <SelectTrigger className="h-9 text-sm">
@@ -6395,7 +6545,7 @@ export default function LeadsPage() {
                         Referencia del Inmueble <span className="text-red-500">*</span>
                       </label>
                       <Select
-                        value={newLeadFormData.Inmueble || ""}
+                        value={String(newLeadFormData.Inmueble || "")}
                         onValueChange={(value) => setNewLeadFormData({ ...newLeadFormData, Inmueble: value })}
                       >
                         <SelectTrigger className="h-9 text-sm">
@@ -6429,7 +6579,7 @@ export default function LeadsPage() {
                     <div className="space-y-1">
                       <label className="text-xs font-medium text-muted-foreground">Estado</label>
                       <Select
-                        value={newLeadFormData.Estado || "Pendiente"}
+                        value={String(newLeadFormData.Estado || "Pendiente")}
                         onValueChange={(value) => setNewLeadFormData({ ...newLeadFormData, Estado: value as Lead["Estado"] })}
                       >
                         <SelectTrigger className="h-9 text-sm">
@@ -7489,6 +7639,7 @@ export default function LeadsPage() {
             : null
         }
         inmobiliariaId={inmobiliariaId || 0}
+        currentAgentId={currentAgentId}
       />
       </>
     )

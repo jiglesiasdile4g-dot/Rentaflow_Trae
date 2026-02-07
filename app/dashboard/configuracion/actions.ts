@@ -490,6 +490,20 @@ export async function uploadLogoAction(formData: FormData) {
             console.error("Upload logo error:", uploadError)
             return { error: uploadError.message }
     }
+
+    // Get public URL
+    const { data: { publicUrl } } = admin.storage.from("imagenes").getPublicUrl(`logos/${idi}-logo.png`)
+    
+    // Update Inmobiliarias table
+    const { error: dbError } = await admin
+        .from("Inmobiliarias")
+        .update({ logo_url: publicUrl })
+        .eq("idi", idi)
+
+    if (dbError) {
+        console.error("Error updating Inmobiliarias logo_url:", dbError)
+        // We don't fail the action if DB update fails, but it's good to know
+    }
     
     revalidatePath("/dashboard/configuracion")
     return { success: true }
@@ -500,11 +514,23 @@ export async function deleteLogoAction(formData: FormData) {
     if (!idi) return { error: "Falta ID" }
     
     const admin = createAdminClient()
+    
+    // Remove from storage
     const { error } = await admin.storage
         .from("imagenes")
         .remove([`logos/${idi}-logo.png`])
         
     if (error) return { error: error.message }
+
+    // Update Inmobiliarias table
+    const { error: dbError } = await admin
+        .from("Inmobiliarias")
+        .update({ logo_url: null })
+        .eq("idi", idi)
+
+    if (dbError) {
+        console.error("Error clearing Inmobiliarias logo_url:", dbError)
+    }
     
     revalidatePath("/dashboard/configuracion")
     return { success: true }

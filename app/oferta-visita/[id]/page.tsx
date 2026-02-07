@@ -1,11 +1,13 @@
 
 import { notFound } from "next/navigation"
 import { getVisitProposal } from "@/app/actions/proposals"
-import { ProposalBookingForm } from "@/components/proposal-booking-form"
+import { ProposalBookingForm } from "../../../components/proposal-booking-form"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Calendar, Clock, MapPin, Building } from "lucide-react"
+import { Calendar, Clock, MapPin, Building, ExternalLink } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import { Button } from "@/components/ui/button"
+import Link from "next/link"
 
 export default async function VisitProposalPage({ params }: { params: { id: string } }) {
   const proposal = await getVisitProposal(params.id)
@@ -16,9 +18,23 @@ export default async function VisitProposalPage({ params }: { params: { id: stri
 
   const isReservada = proposal.estado === "reservada"
   const date = new Date(proposal.fecha_visita)
+  // @ts-ignore - inmobiliaria might be added dynamically
+  const inmobiliaria = proposal.inmobiliaria
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 gap-6">
+      {/* Logo Header */}
+      {inmobiliaria?.logo_url && (
+        <div className="w-full max-w-md flex justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img 
+              src={inmobiliaria.logo_url} 
+              alt={`Logo ${inmobiliaria.Nombre}`} 
+              className="h-20 object-contain" 
+            />
+        </div>
+      )}
+
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader className="space-y-1 text-center">
           <CardTitle className="text-2xl font-bold text-primary">Propuesta de Visita</CardTitle>
@@ -76,8 +92,25 @@ export default async function VisitProposalPage({ params }: { params: { id: stri
           ) : (
             <ProposalBookingForm proposalId={proposal.id} />
           )}
+
+           {/* Exit Button */}
+           {inmobiliaria?.pagina_web && (
+             <div className="pt-4 border-t mt-4">
+                <Button asChild variant="outline" className="w-full">
+                    <Link href={inmobiliaria.pagina_web} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        Salir a {inmobiliaria.Nombre || "web"}
+                    </Link>
+                </Button>
+             </div>
+           )}
         </CardContent>
       </Card>
+
+      {/* Powered by Footer */}
+      <div className="text-center text-xs text-muted-foreground">
+        <p>Powered by <span className="font-semibold text-primary">RentaFlow</span></p>
+      </div>
     </div>
   )
 }

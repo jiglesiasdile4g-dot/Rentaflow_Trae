@@ -1,3 +1,14 @@
+## [0.9.6](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.3...v0.9.6) (2026-02-07)
+
+
+### Bug Fixes
+
+* **leads:** prevent status reversion for Visita Confirmada (trigger mitigation)
+* **webhook:** fix missing address in confirmacion_visita payload (case insensitive lookup)
+* **ui:** improve checkbox visibility with darker border
+
+
+
 ## [0.9.3](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.2...v0.9.3) (2026-01-26)
 
 
