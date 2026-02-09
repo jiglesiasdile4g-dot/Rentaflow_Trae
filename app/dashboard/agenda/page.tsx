@@ -57,6 +57,7 @@ interface AnuncioOption {
   duracion_visita?: number
   tiempo_entre_visitas?: number
   Activacion?: string
+  whatsapp_activo?: boolean
 }
 
 interface ScheduledVisit {
@@ -283,7 +284,7 @@ export default function AgendaPage() {
         console.log("Fetching anuncios for agenda, inmobiliariaId:", inmobiliariaId)
         const { data, error } = await supabase
           .from("Anuncios")
-          .select("ida, Referencia, Direccion, duracion_visita, tiempo_entre_visitas, Activacion")
+          .select("ida, Referencia, Direccion, duracion_visita, tiempo_entre_visitas, Activacion, whatsapp_activo")
           .eq("usuario", inmobiliariaId)
           .eq("Activacion", "Activo") // Show all to ensure we can resolve references for existing visits
           .order("Referencia")

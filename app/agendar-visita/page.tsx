@@ -47,6 +47,7 @@ type Advertisement = {
   Gap_visita?: number
   duracion_visita?: number
   tiempo_entre_visitas?: number
+  whatsapp_activo?: boolean
 }
 
 type AgendaItem = {
@@ -285,7 +286,12 @@ function AgendarVisitaContent() {
                     "Agente Email": agentEmail || null,
                     "Direccion de inmueble": advertisement?.Direccion || lead.Inmueble,
                     "Direccion": advertisement?.Direccion || lead.Inmueble,
-                    "Inmueble/Anuncio": advertisement || { Referencia: lead.Inmueble },
+                    "Inmueble/Anuncio": {
+                        ...(advertisement || {}),
+                        Referencia: advertisement?.Referencia || lead.Inmueble,
+                        Direccion: advertisement?.Direccion || "Pregunta a tu agente",
+                        whatsapp_activo: advertisement?.whatsapp_activo ?? null
+                    },
                     "Inmobiliaria": inmobiliaria || null,
                     "Firma": (inmobiliaria as any)?.firma_html || "",
                     "Link de Agendamiento": bookingLink,
@@ -327,9 +333,12 @@ function AgendarVisitaContent() {
                 "Direccion de inmueble": advertisement?.Direccion || "Pregunta a tu agente",
                 "Direccion": advertisement?.Direccion || "Pregunta a tu agente",
                 "Direccion del Anuncio": advertisement?.Direccion || "Pregunta a tu agente",
-                "Inmueble/Anuncio": advertisement 
-                    ? { ...advertisement, Direccion: advertisement.Direccion || "Pregunta a tu agente" } 
-                    : { Referencia: lead.Inmueble, Direccion: "Pregunta a tu agente" },
+                "Inmueble/Anuncio": {
+                    ...(advertisement || {}),
+                    Referencia: advertisement?.Referencia || lead.Inmueble,
+                    Direccion: advertisement?.Direccion || "Pregunta a tu agente",
+                    whatsapp_activo: advertisement?.whatsapp_activo ?? null
+                },
                 "Inmobiliaria": inmobiliaria || null,
                 "Firma": (inmobiliaria as any)?.firma_html || "",
                 "Fecha Visita": formattedDate,
@@ -393,9 +402,12 @@ function AgendarVisitaContent() {
                 "Direccion de inmueble": advertisement?.Direccion || "Pregunta a tu agente",
                 "Direccion": advertisement?.Direccion || "Pregunta a tu agente",
                 "Direccion del Anuncio": advertisement?.Direccion || "Pregunta a tu agente",
-                "Inmueble/Anuncio": advertisement 
-                    ? { ...advertisement, Direccion: advertisement.Direccion || "Pregunta a tu agente" } 
-                    : { Referencia: lead.Inmueble, Direccion: "Pregunta a tu agente" },
+                "Inmueble/Anuncio": {
+                    ...(advertisement || {}),
+                    Referencia: advertisement?.Referencia || lead.Inmueble,
+                    Direccion: advertisement?.Direccion || "Pregunta a tu agente",
+                    whatsapp_activo: advertisement?.whatsapp_activo ?? null
+                },
                 "Inmobiliaria": inmobiliaria || null,
                 "Firma": (inmobiliaria as any)?.firma_html || "",
                 "Link de Agendamiento": bookingLink,
@@ -476,7 +488,9 @@ function AgendarVisitaContent() {
                 "Agente Email": agentEmail || null,
                 "Direccion de inmueble": advertisement?.Direccion || lead.Inmueble,
                 "Direccion": advertisement?.Direccion || lead.Inmueble,
-                "Inmueble/Anuncio": advertisement || { Referencia: lead.Inmueble },
+                "Inmueble/Anuncio": advertisement 
+                    ? { ...advertisement, Direccion: advertisement.Direccion || lead.Inmueble } 
+                    : { Referencia: lead.Inmueble, Direccion: "Pregunta a tu agente", whatsapp_activo: null },
                 "Inmobiliaria": inmobiliaria || null,
                 "Nombre Inmobiliaria": inmobiliaria?.nombre_inmobiliaria || "Sin nombre",
                 "Firma": (inmobiliaria as any)?.firma_html || "",

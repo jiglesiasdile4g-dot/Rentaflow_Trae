@@ -429,6 +429,7 @@ export async function bookVisitProposal(proposalId: string, leadPhone: string) {
         id: adId,
         Referencia: proposal.inmueble_ref || lead.Inmueble || "Sin Referencia",
         Direccion: proposal.inmueble_direccion || "",
+        whatsapp_activo: null,
         // Duplicate keys for lowercase compatibility
         referencia: proposal.inmueble_ref || lead.Inmueble || "Sin Referencia",
         direccion: proposal.inmueble_direccion || ""

@@ -59,15 +59,43 @@ export async function getBookingData(leadId: string) {
     let advertisement = null
     if (lead.Inmueble) {
       const { data: ads } = await supabase.from("Anuncios")
-        .select("ida, Referencia, Direccion, Duracion_visita, Gap_visita, duracion_visita, tiempo_entre_visitas, Activacion")
+        .select("ida, Referencia, Direccion, duracion_visita, tiempo_entre_visitas, Activacion, whatsapp_activo, usuario")
       
       if (ads) {
+        const leadInmuebleNorm = lead.Inmueble.trim().toLowerCase()
         advertisement = ads.find((a: any) => 
-          (a.Referencia && lead.Inmueble && a.Referencia.trim() === lead.Inmueble.trim()) || 
-          (a.Direccion && lead.Inmueble && a.Direccion.trim() === lead.Inmueble.trim()) || 
-          (lead.Inmueble && a.Direccion && lead.Inmueble.includes(a.Direccion))
+          (a.Referencia && a.Referencia.trim().toLowerCase() === leadInmuebleNorm) || 
+          (a.Direccion && a.Direccion.trim().toLowerCase() === leadInmuebleNorm) || 
+          (a.Direccion && leadInmuebleNorm.includes(a.Direccion.trim().toLowerCase()))
         ) || null
       }
+      
+      // Fallback: Try direct DB lookup if not found in cache (more robust)
+      if (!advertisement && lead.Inmueble) {
+          console.log("[Booking Action] Ad not found in cache, trying direct lookup for:", lead.Inmueble)
+          // Try exact match first, then partial
+          const { data: directAd } = await supabase
+            .from("Anuncios")
+            .select("ida, Referencia, Direccion, duracion_visita, tiempo_entre_visitas, Activacion, whatsapp_activo, usuario")
+            .ilike("Referencia", `%${lead.Inmueble.trim()}%`)
+            .maybeSingle()
+          
+          if (directAd) {
+              console.log("[Booking Action] Found ad via direct lookup:", directAd.ida)
+              advertisement = directAd
+          }
+      }
+    }
+
+    // Fallback: If Inmobiliaria not found via Agent, try via Advertisement
+    if (!inmobiliaria && advertisement && advertisement.usuario) {
+        console.log("[Booking Action] Inmobiliaria not found via Agent, trying via Advertisement (usuario):", advertisement.usuario)
+        const { data: inmoData } = await supabase
+            .from("Inmobiliarias")
+            .select("*")
+            .eq("idi", advertisement.usuario)
+            .single()
+        inmobiliaria = inmoData
     }
 
     // 4. Fetch Agent Agenda (Next 14 days)
@@ -92,7 +120,7 @@ export async function getBookingData(leadId: string) {
     // 6. Fetch All Ads for Duration Logic (Optimization: Only fetch needed fields)
     const { data: allAds } = await supabase
       .from("Anuncios")
-      .select("ida, Referencia, Direccion, Duracion_visita, Gap_visita, duracion_visita, tiempo_entre_visitas")
+      .select("ida, Referencia, Direccion, Duracion_visita, Gap_visita, duracion_visita, tiempo_entre_visitas, whatsapp_activo")
 
     return {
       lead,
