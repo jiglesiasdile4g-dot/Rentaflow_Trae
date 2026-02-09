@@ -1,11 +1,20 @@
-## [0.9.6](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.3...v0.9.6) (2026-02-07)
+## [0.9.7](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.3...v0.9.7) (2026-02-09)
 
 
 ### Bug Fixes
 
-* **leads:** prevent status reversion for Visita Confirmada (trigger mitigation)
-* **webhook:** fix missing address in confirmacion_visita payload (case insensitive lookup)
-* **ui:** improve checkbox visibility with darker border
+* cálculo periodo y métricas de WhatsApp en Información ([dd3874c](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/dd3874c34ef564e1257328930b7231ed873fb0b5))
+* comunicaciones visitas y badges calendario ([ab5aef6](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/ab5aef605f1cfa5150ffe5950120771cc8e2aa35))
+* mejora calendario movil ([67936bc](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/67936bc5fa9bf2f483fbe3f9212500ad4c177b31))
+* mejoras anuncios y modales ([27c6796](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/27c6796e2a335cce4adc833c08b907be64f14d65))
+* nextcloud list and supabase timeouts ([b9eba13](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/b9eba13a623ba444e57325393bad70ccb4a3a0a7))
+* usar dominio app.rentaflow.es en enlaces ([8497b8a](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/8497b8a5c1a387a3e0be73a8189198bc7ce18647))
+
+
+### Features
+
+* agregar timeouts a webhooks y optimizaciones de rendimiento ([04827c0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/04827c0ad7ff83e71c6c1fc8cf15885c29def576))
+* **auth:** add show/hide password toggle to login page ([23f6ec9](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/23f6ec9ec3d177fe0565d8e721735cd0c1738243))
 
 
 
