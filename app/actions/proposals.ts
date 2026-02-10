@@ -190,7 +190,8 @@ export async function createVisitProposal(data: {
 }
 
 export async function getVisitProposal(id: string) {
-  const supabase = await createClient()
+  // Use admin client to allow public access to proposal details via UUID
+  const supabase = createAdminClient()
   
   const { data: proposal, error } = await supabase
     .from("PropuestasVisita")
