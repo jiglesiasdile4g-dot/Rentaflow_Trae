@@ -490,7 +490,7 @@ export async function getAvailableSlotsForProposal(
   if (!agentId) return []
 
   // 1. Fetch Agent's Agenda for this date
-  const { data: agendaItems, error: agendaError } = await supabase
+  const { data: rawAgendaItems, error: agendaError } = await supabase
     .from("Agendas")
     .select("*")
     .eq("agente_id", agentId)
@@ -501,6 +501,13 @@ export async function getAvailableSlotsForProposal(
     return []
   }
   
+  // Filter agenda items: Keep generic slots OR slots assigned to this specific advertisement
+  const agendaItems = rawAgendaItems?.filter(item => {
+      if (!item.anuncio_id) return true // Generic slot
+      if (!advertisementId) return false // If we don't know the target ad, we can't use a restricted slot safely (or maybe we should? conservative approach: hide restricted slots)
+      return String(item.anuncio_id) === String(advertisementId)
+  })
+
   if (!agendaItems || agendaItems.length === 0) {
     return []
   }
@@ -511,14 +518,11 @@ export async function getAvailableSlotsForProposal(
   
   const { data: existingVisits, error: visitsError } = await supabase
     .from("Clientes")
-    .select("fecha_de_visita, Inmueble")
+    .select("fecha_de_visita, Inmueble, Estado")
     .eq("idag", agentId)
     .gte("fecha_de_visita", startOfDay)
     .lte("fecha_de_visita", endOfDay)
-    // Exclude cancelled if possible? Assuming 'Descartado' or similar status doesn't occupy slots?
-    // Usually we check status != 'Cancelado'. But 'status' field might be text.
-    // For now, assume all visits in Clientes with a date are occupying.
-
+    
   if (visitsError) {
     console.error("Error fetching visits:", visitsError)
     return []
@@ -573,6 +577,9 @@ export async function getAvailableSlotsForProposal(
     const isOccupied = existingVisits?.some(visit => {
       if (!visit.fecha_de_visita) return false
       
+      // Filter cancelled visits
+      if (visit.Estado === "Cancelado" || visit.Estado === "Descartado") return false
+
       const vDate = new Date(visit.fecha_de_visita)
       const vStartMins = vDate.getHours() * 60 + vDate.getMinutes()
       

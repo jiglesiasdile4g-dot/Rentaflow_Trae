@@ -18,7 +18,7 @@ interface ProposeVisitDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   selectedLeadIds: string[]
-  selectedAdvertisement?: { Referencia: string; Direccion: string; id: string } | null
+  selectedAdvertisement?: { Referencia?: string; Direccion?: string; id?: string | number; ida?: string | number } | null
   inmobiliariaId: number
   currentAgentId?: number | null
 }
@@ -43,6 +43,12 @@ export function ProposeVisitDialog({
   const [loadingDates, setLoadingDates] = useState(false)
   const { toast } = useToast()
 
+  // Helper to get ad ID
+  const getAdId = () => {
+    if (!selectedAdvertisement) return undefined
+    return selectedAdvertisement.ida || selectedAdvertisement.id
+  }
+
   // Load available dates when dialog opens
   useEffect(() => {
     if (open && currentAgentId) {
@@ -52,7 +58,8 @@ export function ProposeVisitDialog({
       setTime("")
       setAvailableSlots([])
       
-      getAvailableDatesForProposal(currentAgentId, inmobiliariaId, selectedAdvertisement?.id)
+      const adId = getAdId()
+      getAvailableDatesForProposal(currentAgentId, inmobiliariaId, adId ? String(adId) : undefined)
         .then((dates) => {
           setAvailableDates(dates)
         })
@@ -69,7 +76,8 @@ export function ProposeVisitDialog({
     if (open && date && currentAgentId) {
       setCheckingAvailability(true)
       const dateStr = format(date, "yyyy-MM-dd")
-      getAvailableSlotsForProposal(dateStr, currentAgentId, inmobiliariaId, selectedAdvertisement?.id)
+      const adId = getAdId()
+      getAvailableSlotsForProposal(dateStr, currentAgentId, inmobiliariaId, adId ? String(adId) : undefined)
         .then((slots) => {
           setAvailableSlots(slots)
           if (time && !slots.includes(time)) {
@@ -97,6 +105,7 @@ export function ProposeVisitDialog({
     }
 
     setLoading(true)
+    const adId = getAdId()
     try {
       const result = await createVisitProposal({
         leadIds: selectedLeadIds,
@@ -104,7 +113,7 @@ export function ProposeVisitDialog({
         time,
         inmuebleRef: selectedAdvertisement?.Referencia,
         inmuebleDireccion: selectedAdvertisement?.Direccion,
-        inmuebleId: selectedAdvertisement?.id,
+        inmuebleId: adId ? String(adId) : undefined,
         inmobiliariaId,
         origin: window.location.origin,
         agentId: currentAgentId
