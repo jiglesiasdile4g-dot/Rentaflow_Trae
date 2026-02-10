@@ -9,8 +9,9 @@ import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
-export default async function VisitProposalPage({ params }: { params: { id: string } }) {
-  const proposal = await getVisitProposal(params.id)
+export default async function VisitProposalPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const proposal = await getVisitProposal(id)
 
   if (!proposal) {
     notFound()
