@@ -1,3 +1,12 @@
+## [0.9.10](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.9...v0.9.10) (2026-02-10)
+
+
+### Bug Fixes
+
+* await params in visit proposal page for Next.js 15 compatibility ([abfd519](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/abfd5199454e3df8071433817da6cde92d2747ba))
+
+
+
 ## [0.9.9](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.8...v0.9.9) (2026-02-10)
 
 
