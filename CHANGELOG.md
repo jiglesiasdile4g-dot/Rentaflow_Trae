@@ -1,3 +1,12 @@
+## [0.9.9](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.8...v0.9.9) (2026-02-10)
+
+
+### Bug Fixes
+
+* allow public access to visit proposals via admin client to resolve 404 error ([6ac2eb7](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/6ac2eb7213bf60d2265bc4bc1d38eb755a571ca2))
+
+
+
 ## [0.9.8](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.7...v0.9.8) (2026-02-10)
 
 
