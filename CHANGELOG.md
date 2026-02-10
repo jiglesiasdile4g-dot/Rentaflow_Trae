@@ -1,3 +1,12 @@
+## [0.9.8](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.7...v0.9.8) (2026-02-10)
+
+
+### Bug Fixes
+
+* resolve issue with group visit slots not appearing due to missing advertisement ID ([90685e4](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/90685e4f020ce952ffba9ecbb4be9074e0cb5cde))
+
+
+
 ## [0.9.7](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.3...v0.9.7) (2026-02-09)
 
 
