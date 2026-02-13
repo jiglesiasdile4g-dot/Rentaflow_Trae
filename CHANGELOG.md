@@ -1,3 +1,12 @@
+## [0.9.11](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.10...v0.9.11) (2026-02-13)
+
+
+### Features
+
+* **auth:** add forgot password link to login page ([6b1656f](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/6b1656f6b576226c4dac39c4d8ab1f80d3a8205b))
+
+
+
 ## [0.9.10](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.9...v0.9.10) (2026-02-10)
 
 
