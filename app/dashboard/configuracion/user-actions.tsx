@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { MoreVertical, Trash2, ShieldCheck, UserCheck, Power, PowerOff, Mail, Loader2, UserPlus, UserMinus, Edit } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useToast } from "@/hooks/use-toast"
 import {
   Dialog,
   DialogContent,
@@ -72,6 +73,7 @@ export function UserActions({
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [editName, setEditName] = useState(user.nombre || "")
   const [editPhone, setEditPhone] = useState(user.telefono || "")
+  const { toast } = useToast()
 
   const handleAction = async (action: (fd: FormData) => Promise<any>, extraData: Record<string, string> = {}) => {
     try {
@@ -86,9 +88,27 @@ export function UserActions({
         formData.append(key, value)
       })
       
-      await action(formData)
+      const result = await action(formData)
+
+      if (result?.error) {
+        toast({
+            variant: "destructive",
+            title: "Error",
+            description: result.error
+        })
+      } else if (result?.success) {
+        toast({
+            title: "Éxito",
+            description: "Acción completada correctamente"
+        })
+      }
     } catch (error) {
       console.error("Action error:", error)
+      toast({
+        variant: "destructive",
+        title: "Error inesperado",
+        description: "Ha ocurrido un error al procesar la solicitud"
+      })
     } finally {
       setLoading(false)
     }

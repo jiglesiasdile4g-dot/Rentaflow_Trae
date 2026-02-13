@@ -278,15 +278,39 @@ export async function resendUserConfirmationAction(formData: FormData) {
     const admin = createAdminClient()
     const email = String(formData.get("email"))
     
-    // Check if we can just invite again or specific resend
-    // Usually inviteUserByEmail handles resend if user exists but not confirmed
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
-    const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`
-    
-    await admin.auth.admin.inviteUserByEmail(email, { redirectTo: redirectUrl })
-    
-    revalidatePath("/dashboard/configuracion")
-    return { success: true }
+    try {
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
+        const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`
+        
+        console.log(`[resendUserConfirmationAction] Processing for ${email}`)
+
+        // Intentar invitar primero (funciona si no existe o si existe pero no está confirmado)
+        const { data, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, { redirectTo: redirectUrl })
+
+        if (inviteError) {
+            // Si falla, verificar si es porque ya está registrado (y confirmado)
+            // El mensaje de error típico es "User already registered" o código 422/400
+            console.log(`[resendUserConfirmationAction] Invite failed: ${inviteError.message}. Trying password reset...`)
+            
+            // Intentar reset password (está en admin.auth, NO en admin.auth.admin)
+            const { error: resetError } = await admin.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl })
+            
+            if (resetError) {
+                console.error("[resendUserConfirmationAction] Reset password also failed:", resetError)
+                throw new Error(resetError.message || "No se pudo enviar el correo")
+            } else {
+                console.log("[resendUserConfirmationAction] Reset password sent successfully")
+            }
+        } else {
+            console.log("[resendUserConfirmationAction] Invite sent successfully")
+        }
+
+        revalidatePath("/dashboard/configuracion")
+        return { success: true }
+    } catch (error: any) {
+        console.error("[resendUserConfirmationAction] Error:", error)
+        return { error: error.message || "Error al reenviar enlace" }
+    }
 }
 
 export async function updateWebsiteAction(formData: FormData) {
