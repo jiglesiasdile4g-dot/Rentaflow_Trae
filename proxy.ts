@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -11,7 +11,7 @@ export async function middleware(request: NextRequest) {
 
   // If environment variables are not set, skip auth check
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn("[v0] Supabase environment variables not found in middleware")
+    console.warn("[v0] Supabase environment variables not found in proxy")
     return supabaseResponse
   }
 
@@ -68,7 +68,7 @@ export async function middleware(request: NextRequest) {
       }
     }
   } catch (error) {
-    console.error("[v0] Middleware auth check failed:", error)
+    console.error("[v0] Proxy auth check failed:", error)
     if (request.nextUrl.pathname.startsWith("/dashboard")) {
       const response = NextResponse.redirect(new URL("/login", request.url))
       response.cookies.delete('sb-access-token')

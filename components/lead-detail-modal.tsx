@@ -37,7 +37,7 @@ import Image from "next/image"
 import { 
   User, Building, Phone, Mail, Euro, FileText, Calendar, 
   MapPin, MessageSquare, Clock, Check, X, Copy, Loader2,
-  Trash2, ExternalLink, RefreshCw, Edit, Plus, Upload, Eye, Download, CalendarIcon, StickyNote
+  Trash2, ExternalLink, RefreshCw, Edit, Plus, Upload, Eye, Download, CalendarIcon, StickyNote, CalendarDays
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { cn, formatDateTime, formatWebhookDate } from "@/lib/utils"
@@ -133,7 +133,7 @@ export function LeadDetailModal({
 }: LeadDetailModalProps) {
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(false)
-  const { inmobiliariaId, inmobiliariaNombre } = useInmobiliaria()
+  const { inmobiliariaId, inmobiliariaNombre, isAdmin, role, userEmail } = useInmobiliaria()
   const [communications, setCommunications] = useState<Communication[]>([])
   const [commsLoading, setCommsLoading] = useState(false)
   const [selectedCommunication, setSelectedCommunication] = useState<Communication | null>(null)
@@ -2191,6 +2191,28 @@ export function LeadDetailModal({
                         </CardContent>
                     </Card>
 
+                    {/* Fecha Prevista de Entrada */}
+                    <Card>
+                        <div className="py-2 px-4">
+                          <h4 className="text-sm font-semibold flex items-center gap-2 mb-1">
+                            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                            Fecha Prevista Entrada
+                          </h4>
+                          <div className="pl-6 text-sm">
+                            <span className="font-medium">
+                              {lead.prev_entrada?.toLowerCase() === "inmediatamente" ? "Inmediatamente" : 
+                               lead.prev_entrada?.toLowerCase() === "mas adelante" ? "Más adelante" : 
+                               lead.prev_entrada || "No especificado"}
+                            </span>
+                            {lead.prev_entrada?.toLowerCase() === "mas adelante" && lead.fecha_prev_entrada && (
+                              <span className="ml-2 text-muted-foreground">
+                                {formatDate(lead.fecha_prev_entrada)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                    </Card>
+
                     {/* Annotations Section */}
                     <div className="border rounded-lg bg-card flex flex-col h-[400px] w-full shrink-0 shadow-sm overflow-hidden">
                         <div className="p-3 border-b flex justify-between items-center bg-muted/30">
@@ -2208,6 +2230,28 @@ export function LeadDetailModal({
                             </Badge>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
+                             {/* Resumen de visita */}
+                             {lead.resumen_visita && (
+                                <div className="bg-[#d1fae5] border border-[#10b981] rounded-xl p-3 text-xs shadow-sm relative">
+                                    <div className="flex justify-between items-start mb-2.5 pb-2 border-b border-[#10b981]/30">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="h-7 w-7 rounded-full bg-[#10b981]/10 flex items-center justify-center shrink-0 border border-[#10b981]/30">
+                                                <CalendarDays className="h-3.5 w-3.5 text-[#059669]" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="font-bold text-[#059669] text-[11px]">Resumen de Visita</span>
+                                                <span className="text-[10px] font-medium text-[#059669]/80">
+                                                    {lead.fecha_de_visita ? formatDate(lead.fecha_de_visita) : "Fecha no disponible"}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="pl-1">
+                                        <p className="whitespace-pre-wrap text-[#059669] leading-relaxed font-medium">{lead.resumen_visita}</p>
+                                    </div>
+                                </div>
+                             )}
+
                              {splitNotes(String(lead.Obsevaciones || lead.Observaciones || "").trim()).length > 0 ? (
                                 splitNotes(String(lead.Obsevaciones || lead.Observaciones || "")).map((n, idx) => {
                                     const cleanHeader = n.header.replace(/^\[|\]$/g, "")
