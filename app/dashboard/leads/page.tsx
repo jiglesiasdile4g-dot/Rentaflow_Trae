@@ -6104,19 +6104,15 @@ export default function LeadsPage() {
                           <div className="border border-border rounded-lg p-3 flex-1 flex flex-col">
                             <h2 className="text-xs font-semibold uppercase tracking-wider mb-2 pl-1">Información de la visita</h2>
                             <div 
-                              className="w-full flex-1 p-4 border-2 rounded-lg flex flex-col justify-between"
-                              style={{
-                                backgroundColor: "#F8FBF8",
-                                borderColor: "#3b82f6",
-                              }}
+                              className="w-full flex-1 p-4 border-2 rounded-lg flex flex-col justify-between bg-[#F8FBF8] dark:bg-muted/10 border-blue-500 dark:border-blue-700"
                             >
                             <div className="space-y-3">
                               <div className="flex gap-2">
-                                <div className="flex-1 bg-gray-50 p-2 rounded border border-gray-200">
-                                  <div className="text-[10px] text-gray-500 font-bold mb-1 uppercase tracking-wider">NOMBRE</div>
+                                <div className="flex-1 bg-gray-50 dark:bg-muted/20 p-2 rounded border border-gray-200 dark:border-border/50">
+                                  <div className="text-[10px] text-gray-500 dark:text-muted-foreground font-bold mb-1 uppercase tracking-wider">NOMBRE</div>
                                   <div className="relative">
                                     <select
-                                      className="w-full h-6 text-black font-bold border-0 bg-transparent p-0 focus:ring-0 shadow-none hover:bg-gray-100 text-xs cursor-pointer appearance-none"
+                                      className="w-full h-6 text-black dark:text-foreground font-bold border-0 bg-transparent p-0 focus:ring-0 shadow-none hover:bg-gray-100 dark:hover:bg-muted text-xs cursor-pointer appearance-none"
                                       value={selectedLead.idag ? String(selectedLead.idag) : "unassigned"}
                                       onChange={async (e) => {
                                         const value = e.target.value;
@@ -6149,25 +6145,25 @@ export default function LeadsPage() {
                                         }
                                       }}
                                     >
-                                      <option value="unassigned" className="text-gray-500 font-normal">Sin asignar</option>
+                                      <option value="unassigned" className="text-gray-500 dark:text-muted-foreground font-normal">Sin asignar</option>
                                       {agentes.map((agente) => (
-                                        <option key={agente.idag} value={String(agente.idag)} className="text-black font-normal">
+                                        <option key={agente.idag} value={String(agente.idag)} className="text-black dark:text-foreground font-normal">
                                           {agente.Nombre || agente.nombre}
                                         </option>
                                       ))}
                                     </select>
-                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1 text-gray-700">
+                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1 text-gray-700 dark:text-muted-foreground">
                                       <svg className="fill-current h-3 w-3 opacity-50" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
                                     </div>
                                   </div>
                                 </div>
-                                <div className="flex-1 bg-gray-50 p-2 rounded border border-gray-200">
-                                  <div className="text-[10px] text-gray-500 font-bold mb-1 uppercase tracking-wider">FECHA</div>
-                                  <div className="font-bold text-xs text-black h-6 flex items-center">
+                                <div className="flex-1 bg-gray-50 dark:bg-muted/20 p-2 rounded border border-gray-200 dark:border-border/50">
+                                  <div className="text-[10px] text-gray-500 dark:text-muted-foreground font-bold mb-1 uppercase tracking-wider">FECHA</div>
+                                  <div className="font-bold text-xs text-black dark:text-foreground h-6 flex items-center">
                                     {selectedLead.fecha_de_visita ? (
                                       <div className="flex flex-col leading-tight">
                                         <span>{formatDate(selectedLead.fecha_de_visita)}</span>
-                                        <span className="text-[10px] text-gray-600 font-semibold">
+                                        <span className="text-[10px] text-gray-600 dark:text-muted-foreground font-semibold">
                                           {new Date(selectedLead.fecha_de_visita).toLocaleTimeString("es-ES", {
                                             hour: "2-digit",
                                             minute: "2-digit",
@@ -6175,7 +6171,7 @@ export default function LeadsPage() {
                                         </span>
                                       </div>
                                     ) : (
-                                      <span className="text-gray-400 italic">No programada</span>
+                                      <span className="text-gray-400 dark:text-muted-foreground/50 italic">No programada</span>
                                     )}
                                   </div>
                                 </div>
