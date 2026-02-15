@@ -29,7 +29,7 @@
     "@radix-ui/react-menubar": "^1.1.4",
     "@radix-ui/react-navigation-menu": "^1.2.3",
     "@radix-ui/react-popover": "^1.1.4",
-    "@radix-ui/react-progress": "latest",
+    "@radix-ui/react-progress": "^1.1.8",
     "@radix-ui/react-radio-group": "^1.2.2",
     "@radix-ui/react-scroll-area": "^1.2.2",
     "@radix-ui/react-select": "latest",
@@ -41,7 +41,7 @@
     "@radix-ui/react-toast": "latest",
     "@radix-ui/react-toggle": "^1.1.1",
     "@radix-ui/react-toggle-group": "^1.1.1",
-    "@radix-ui/react-tooltip": "latest",
+    "@radix-ui/react-tooltip": "^1.2.8",
     "@stripe/stripe-js": "^8.5.3",
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
@@ -63,7 +63,7 @@
     "tw-animate-css": "latest"
   },
   "devDependencies": {
-    "@types/node": "^22",
+    "@types/node": "^22.19.11",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "conventional-changelog-angular": "^8.1.0",
