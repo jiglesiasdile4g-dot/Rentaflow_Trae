@@ -6983,7 +6983,7 @@ export default function LeadsPage() {
                 <Checkbox 
                   id="agent-only" 
                   checked={isAgentSelectionOnly} 
-                  onCheckedChange={(checked) => setIsAgentSelectionOnly(checked as boolean)} 
+                  onCheckedChange={(checked: boolean | "indeterminate") => setIsAgentSelectionOnly(checked as boolean)} 
                 />
                 <label
                   htmlFor="agent-only"
