@@ -6355,22 +6355,22 @@ export default function LeadsPage() {
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
                           {/* Resumen de visita */}
                           {selectedLead.resumen_visita && (
-                             <div className="bg-[#d1fae5] border border-[#10b981] rounded-xl p-3 text-xs shadow-sm relative">
-                                 <div className="flex justify-between items-start mb-2.5 pb-2 border-b border-[#10b981]/30">
+                             <div className="bg-[#DCFCE7] border border-[#16A34A] rounded-xl p-3 text-xs shadow-sm relative">
+                                 <div className="flex justify-between items-start mb-2.5 pb-2 border-b border-[#16A34A]/30">
                                      <div className="flex items-center gap-2.5">
-                                         <div className="h-7 w-7 rounded-full bg-[#10b981]/10 flex items-center justify-center shrink-0 border border-[#10b981]/30">
-                                             <CalendarDays className="h-3.5 w-3.5 text-[#059669]" />
+                                         <div className="h-7 w-7 rounded-full bg-[#16A34A]/10 flex items-center justify-center shrink-0 border border-[#16A34A]/30">
+                                             <CalendarDays className="h-3.5 w-3.5 text-[#16A34A]" />
                                          </div>
                                          <div className="flex flex-col">
-                                             <span className="font-bold text-[#059669] text-[11px]">Resumen de Visita</span>
-                                             <span className="text-[10px] font-medium text-[#059669]/80">
+                                             <span className="font-bold text-[#16A34A] text-[11px]">Resumen de Visita</span>
+                                             <span className="text-[10px] font-medium text-[#16A34A]/80">
                                                  {selectedLead.fecha_de_visita ? formatDate(selectedLead.fecha_de_visita) : "Fecha no disponible"}
                                              </span>
                                          </div>
                                      </div>
                                  </div>
                                  <div className="pl-1">
-                                     <p className="whitespace-pre-wrap text-[#059669] leading-relaxed font-medium">{selectedLead.resumen_visita}</p>
+                                     <p className="whitespace-pre-wrap text-[#16A34A] leading-relaxed font-medium">{selectedLead.resumen_visita}</p>
                                  </div>
                              </div>
                           )}

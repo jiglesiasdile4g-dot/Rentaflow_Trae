@@ -1851,15 +1851,15 @@ export function LeadDetailModal({
                 {/* Visit Info - Moved Here (Full Width) */}
                 <div className="space-y-2 shrink-0">
                          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Información de la visita</h3>
-                         <div className="p-4 border rounded-lg bg-card shadow-sm space-y-4">
+                         <div className="p-4 border border-slate-800 rounded-lg bg-slate-950 text-slate-50 shadow-sm space-y-4">
                             <div className="flex gap-4">
                                 <div className="flex-1 space-y-1">
-                                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">AGENTE</Label>
+                                    <Label className="text-[10px] text-slate-400 uppercase font-bold">AGENTE</Label>
                                     <Select 
                                         value={lead.idag ? String(lead.idag) : "unassigned"} 
                                         onValueChange={(val) => updateAgent(val === "unassigned" ? null : Number(val))}
                                     >
-                                        <SelectTrigger className="h-8 text-xs font-medium">
+                                        <SelectTrigger className="h-8 text-xs font-medium bg-slate-900 border-slate-700 text-slate-200">
                                             <SelectValue placeholder="Sin asignar" />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -1871,16 +1871,16 @@ export function LeadDetailModal({
                                     </Select>
                                 </div>
                                 <div className="flex-1 space-y-1">
-                                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">FECHA</Label>
+                                    <Label className="text-[10px] text-slate-400 uppercase font-bold">FECHA</Label>
                                     <div className="h-8 flex items-center text-sm font-medium">
                                         {lead.fecha_de_visita ? (
                                             <div className="flex flex-col leading-tight">
                                                 <span>{formatDate(lead.fecha_de_visita)}</span>
-                                                <span className="text-[10px] text-muted-foreground">
+                                                <span className="text-[10px] text-slate-400">
                                                     {new Date(lead.fecha_de_visita).toLocaleTimeString("es-ES", { hour: '2-digit', minute: '2-digit' })}
                                                 </span>
                                             </div>
-                                        ) : <span className="text-muted-foreground italic text-xs">No programada</span>}
+                                        ) : <span className="text-slate-500 italic text-xs">No programada</span>}
                                     </div>
                                 </div>
                                 <div className="flex items-end">
@@ -1888,7 +1888,7 @@ export function LeadDetailModal({
                                      type="button"
                                      variant="default" 
                                      size="sm" 
-                                     className="h-8 text-xs bg-black text-white hover:bg-black/90 border-0"
+                                     className="h-8 text-xs bg-white text-black hover:bg-slate-200 border-0"
                                      onClick={openVisitDialog}
                                    >
                                      <CalendarIcon className="mr-2 h-3 w-3" />
@@ -2232,22 +2232,22 @@ export function LeadDetailModal({
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
                              {/* Resumen de visita */}
                              {lead.resumen_visita && (
-                                <div className="bg-[#d1fae5] border border-[#10b981] rounded-xl p-3 text-xs shadow-sm relative">
-                                    <div className="flex justify-between items-start mb-2.5 pb-2 border-b border-[#10b981]/30">
+                                <div className="bg-[#DCFCE7] border border-[#16A34A] rounded-xl p-3 text-xs shadow-sm relative">
+                                    <div className="flex justify-between items-start mb-2.5 pb-2 border-b border-[#16A34A]/30">
                                         <div className="flex items-center gap-2.5">
-                                            <div className="h-7 w-7 rounded-full bg-[#10b981]/10 flex items-center justify-center shrink-0 border border-[#10b981]/30">
-                                                <CalendarDays className="h-3.5 w-3.5 text-[#059669]" />
+                                            <div className="h-7 w-7 rounded-full bg-[#16A34A]/10 flex items-center justify-center shrink-0 border border-[#16A34A]/30">
+                                                <CalendarDays className="h-3.5 w-3.5 text-[#16A34A]" />
                                             </div>
                                             <div className="flex flex-col">
-                                                <span className="font-bold text-[#059669] text-[11px]">Resumen de Visita</span>
-                                                <span className="text-[10px] font-medium text-[#059669]/80">
+                                                <span className="font-bold text-[#16A34A] text-[11px]">Resumen de Visita</span>
+                                                <span className="text-[10px] font-medium text-[#16A34A]/80">
                                                     {lead.fecha_de_visita ? formatDate(lead.fecha_de_visita) : "Fecha no disponible"}
                                                 </span>
                                             </div>
                                         </div>
                                     </div>
                                     <div className="pl-1">
-                                        <p className="whitespace-pre-wrap text-[#059669] leading-relaxed font-medium">{lead.resumen_visita}</p>
+                                        <p className="whitespace-pre-wrap text-[#16A34A] leading-relaxed font-medium">{lead.resumen_visita}</p>
                                     </div>
                                 </div>
                              )}
