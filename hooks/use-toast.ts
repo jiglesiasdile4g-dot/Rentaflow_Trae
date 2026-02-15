@@ -7,8 +7,9 @@ const TOAST_REMOVE_DELAY = 1000000
 
 type ToasterToast = {
   id: string
-  dismiss: () => void
-  update: (props: ToasterToast) => void
+  title?: React.ReactNode
+  description?: React.ReactNode
+  action?: React.ReactElement
 } & import("@/components/ui/toast").ToastProps
 
 let count = 0
@@ -143,7 +144,7 @@ type Toast = Omit<ToasterToast, "id">
 function toast({ ...props }: Toast) {
   const id = genId()
 
-  const update = (props: ToasterToast) =>
+  const update = (props: Partial<ToasterToast>) =>
     dispatch({
       type: "UPDATE_TOAST",
       toast: { ...props, id },

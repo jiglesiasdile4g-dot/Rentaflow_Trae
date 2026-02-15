@@ -27,6 +27,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { format } from "date-fns"
+import { es } from "date-fns/locale"
 import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Eye, Download, UploadCloud, IdCard, Image as ImageIcon, Tag, Trash, Trash2, StickyNote, Calendar as CalendarIcon, History as HistoryIcon, CalendarDays } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
 import { formatDate, formatDateTime, cn, formatWebhookDate } from "@/lib/utils"
@@ -164,6 +166,15 @@ interface Communication {
   idc?: number // Added for consistency with WhatsApp messages
   Mensaje?: string // WhatsApp message content
   source: "email" | "whatsapp" // To distinguish between email and WhatsApp
+}
+
+interface AgendaItem {
+  hora_inicio: string
+  hora_fin: string
+  anuncio_id?: number | string
+  duracion?: number
+  gap?: number
+  fecha: string
 }
 
 export default function LeadsPage() {
@@ -1684,7 +1695,7 @@ export default function LeadsPage() {
       if (leadsError) throw leadsError
       console.log("[leads] leadsData:fetched", leadsData?.length || 0)
 
-      let baseRows: any[] = (leadsData || []).map((lead: any) => {
+      let baseRows: Lead[] = (leadsData || []).map((lead: any) => {
         // Normalize virtual statuses
         const currentStatus = String(lead?.Estado || "").trim()
         const hasDate = Boolean(lead?.fecha_de_visita)
@@ -1704,7 +1715,7 @@ export default function LeadsPage() {
 
         return {
           ...lead,
-          Estado: effectiveStatus,
+          Estado: effectiveStatus as any, // Type assertion needed due to dynamic status changes
           origen: lead?.origen ?? lead?.Origen ?? lead?.origin ?? null,
         }
       })
@@ -1716,7 +1727,7 @@ export default function LeadsPage() {
       
       if (signal?.aborted) return
 
-      const toCorrect = baseRows.filter((lead: any) => {
+      const toCorrect = baseRows.filter((lead: Lead) => {
         const s = String(lead?.Estado || "")
         // Only auto-correct if status is "Datos Incompletos" or empty/null
         // Do NOT overwrite advanced statuses like "Visita Propuesta", "Aceptado", etc.
@@ -1725,14 +1736,14 @@ export default function LeadsPage() {
       console.log("[regla-cp] candidates_to_correct", toCorrect.length)
       if (toCorrect.length > 0) {
         try {
-          console.log("[regla-cp] Corrigiendo leads a 'Datos Completos':", toCorrect.map((l: any) => l.id))
+          console.log("[regla-cp] Corrigiendo leads a 'Datos Completos':", toCorrect.map((l: Lead) => l.id))
           await Promise.all(
-            toCorrect.map((lead: any) =>
+            toCorrect.map((lead: Lead) =>
               supabase.from("Clientes").update({ Estado: "Datos Completos" }).eq("id", lead.id)
             )
           )
-          const correctedIds = new Set(toCorrect.map((l: any) => String(l.id)))
-          baseRows = baseRows.map((l: any) => (correctedIds.has(String(l.id)) ? { ...l, Estado: "Datos Completos" } : l))
+          const correctedIds = new Set(toCorrect.map((l: Lead) => String(l.id)))
+          baseRows = baseRows.map((l: Lead) => (correctedIds.has(String(l.id)) ? { ...l, Estado: "Datos Completos" } as Lead : l))
           console.log("[regla-cp] corrected_count", correctedIds.size)
         } catch (e) {
           console.error("[v0] Error corrigiendo estados existentes:", e)
