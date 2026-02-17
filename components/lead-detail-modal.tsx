@@ -185,6 +185,7 @@ export function LeadDetailModal({
   const dniInputRef = useRef<HTMLInputElement | null>(null)
   const [dropActiveIngresos, setDropActiveIngresos] = useState(false)
   const ingresosInputRef = useRef<HTMLInputElement | null>(null)
+  const [isStatusHistoryOpen, setIsStatusHistoryOpen] = useState(false)
   
   // Attachment Preview State
   const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
@@ -1697,6 +1698,12 @@ export function LeadDetailModal({
     }
   }
 
+  const statusHistoryEntries = lead?.status_history ? [...lead.status_history].reverse() : []
+  const formatStatusLabel = (status?: string) => {
+    if (!status) return "Pendiente"
+    return status === "Aceptado" ? "Aprobado" : status
+  }
+
   if (!open) return null
 
   return (
@@ -1900,26 +1907,39 @@ export function LeadDetailModal({
                 </div>
 
                 {/* Status History */}
-                {lead.status_history && lead.status_history.length > 0 && (
-                   <div className="space-y-2 shrink-0">
-                        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Historial de Estados</h3>
-                        <div className="p-4 border rounded-lg bg-card shadow-sm space-y-2 max-h-40 overflow-y-auto">
-                           {[...lead.status_history].reverse().map((entry, idx) => (
-                             <div key={idx} className="flex justify-between items-center text-xs border-b last:border-0 pb-2 last:pb-0">
-                                <div className="flex flex-col">
-                                   <span className="font-medium">{entry.status}</span>
-                                   <span className="text-muted-foreground">
-                                     {entry.agent_name ? `por ${entry.agent_name}` : "Sistema/Desconocido"}
-                                   </span>
-                                </div>
-                                <span className="text-muted-foreground">
-                                   {new Date(entry.timestamp).toLocaleString()}
-                                </span>
-                             </div>
-                           ))}
+                <div className="space-y-2 shrink-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Historial de Estados</h3>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[11px]"
+                      onClick={() => setIsStatusHistoryOpen(true)}
+                    >
+                      Ver historial
+                    </Button>
+                  </div>
+                  <div className="p-4 border rounded-lg bg-card shadow-sm space-y-2 max-h-40 overflow-y-auto">
+                    {statusHistoryEntries.length > 0 ? (
+                      statusHistoryEntries.map((entry, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-xs border-b last:border-0 pb-2 last:pb-0">
+                          <div className="flex flex-col">
+                            <span className="font-medium">{formatStatusLabel(entry.status)}</span>
+                            <span className="text-muted-foreground">
+                              {entry.agent_name ? `por ${entry.agent_name}` : "Sistema/Desconocido"}
+                            </span>
+                          </div>
+                          <span className="text-muted-foreground">
+                            {new Date(entry.timestamp).toLocaleString()}
+                          </span>
                         </div>
-                   </div>
-                )}
+                      ))
+                    ) : (
+                      <div className="text-xs text-muted-foreground">Sin historial registrado</div>
+                    )}
+                  </div>
+                </div>
 
                 <div className="flex flex-col lg:flex-row gap-6">
                 
@@ -2950,6 +2970,34 @@ export function LeadDetailModal({
                         })}
                       </div>
                     </div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={isStatusHistoryOpen} onOpenChange={setIsStatusHistoryOpen}>
+              <DialogContent className="sm:max-w-lg z-[30000]">
+                <DialogHeader>
+                  <DialogTitle>Historial de estados</DialogTitle>
+                  <DialogDescription>{lead ? `Lead: ${lead.Nombre}` : ""}</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                  {statusHistoryEntries.length > 0 ? (
+                    statusHistoryEntries.map((entry, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-sm border-b last:border-0 pb-3 last:pb-0">
+                        <div className="flex flex-col">
+                          <span className="font-medium">{formatStatusLabel(entry.status)}</span>
+                          <span className="text-muted-foreground text-xs">
+                            {entry.agent_name ? `por ${entry.agent_name}` : "Sistema/Desconocido"}
+                          </span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(entry.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-muted-foreground">Sin historial registrado</div>
                   )}
                 </div>
               </DialogContent>

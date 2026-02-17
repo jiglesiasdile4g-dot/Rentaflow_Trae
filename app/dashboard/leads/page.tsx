@@ -716,6 +716,13 @@ export default function LeadsPage() {
     }
   }
 
+  const formatStatusLabel = (status?: string) => {
+    if (!status) return "Pendiente"
+    if (status === "Aceptado") return "Aprobado"
+    if (status === "Pedir Aval") return "Aval Pedido"
+    return status
+  }
+
   const handleAddLeadNote = async () => {
     if (!selectedLead || !inlineNote.trim()) return
 
@@ -816,6 +823,7 @@ export default function LeadsPage() {
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null)
   const [deleteConfirmInput, setDeleteConfirmInput] = useState("")
   const [isDeletingLead, setIsDeletingLead] = useState(false)
+  const [isStatusHistoryOpen, setIsStatusHistoryOpen] = useState(false)
   const [noteDialog, setNoteDialog] = useState<{ open: boolean; leadId: number; leadName: string; value: string; existing: string }>({ open: false, leadId: 0, leadName: "", value: "", existing: "" })
   const [currentUser, setCurrentUser] = useState<{id: string, email: string} | null>(null)
 
@@ -2048,6 +2056,7 @@ export default function LeadsPage() {
 
   const handleCloseModal = () => {
     setSelectedLead(null)
+    setIsStatusHistoryOpen(false)
     const params = new URLSearchParams(searchParams.toString())
     if (params.has("leadId")) {
       params.delete("leadId")
@@ -3294,6 +3303,13 @@ export default function LeadsPage() {
       console.log("[v0] Clicking advertisement:", ad.ida)
       setSelectedAdvertisement(ad.ida)
     }
+
+  const statusHistoryEntries = selectedLead?.status_history ? [...selectedLead.status_history].reverse() : []
+  const latestStatusEntry = statusHistoryEntries[0]
+  const formatHistoryDate = (timestamp: string) =>
+    new Date(timestamp).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" })
+  const formatHistoryTime = (timestamp: string) =>
+    new Date(timestamp).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
 
     return (
       <>
@@ -6275,6 +6291,44 @@ export default function LeadsPage() {
                             )}
                           </div>
                         </div>
+
+                        <Card>
+                          <CardHeader className="pb-2">
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                                <HistoryIcon className="h-4 w-4 text-muted-foreground" />
+                                Historial de estados
+                              </CardTitle>
+                              <Button variant="outline" size="sm" className="h-8" onClick={() => setIsStatusHistoryOpen(true)}>
+                                Ver historial
+                              </Button>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="pt-0">
+                            <div className="space-y-2 max-h-40 overflow-y-auto">
+                              {latestStatusEntry ? (
+                                <div
+                                  className="flex items-center justify-between text-xs border-b last:border-0 pb-2 last:pb-0"
+                                  style={{ borderColor: getStatusColors(latestStatusEntry.status).border }}
+                                >
+                                  <div className="flex flex-col">
+                                    <span className="font-medium" style={{ color: getStatusColors(latestStatusEntry.status).text }}>
+                                      {formatStatusLabel(latestStatusEntry.status)}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      {latestStatusEntry.agent_name ? `por ${latestStatusEntry.agent_name}` : "Sistema/Desconocido"}
+                                    </span>
+                                  </div>
+                                  <span className="text-muted-foreground">
+                                    {formatHistoryDate(latestStatusEntry.timestamp)} {formatHistoryTime(latestStatusEntry.timestamp)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-muted-foreground">Sin historial registrado</div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
                       </div>
                     </div>
 
@@ -7406,6 +7460,40 @@ export default function LeadsPage() {
                 "Eliminar"
               )}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isStatusHistoryOpen} onOpenChange={setIsStatusHistoryOpen}>
+        <DialogContent className="sm:max-w-lg z-[30000]">
+          <DialogHeader>
+            <DialogTitle>Historial de estados</DialogTitle>
+            <DialogDescription>{selectedLead ? `Lead: ${selectedLead.Nombre}` : ""}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+            {statusHistoryEntries.length > 0 ? (
+              statusHistoryEntries.map((entry, idx) => (
+                <div
+                  key={idx}
+                  className="flex justify-between items-center text-sm border-b last:border-0 pb-3 last:pb-0"
+                  style={{ borderColor: getStatusColors(entry.status).border }}
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium" style={{ color: getStatusColors(entry.status).text }}>
+                      {formatStatusLabel(entry.status)}
+                    </span>
+                    <span className="text-muted-foreground text-xs">
+                      {entry.agent_name ? `por ${entry.agent_name}` : "Sistema/Desconocido"}
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {formatHistoryDate(entry.timestamp)} {formatHistoryTime(entry.timestamp)}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-muted-foreground">Sin historial registrado</div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

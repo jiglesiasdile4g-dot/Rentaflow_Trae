@@ -30,7 +30,8 @@ export function ProposalBookingForm({ proposalId }: { proposalId: string }) {
 
       if (result.success) {
         setSuccess(true)
-        if (result.leadName) setLeadName(result.leadName)
+        const leadNameFromResult = (result as { leadName?: string }).leadName
+        if (leadNameFromResult) setLeadName(leadNameFromResult)
         toast({
           title: "¡Visita confirmada!",
           description: "Hemos reservado tu cita correctamente."
