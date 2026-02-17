@@ -98,6 +98,97 @@ export type LeadHistoryEntry = {
   agent_name?: string
 }
 
+const getStatusColors = (estado?: string | null) => {
+  switch (estado) {
+    case "Datos Completos":
+    case "Completo":
+      return {
+        bg: "#dcfce7",
+        border: "#22c55e",
+        text: "#16a34a",
+        label: estado === "Datos Completos" ? "Datos Completos" : "Completado",
+      }
+    case "Datos Incompletos":
+      return {
+        bg: "#ffffff",
+        border: "#f59e0b",
+        text: "#92400e",
+        label: estado,
+      }
+    case "Validado":
+      return {
+        bg: "#dbeafe",
+        border: "#3b82f6",
+        text: "#2563eb",
+        label: estado,
+      }
+    case "Pendiente":
+      return {
+        bg: "#fef3c7",
+        border: "#f59e0b",
+        text: "#d97706",
+        label: estado,
+      }
+    case "Rechazado":
+      return {
+        bg: "#fee2e2",
+        border: "#ef4444",
+        text: "#dc2626",
+        label: estado,
+      }
+    case "Pedir Aval":
+    case "Necesidad de Aval":
+      return {
+        bg: "#f3e8ff",
+        border: "#a855f7",
+        text: "#9333ea",
+        label: estado === "Pedir Aval" ? "Aval Pedido" : "Necesidad de Aval",
+      }
+    case "Visita Propuesta":
+      return {
+        bg: "#dbeafe",
+        border: "#3b82f6",
+        text: "#2563eb",
+        label: "Visita Propuesta",
+      }
+    case "Visita Confirmada":
+      return {
+        bg: "#e0e7ff",
+        border: "#6366f1",
+        text: "#4f46e5",
+        label: "Visita Confirmada",
+      }
+    case "Visita Completada":
+      return {
+        bg: "#f3e8ff",
+        border: "#a855f7",
+        text: "#7e22ce",
+        label: "Visita Completada",
+      }
+    case "Aceptado":
+      return {
+        bg: "#d1fae5",
+        border: "#10b981",
+        text: "#059669",
+        label: "Aprobado",
+      }
+    case "Descartado":
+      return {
+        bg: "#f3f4f6",
+        border: "#9ca3af",
+        text: "#6b7280",
+        label: estado,
+      }
+    default:
+      return {
+        bg: "#f3f4f6",
+        border: "#9ca3af",
+        text: "#374151",
+        label: estado || "Sin Estado",
+      }
+  }
+}
+
 interface Communication {
   id: string
   created_at: string
@@ -138,6 +229,7 @@ export function LeadDetailModal({
   const [commsLoading, setCommsLoading] = useState(false)
   const [selectedCommunication, setSelectedCommunication] = useState<Communication | null>(null)
   const [isCommDialogOpen, setIsCommDialogOpen] = useState(false)
+  const [showStatusHistory, setShowStatusHistory] = useState(false)
   const [agentes, setAgentes] = useState<any[]>([])
   
   // Visit Management State
@@ -1848,6 +1940,76 @@ export function LeadDetailModal({
                         </div>
                 </div>
 
+                {lead.status_history && lead.status_history.length > 0 && (() => {
+                  const lastEntry = lead.status_history[lead.status_history.length - 1]
+                  const lastColors = getStatusColors(lastEntry?.status)
+                  return (
+                    <div className="space-y-2 shrink-0">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Historial de Estados</h3>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs border border-black"
+                          onClick={() => setShowStatusHistory((prev) => !prev)}
+                        >
+                          {showStatusHistory ? "Ocultar historial" : "Ver historial"}
+                        </Button>
+                      </div>
+                      <div className="p-4 border rounded-lg bg-card shadow-sm flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className="px-2.5 py-1 rounded-full border text-xs font-semibold"
+                            style={{
+                              backgroundColor: lastColors.bg,
+                              borderColor: lastColors.border,
+                              color: lastColors.text,
+                            }}
+                          >
+                            {lastColors.label}
+                          </div>
+                          <span className="text-xs text-muted-foreground truncate">
+                            {lastEntry?.agent_name ? `por ${lastEntry.agent_name}` : "Sistema/Desconocido"}
+                          </span>
+                        </div>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {lastEntry?.timestamp ? formatDateTime(lastEntry.timestamp) : ""}
+                        </span>
+                      </div>
+                      {showStatusHistory && (
+                        <div className="p-4 border rounded-lg bg-card shadow-sm space-y-2 max-h-40 overflow-y-auto">
+                          {[...lead.status_history].reverse().map((entry, idx) => {
+                            const colors = getStatusColors(entry.status)
+                            return (
+                              <div key={idx} className="flex justify-between items-center text-xs border-b last:border-0 pb-2 last:pb-0">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div
+                                    className="px-2 py-0.5 rounded-full border text-[11px] font-semibold"
+                                    style={{
+                                      backgroundColor: colors.bg,
+                                      borderColor: colors.border,
+                                      color: colors.text,
+                                    }}
+                                  >
+                                    {colors.label}
+                                  </div>
+                                  <span className="text-muted-foreground truncate">
+                                    {entry.agent_name ? `por ${entry.agent_name}` : "Sistema/Desconocido"}
+                                  </span>
+                                </div>
+                                <span className="text-muted-foreground whitespace-nowrap">
+                                  {formatDateTime(entry.timestamp)}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
                 {/* Visit Info - Moved Here (Full Width) */}
                 <div className="space-y-2 shrink-0">
                          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Información de la visita</h3>
@@ -1898,28 +2060,6 @@ export function LeadDetailModal({
                             </div>
                          </div>
                 </div>
-
-                {/* Status History */}
-                {lead.status_history && lead.status_history.length > 0 && (
-                   <div className="space-y-2 shrink-0">
-                        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Historial de Estados</h3>
-                        <div className="p-4 border rounded-lg bg-card shadow-sm space-y-2 max-h-40 overflow-y-auto">
-                           {[...lead.status_history].reverse().map((entry, idx) => (
-                             <div key={idx} className="flex justify-between items-center text-xs border-b last:border-0 pb-2 last:pb-0">
-                                <div className="flex flex-col">
-                                   <span className="font-medium">{entry.status}</span>
-                                   <span className="text-muted-foreground">
-                                     {entry.agent_name ? `por ${entry.agent_name}` : "Sistema/Desconocido"}
-                                   </span>
-                                </div>
-                                <span className="text-muted-foreground">
-                                   {new Date(entry.timestamp).toLocaleString()}
-                                </span>
-                             </div>
-                           ))}
-                        </div>
-                   </div>
-                )}
 
                 <div className="flex flex-col lg:flex-row gap-6">
                 

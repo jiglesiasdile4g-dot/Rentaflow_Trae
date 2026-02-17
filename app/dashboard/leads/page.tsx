@@ -186,6 +186,7 @@ export default function LeadsPage() {
   const [adsLoading, setAdsLoading] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [showStatusHistory, setShowStatusHistory] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string[]>([])
@@ -6270,6 +6271,76 @@ export default function LeadsPage() {
                             )}
                           </div>
                         </div>
+
+                        {selectedLead?.status_history && selectedLead.status_history.length > 0 && (() => {
+                          const lastEntry = selectedLead.status_history[selectedLead.status_history.length - 1]
+                          const lastColors = getStatusColors(lastEntry?.status)
+                          return (
+                            <div className="space-y-2 shrink-0">
+                              <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Historial de Estados</h3>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs border border-black"
+                                  onClick={() => setShowStatusHistory((prev) => !prev)}
+                                >
+                                  {showStatusHistory ? "Ocultar historial" : "Ver historial"}
+                                </Button>
+                              </div>
+                              <div className="p-4 border rounded-lg bg-card shadow-sm flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div
+                                    className="px-2.5 py-1 rounded-full border text-xs font-semibold"
+                                    style={{
+                                      backgroundColor: lastColors.bg,
+                                      borderColor: lastColors.border,
+                                      color: lastColors.text,
+                                    }}
+                                  >
+                                    {lastColors.label}
+                                  </div>
+                                  <span className="text-xs text-muted-foreground truncate">
+                                    {lastEntry?.agent_name ? `por ${lastEntry.agent_name}` : "Sistema/Desconocido"}
+                                  </span>
+                                </div>
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                  {lastEntry?.timestamp ? formatDateTime(lastEntry.timestamp) : ""}
+                                </span>
+                              </div>
+                              {showStatusHistory && (
+                                <div className="p-4 border rounded-lg bg-card shadow-sm space-y-2 max-h-40 overflow-y-auto">
+                                  {[...selectedLead.status_history].reverse().map((entry, idx) => {
+                                    const colors = getStatusColors(entry.status)
+                                    return (
+                                      <div key={idx} className="flex justify-between items-center text-xs border-b last:border-0 pb-2 last:pb-0">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <div
+                                            className="px-2 py-0.5 rounded-full border text-[11px] font-semibold"
+                                            style={{
+                                              backgroundColor: colors.bg,
+                                              borderColor: colors.border,
+                                              color: colors.text,
+                                            }}
+                                          >
+                                            {colors.label}
+                                          </div>
+                                          <span className="text-muted-foreground truncate">
+                                            {entry.agent_name ? `por ${entry.agent_name}` : "Sistema/Desconocido"}
+                                          </span>
+                                        </div>
+                                        <span className="text-muted-foreground whitespace-nowrap">
+                                          {formatDateTime(entry.timestamp)}
+                                        </span>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </div>
                     </div>
 

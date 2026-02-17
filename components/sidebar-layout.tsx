@@ -17,22 +17,27 @@ interface SidebarLayoutProps {
 }
 
 export default function SidebarLayout({ user, children }: SidebarLayoutProps) {
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    if (typeof window === "undefined") return false
-    try {
-      if (window.innerWidth < 1024) return true
-      const saved = localStorage.getItem("rf_sidebar_collapsed")
-      return saved === "1"
-    } catch {
-      return false
-    }
-  })
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [hasMounted, setHasMounted] = useState(false)
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    setHasMounted(true)
+    try {
+      let next = false
+      if (window.innerWidth < 1024) next = true
+      const saved = localStorage.getItem("rf_sidebar_collapsed")
+      if (saved === "1") next = true
+      if (saved === "0") next = false
+      setIsCollapsed(next)
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    if (!hasMounted) return
+    try {
       localStorage.setItem("rf_sidebar_collapsed", isCollapsed ? "1" : "0")
-    }
-  }, [isCollapsed])
+    } catch {}
+  }, [isCollapsed, hasMounted])
 
   return (
     <div className="flex h-screen bg-background">

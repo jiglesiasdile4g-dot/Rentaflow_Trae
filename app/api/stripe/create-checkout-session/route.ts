@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     const priceId = process.env[priceEnvKey] || ""
     if (!priceId) return NextResponse.json({ error: `Precio no configurado para plan ${planId}` }, { status: 400 })
 
-    const stripe = new Stripe(secret, { apiVersion: "2025-11-17.clover" })
+    const stripe = new Stripe(secret, { apiVersion: "2026-01-28.clover" })
 
     const origin = new URL(req.url).origin
     const successUrl = `${origin}/dashboard/configuracion?stripe_success=1`

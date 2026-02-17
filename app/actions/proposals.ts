@@ -477,7 +477,7 @@ export async function bookVisitProposal(proposalId: string, leadPhone: string) {
       console.error("[bookVisitProposal] Error preparing webhook:", webhookErr)
   }
 
-  return { success: true, message: "Visita confirmada exitosamente." }
+  return { success: true, message: "Visita confirmada exitosamente.", leadName: lead?.Nombre || "" }
 }
 
 export async function getAvailableSlotsForProposal(
