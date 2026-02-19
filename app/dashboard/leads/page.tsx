@@ -56,6 +56,7 @@ type Lead = {
   IDC?: number
   created_at?: string
   Estado?:
+    | "Incompleto"
     | "Datos Incompletos"
     | "Datos Completos"
     | "Completo"
@@ -246,6 +247,11 @@ export default function LeadsPage() {
   const [isBulkSelectionMode, setIsBulkSelectionMode] = useState(false)
   const [bulkConfirmationOpen, setBulkConfirmationOpen] = useState(false)
   const [pendingBulkStatus, setPendingBulkStatus] = useState<Lead["Estado"] | null>(null)
+  
+  // Entry Date Editing State
+  const [isEditingEntryDate, setIsEditingEntryDate] = useState(false)
+  const [entryDateType, setEntryDateType] = useState<string>("Inmediatamente")
+  const [customEntryDate, setCustomEntryDate] = useState<string>("")
   
   // Single status change confirmation state
   const [singleStatusConfirmOpen, setSingleStatusConfirmOpen] = useState(false)
@@ -1762,6 +1768,7 @@ export default function LeadsPage() {
       setLeads(rows)
 
         const statusOrder = [
+          "Incompleto",
           "Datos Incompletos",
           "Datos Completos",
           "Pedir Aval",
@@ -2164,6 +2171,66 @@ export default function LeadsPage() {
     setIsEditingPersonalInfo(false)
   }
 
+  const startEditingEntryDate = () => {
+    if (!selectedLead) return
+    const isImmediate = selectedLead.prev_entrada?.toLowerCase() === "inmediatamente"
+    setEntryDateType(isImmediate ? "Inmediatamente" : "Mas adelante")
+    if (selectedLead.fecha_prev_entrada) {
+      try {
+        const d = new Date(selectedLead.fecha_prev_entrada)
+        if (!isNaN(d.getTime())) {
+          setCustomEntryDate(d.toISOString().split('T')[0])
+        } else {
+          setCustomEntryDate("")
+        }
+      } catch (e) {
+        setCustomEntryDate("")
+      }
+    } else {
+      setCustomEntryDate("")
+    }
+    setIsEditingEntryDate(true)
+  }
+
+  const saveEntryDate = async () => {
+    if (!selectedLead) return
+    
+    try {
+      const updateData: any = {}
+      if (entryDateType === "Inmediatamente") {
+        updateData.prev_entrada = "Inmediatamente"
+        updateData.fecha_prev_entrada = null
+      } else {
+        updateData.prev_entrada = "Mas adelante"
+        if (!customEntryDate) {
+          toast({ title: "Faltan datos", description: "Selecciona una fecha", variant: "destructive" })
+          return
+        }
+        updateData.fecha_prev_entrada = customEntryDate
+      }
+  
+      const { error } = await supabase
+        .from("Clientes")
+        .update(updateData)
+        .eq("id", selectedLead.id)
+  
+      if (error) throw error
+  
+      const updatedLead = { ...selectedLead, ...updateData }
+      
+      // Update local state
+      setSelectedLead(updatedLead as Lead)
+      setLeads(leads.map(l => l.id === updatedLead.id ? updatedLead as Lead : l))
+      setFilteredLeads(filteredLeads.map(l => l.id === updatedLead.id ? updatedLead as Lead : l))
+      
+      setIsEditingEntryDate(false)
+      toast({ title: "Guardado", description: "Fecha de entrada actualizada" })
+    } catch (err) {
+      console.error("Error updating entry date:", err)
+      toast({ title: "Error", description: "No se pudo actualizar", variant: "destructive" })
+    }
+  }
+
   const updateLeadStatus = async (leadId: number, newStatus: string) => {
     // Intercept "Visita Propuesta" or "Visita Confirmada" to force dialog flow
     if (newStatus === "Visita Propuesta" || newStatus === "Visita Confirmada") {
@@ -2302,12 +2369,13 @@ export default function LeadsPage() {
           text: "#16a34a",
           label: "Datos Completos",
         }
+      case "Incompleto":
       case "Datos Incompletos":
         return {
           bg: "#F8FBF8",
           border: "#f59e0b",
           text: "#92400e",
-          label: estado,
+          label: estado === "Incompleto" ? "Incompleto" : "Datos Incompletos",
         }
       case "Validado":
         return {
@@ -2556,13 +2624,27 @@ export default function LeadsPage() {
       try {
         setIsSubmittingNewLead(true)
 
-      const { Observaciones, Obsevaciones, ...restLeadData } = newLeadFormData
-      const leadData = {
-        ...restLeadData,
-        ...(Observaciones || Obsevaciones ? { Obsevaciones: Observaciones ?? Obsevaciones } : {}),
-        usuario: inmobiliariaId,
-        created_at: new Date().toISOString(),
-      }
+        // Get current user for history tracking
+        const { data: { user: currentUser } } = await supabase.auth.getUser()
+
+        const { Observaciones, Obsevaciones, ...restLeadData } = newLeadFormData
+        
+        // Initial status history entry
+        const initialStatus = newLeadFormData.Estado || "Pendiente"
+        const initialHistoryEntry = {
+          status: initialStatus,
+          timestamp: new Date().toISOString(),
+          agent_id: currentUser?.id,
+          agent_name: userEmail || currentUser?.email
+        }
+
+        const leadData = {
+          ...restLeadData,
+          ...(Observaciones || Obsevaciones ? { Obsevaciones: Observaciones ?? Obsevaciones } : {}),
+          usuario: inmobiliariaId,
+          created_at: new Date().toISOString(),
+          status_history: [initialHistoryEntry]
+        }
 
         const { data, error } = await createLeadAction(leadData)
 
@@ -3330,7 +3412,7 @@ export default function LeadsPage() {
                     const last = new Date(y, mNext + 1, 0).getDate()
                     return new Date(y, mNext, Math.min(d, last))
                   })()
-                  const showCritical = planLimit < 1000000 && percentageUsed >= 100
+                  const showCritical = planLimit < 1000000 && percentageUsed >= 90
                   return (
                     <>
                       {planInactive && (
@@ -3353,7 +3435,7 @@ export default function LeadsPage() {
                             <h3 className="font-semibold text-sm">Consumo del Plan</h3>
                             {showCritical && (
                               <Badge variant="outline" className="text-red-600 border-current font-semibold text-xs px-1.5 py-0">
-                                🚨 Límite Alcanzado
+                                🚨 Uso Elevado
                               </Badge>
                             )}
                           </div>
@@ -3405,14 +3487,14 @@ export default function LeadsPage() {
                               <span className="font-semibold">{percentageUsed.toFixed(1)}% usado</span>
                             </div>
                             <Progress value={percentageUsed} className={`h-2 ${showCritical ? "bg-red-600" : "bg-blue-500"}`} />
-                            {showCritical && (
-                              <div className="flex items-start gap-2 p-2 rounded-lg border border-red-600 bg-red-50">
-                                <span className="text-sm">🚨</span>
+                          {showCritical && (
+                              <div className="flex items-start gap-3 p-3 rounded-lg border border-red-600 bg-red-50 shadow-sm">
+                                <span className="text-lg">🚨</span>
                                 <div className="flex-1">
-                                  <p className="text-xs font-medium text-red-600">
-                                    Has consumido el 100% de tu plan. Leads {totalEjecuciones}/{formatPlanValue(planLimit)}.
+                                  <p className="text-sm font-bold text-red-700 leading-tight">
+                                    Has consumido el {percentageUsed.toFixed(0)}% de tu plan. Leads {totalEjecuciones}/{formatPlanValue(planLimit)}.
                                   </p>
-                                  <p className="text-[10px] text-muted-foreground mt-0.5">💡 Considera ampliar tu plan para evitar interrupciones.</p>
+                                  <p className="text-xs font-medium text-red-600/90 mt-1">💡 Considera ampliar tu plan para evitar interrupciones.</p>
                                 </div>
                               </div>
                             )}
@@ -6388,22 +6470,68 @@ export default function LeadsPage() {
                       {/* Fecha Prevista de Entrada */}
                       <Card>
                         <div className="py-2 px-4">
-                          <h4 className="text-sm font-semibold flex items-center gap-2 mb-1">
-                            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                            Fecha Prevista Entrada
-                          </h4>
-                          <div className="pl-6 text-sm">
-                            <span className="font-medium">
-                              {selectedLead.prev_entrada?.toLowerCase() === "inmediatamente" ? "Inmediatamente" : 
-                               selectedLead.prev_entrada?.toLowerCase() === "mas adelante" ? "Más adelante" : 
-                               selectedLead.prev_entrada || "No especificado"}
-                            </span>
-                            {selectedLead.prev_entrada?.toLowerCase() === "mas adelante" && selectedLead.fecha_prev_entrada && (
-                              <span className="ml-2 text-muted-foreground">
-                                {formatDate(selectedLead.fecha_prev_entrada)}
-                              </span>
+                          <div className="flex justify-between items-center mb-1">
+                            <h4 className="text-sm font-semibold flex items-center gap-2">
+                              <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                              Fecha Prevista Entrada
+                            </h4>
+                            {!isEditingEntryDate && (
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-muted" onClick={startEditingEntryDate}>
+                                <Edit className="h-3 w-3 text-muted-foreground" />
+                              </Button>
                             )}
                           </div>
+                          
+                          {isEditingEntryDate ? (
+                            <div className="pl-6 space-y-3 mt-1">
+                               <div className="flex gap-2">
+                                 <Button 
+                                    variant={entryDateType === "Inmediatamente" ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setEntryDateType("Inmediatamente")}
+                                    className={cn("flex-1 text-xs h-7", entryDateType === "Inmediatamente" && "bg-primary text-primary-foreground")}
+                                 >
+                                    Inmediatamente
+                                 </Button>
+                                 <Button 
+                                    variant={entryDateType === "Mas adelante" ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setEntryDateType("Mas adelante")}
+                                    className={cn("flex-1 text-xs h-7", entryDateType === "Mas adelante" && "bg-primary text-primary-foreground")}
+                                 >
+                                    Fecha específica
+                                 </Button>
+                               </div>
+                               
+                               {entryDateType === "Mas adelante" && (
+                                 <Input 
+                                    type="date" 
+                                    value={customEntryDate}
+                                    onChange={(e) => setCustomEntryDate(e.target.value)}
+                                    className="h-8 text-sm"
+                                    min={selectedLead.created_at ? new Date(selectedLead.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]} 
+                                 />
+                               )}
+                               
+                               <div className="flex justify-end gap-2 pt-1">
+                                 <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setIsEditingEntryDate(false)}>Cancelar</Button>
+                                 <Button size="sm" className="h-7 text-xs" onClick={saveEntryDate}>Guardar</Button>
+                               </div>
+                            </div>
+                          ) : (
+                            <div className="pl-6 text-sm">
+                              <span className="font-medium">
+                                {selectedLead.prev_entrada?.toLowerCase() === "inmediatamente" ? "Inmediatamente" : 
+                                 selectedLead.prev_entrada?.toLowerCase() === "mas adelante" ? "Más adelante" : 
+                                 selectedLead.prev_entrada || "No especificado"}
+                              </span>
+                              {selectedLead.prev_entrada?.toLowerCase() === "mas adelante" && selectedLead.fecha_prev_entrada && (
+                                <span className="ml-2 text-muted-foreground">
+                                  {formatDate(selectedLead.fecha_prev_entrada)}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </Card>
 
@@ -6421,22 +6549,22 @@ export default function LeadsPage() {
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
                           {/* Resumen de visita */}
                           {selectedLead.resumen_visita && (
-                             <div className="bg-[#d1fae5] border border-[#10b981] rounded-xl p-3 text-xs shadow-sm relative">
-                                 <div className="flex justify-between items-start mb-2.5 pb-2 border-b border-[#10b981]/30">
+                             <div className="bg-[#DCFCE7] border border-[#16A34A] rounded-xl p-3 text-xs shadow-sm relative">
+                                 <div className="flex justify-between items-start mb-2.5 pb-2 border-b border-[#16A34A]/30">
                                      <div className="flex items-center gap-2.5">
-                                         <div className="h-7 w-7 rounded-full bg-[#10b981]/10 flex items-center justify-center shrink-0 border border-[#10b981]/30">
-                                             <CalendarDays className="h-3.5 w-3.5 text-[#059669]" />
+                                         <div className="h-7 w-7 rounded-full bg-[#16A34A]/10 flex items-center justify-center shrink-0 border border-[#16A34A]/30">
+                                             <CalendarDays className="h-3.5 w-3.5 text-[#16A34A]" />
                                          </div>
                                          <div className="flex flex-col">
-                                             <span className="font-bold text-[#059669] text-[11px]">Resumen de Visita</span>
-                                             <span className="text-[10px] font-medium text-[#059669]/80">
+                                             <span className="font-bold text-[#16A34A] text-[11px]">Resumen de Visita</span>
+                                             <span className="text-[10px] font-medium text-[#16A34A]/80">
                                                  {selectedLead.fecha_de_visita ? formatDate(selectedLead.fecha_de_visita) : "Fecha no disponible"}
                                              </span>
                                          </div>
                                      </div>
                                  </div>
                                  <div className="pl-1">
-                                     <p className="whitespace-pre-wrap text-[#059669] leading-relaxed font-medium">{selectedLead.resumen_visita}</p>
+                                     <p className="whitespace-pre-wrap text-[#16A34A] leading-relaxed font-medium">{selectedLead.resumen_visita}</p>
                                  </div>
                              </div>
                           )}
@@ -6713,6 +6841,7 @@ export default function LeadsPage() {
                           {/* Added 'Datos Completos' and 'Datos Incompletos' to the select options */}
                           <SelectItem value="Datos Completos">Datos Completos</SelectItem>
                           <SelectItem value="Datos Incompletos">Datos Incompletos</SelectItem>
+                          <SelectItem value="Incompleto">Incompleto</SelectItem>
                           <SelectItem value="Visita Propuesta">Visita Propuesta</SelectItem>
                         </SelectContent>
                       </Select>

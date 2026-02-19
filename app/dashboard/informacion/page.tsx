@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
-import { Database, User, Package, Sparkles, Mail, CalendarClock, Calendar, Building2 } from "lucide-react"
+import { Database, User, Package, Sparkles, Mail, CalendarClock, Calendar, Building2, CreditCard, ArrowDown } from "lucide-react"
 import { getPlanData, formatPlanValue, PLAN_DATA } from "@/lib/plan-data"
 import { formatDate } from "@/lib/utils"
 import fs from "node:fs"
@@ -166,6 +166,101 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
     }
     revalidatePath("/dashboard/informacion")
     redirect(`/dashboard/informacion?planUpdate=${ok ? "whatsapp-enabled" : "error"}&msg=${encodeURIComponent(msg)}`)
+  }
+
+  async function simulatePaymentAction(formData: FormData) {
+    "use server"
+    const supa = await createClient()
+    const idiRaw = formData.get("idi")
+    const idi = Number(idiRaw)
+    let ok = false
+    let msg = ""
+    
+    if (!idi) {
+        msg = "ID de inmobiliaria inválido"
+    } else {
+        try {
+            const { data: inmo } = await supa.from("Inmobiliarias").select("PlanResetAt, PlanNext, PlanNextEffectiveAt").eq("idi", idi).single()
+            
+            if (!inmo) throw new Error("Inmobiliaria no encontrada")
+
+            // Al simular pago, reiniciamos el ciclo HOY.
+            // Esto establece "Periodo activo desde" = HOY.
+            // Y "Vence el periodo" = HOY + 30 días.
+            const newReset = new Date()
+
+            // También cancelamos cualquier downgrade pendiente (PlanNext) ya que el usuario está "pagando" para renovar el plan actual.
+            const { error } = await supa.from("Inmobiliarias").update({
+                PlanResetAt: newReset.toISOString(),
+                PlanNext: null,
+                PlanNextEffectiveAt: null
+            }).eq("idi", idi)
+
+            if (error) throw error
+            
+            ok = true
+            msg = "Ciclo reiniciado a hoy. Downgrades cancelados."
+        } catch (e: any) {
+            ok = false
+            msg = e.message || "Error al simular pago"
+        }
+    }
+    
+    revalidatePath("/dashboard/informacion")
+    redirect(`/dashboard/informacion?planUpdate=${ok ? "success" : "error"}&msg=${encodeURIComponent(msg)}`)
+  }
+
+  async function simulateDowngradeAction(formData: FormData) {
+    "use server"
+    const supa = await createClient()
+    const idiRaw = formData.get("idi")
+    const idi = Number(idiRaw)
+    let ok = false
+    let msg = ""
+    
+    try {
+        const { data: { user } } = await supa.auth.getUser()
+        if (!user) throw new Error("No autenticado")
+
+        const { data: perfil } = await supa.from("Perfiles").select("is_admin").eq("usuario", user.email).single()
+        
+        if (!perfil?.is_admin) throw new Error("No autorizado")
+
+        const { data: inmo } = await supa.from("Inmobiliarias").select("Plan, PlanResetAt").eq("idi", idi).single()
+        if (!inmo) throw new Error("Inmobiliaria no encontrada")
+
+        const { data: plans } = await supa.from("Planes").select("id, Precio").order("Precio", { ascending: true })
+        if (!plans || plans.length === 0) throw new Error("No hay planes disponibles")
+
+        // Buscar un plan de menor precio o simplemente el primero diferente
+        // Asumimos que 'id' es numérico o string
+        const currentPlan = plans.find(p => p.id === inmo.Plan)
+        // Intentar encontrar uno más barato
+        let targetPlan = plans.find(p => p.id !== inmo.Plan && (currentPlan ? p.Precio < currentPlan.Precio : true))
+        
+        // Si no hay más barato (ej: ya estamos en el más barato), buscar cualquiera diferente
+        if (!targetPlan) {
+            targetPlan = plans.find(p => p.id !== inmo.Plan)
+        }
+
+        if (!targetPlan) throw new Error("No se encontró un plan para hacer downgrade")
+
+        const { error } = await supa.from("Inmobiliarias").update({
+            PlanNext: targetPlan.id,
+            PlanNextEffectiveAt: inmo.PlanResetAt // Programado para fin de periodo
+        }).eq("idi", idi)
+
+        if (error) throw error
+        
+        ok = true
+        msg = `Downgrade programado al plan ID ${targetPlan.id}`
+    } catch (e: any) {
+        ok = false
+        msg = e.message || "Error al simular downgrade"
+    }
+
+    revalidatePath("/dashboard/informacion")
+    redirect(`/dashboard/informacion?planUpdate=${ok ? "success" : "error"}&msg=${encodeURIComponent(msg)}`)
   }
 
   let tables: any[] = []
@@ -516,6 +611,20 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                         )}
                       </div>
                     )}
+
+                    <div className="mt-4 pt-4 border-t space-y-4">
+                      <form action={simulatePaymentAction}>
+                        <input type="hidden" name="idi" value={String(inmobiliariaInfo?.idi ?? "")} />
+                        <Button type="submit" variant="outline" className="w-full sm:w-auto gap-2">
+                           <CreditCard className="h-4 w-4" />
+                           Simular Pago / Renovación (Provisional)
+                        </Button>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          * Este botón es provisional hasta que se implemente la pasarela de pagos real. Extiende el periodo actual por 30 días.
+                        </p>
+                      </form>
+                    </div>
+
                     {availablePlans && availablePlans.length > 0 && (
                       <div className="space-y-2 pt-2">
                         <p className="text-sm font-medium">Cambiar plan</p>
@@ -527,14 +636,14 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                                 <input type="hidden" name="planId" value={String(p.idp)} />
                                 <Card className={`cursor-pointer overflow-hidden transition-all ${inmobiliariaInfo?.Plan === p.idp ? "border-primary border-2 bg-primary/5 ring-2 ring-primary/40 shadow-md" : planStyle(p.Nombre)} rounded-lg`}>
                                   <CardContent className="p-4 flex flex-col gap-3">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div className="flex items-center gap-2">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="flex flex-col gap-1.5 min-w-0">
                                         <h3 className="text-sm font-semibold break-words leading-tight">{p.Nombre}</h3>
                                         {String(p?.Nombre || "").toLowerCase() === "starter" && (
-                                          <Badge variant="feature" className="text-xs">Recomendado</Badge>
+                                          <Badge variant="feature" className="text-[10px] w-fit px-2 py-0.5 h-5 border-emerald-500/30 bg-emerald-50 text-emerald-700">Recomendado</Badge>
                                         )}
                                       </div>
-                                      <span className="text-sm font-bold">€{p.Precio}/mes</span>
+                                      <span className="text-sm font-bold shrink-0">€{p.Precio}/mes</span>
                                     </div>
                                   <div className="space-y-1 text-xs text-muted-foreground">
                                     <div>{p.Usuarios} usuarios</div>
@@ -550,7 +659,12 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                                       ) : (
                                         <span />
                                       )}
-                                      <ChangePlanButton idi={Number(inmobiliariaInfo?.idi)} planId={Number(p.idp)} current={inmobiliariaInfo?.Plan === p.idp} />
+                                      <ChangePlanButton
+                                        idi={Number(inmobiliariaInfo?.idi)}
+                                        planId={Number(p.idp)}
+                                        current={inmobiliariaInfo?.Plan === p.idp}
+                                        isAdmin={!!perfil?.is_admin}
+                                      />
                                     </div>
                                   </CardContent>
                                 </Card>

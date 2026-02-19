@@ -3707,11 +3707,13 @@ export default function AnunciosPage() {
     const adsPercent = anunciosLimit > 0 && anunciosLimit < 1000000 ? anunciosPercentUsed : 0
     const combinedUsed = Math.max(percentageUsed, adsPercent)
     const combinedRemaining = 100 - combinedUsed
+    
+    // Only show alert if usage is critical (>= 90%)
     if (combinedUsed >= 100) {
       return {
         level: "critical",
         color: "bg-red-600",
-        textColor: "text-red-600",
+        textColor: "text-red-700",
         borderColor: "border-red-600",
         icon: "🚨",
         title: `Límite Alcanzado`,
@@ -3724,7 +3726,7 @@ export default function AnunciosPage() {
       return {
         level: "danger",
         color: "bg-red-500",
-        textColor: "text-red-600",
+        textColor: "text-red-700",
         borderColor: "border-red-500",
         icon: "⚠️",
         title: `Queda ${combinedRemaining.toFixed(0)}% del plan`,
@@ -3733,43 +3735,9 @@ export default function AnunciosPage() {
         cardHighlight: true,
       }
     }
-    if (combinedUsed >= 75) {
-      return {
-        level: "warning",
-        color: "bg-orange-500",
-        textColor: "text-orange-600",
-        borderColor: "border-orange-500",
-        icon: "⚠️",
-        title: `Queda ${combinedRemaining.toFixed(0)}% del plan`,
-        message: `Leads: ${Math.round(dailyRate)} al día · Estimado ${daysUntilLimit} días. Anuncios: ${activeAnuncios}/${formatPlanValue(anunciosLimit)}.`,
-        showUpgrade: true,
-        cardHighlight: false,
-      }
-    }
-    if (combinedUsed >= 50) {
-      return {
-        level: "caution",
-        color: "bg-yellow-500",
-        textColor: "text-yellow-700",
-        borderColor: "border-yellow-500",
-        icon: "📊",
-        title: `Queda ${combinedRemaining.toFixed(0)}% del plan`,
-        message: `Has usado la mitad del plan. Leads: ${Math.round(dailyRate)} al día · Anuncios: ${activeAnuncios}/${formatPlanValue(anunciosLimit)}.`,
-        showUpgrade: false,
-        cardHighlight: false,
-      }
-    }
-    return {
-      level: "normal",
-      color: "bg-green-500",
-      textColor: "text-green-600",
-      borderColor: "border-green-500",
-      icon: "✅",
-      title: `Queda ${combinedRemaining.toFixed(0)}% del plan`,
-      message: `Consumo saludable. Leads: ${Math.round(dailyRate)} al día · Anuncios: ${activeAnuncios}/${formatPlanValue(anunciosLimit)}.`,
-      showUpgrade: false,
-      cardHighlight: false,
-    }
+    
+    // Return null for lower usage (hidden until 90%)
+    return null
   }
 
   const currentPlanName = (() => {
@@ -4202,11 +4170,11 @@ export default function AnunciosPage() {
                       <div
                         className={`flex items-start gap-2 p-2 rounded-lg border ${alertConfig.borderColor} ${alertConfig.level === "critical" || alertConfig.level === "danger" ? "bg-red-50 dark:bg-red-950/50" : alertConfig.level === "warning" ? "bg-orange-50 dark:bg-orange-950/50" : alertConfig.level === "caution" ? "bg-yellow-50 dark:bg-yellow-950/50" : "bg-green-50 dark:bg-green-950/50"}`}
                       >
-                        <span className="text-sm">{alertConfig.icon}</span>
+                        <span className="text-lg">{alertConfig.icon}</span>
                         <div className="flex-1">
-                          <p className={`text-xs font-medium ${alertConfig.textColor}`}>{alertConfig.message}</p>
+                          <p className={`text-sm font-bold ${alertConfig.textColor} leading-tight`}>{alertConfig.message}</p>
                           {alertConfig.showUpgrade && (
-                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                            <p className="text-xs font-medium text-red-600/90 mt-1">
                               💡 Considera ampliar tu plan para evitar interrupciones en el servicio.
                             </p>
                           )}

@@ -9,6 +9,8 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}))
     const planId = Number(body?.planId)
     const idi = Number(body?.idi)
+    const forceImmediate = body?.forceImmediate === true
+
     if (!planId || !idi) {
       return NextResponse.json({ ok: false, error: "Parámetros inválidos" }, { status: 400 })
     }
@@ -48,7 +50,9 @@ export async function POST(req: Request) {
     })()
 
     const isDowngrade = newLimit < currentLimit
-    if (isDowngrade && now < nextRenewal) {
+    
+    // Si es downgrade y NO se fuerza el cambio inmediato, se programa para el siguiente periodo
+    if (isDowngrade && now < nextRenewal && !forceImmediate) {
       let scheduledOk = false
       let scheduledError: any = null
       try {

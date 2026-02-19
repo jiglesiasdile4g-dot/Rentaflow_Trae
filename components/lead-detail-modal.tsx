@@ -108,12 +108,13 @@ const getStatusColors = (estado?: string | null) => {
         text: "#16a34a",
         label: estado === "Datos Completos" ? "Datos Completos" : "Completado",
       }
+    case "Incompleto":
     case "Datos Incompletos":
       return {
         bg: "#ffffff",
         border: "#f59e0b",
         text: "#92400e",
-        label: estado,
+        label: estado === "Incompleto" ? "Incompleto" : "Datos Incompletos",
       }
     case "Validado":
       return {
@@ -242,6 +243,9 @@ export function LeadDetailModal({
   const [availableDates, setAvailableDates] = useState<string[]>([])
   const [loadingDates, setLoadingDates] = useState(false)
   const [availableSlots, setAvailableSlots] = useState<string[]>([])
+  const [isEditingEntryDate, setIsEditingEntryDate] = useState(false)
+  const [entryDateType, setEntryDateType] = useState<string>("Inmediatamente")
+  const [customEntryDate, setCustomEntryDate] = useState<string>("")
   const [loadingAvailability, setLoadingAvailability] = useState(false)
   const [availabilityReason, setAvailabilityReason] = useState<string>("none")
   const [advertisements, setAdvertisements] = useState<any[]>([])
@@ -930,6 +934,63 @@ export function LeadDetailModal({
     }
   }
 
+  const startEditingEntryDate = () => {
+    if (!lead) return
+    const isImmediate = lead.prev_entrada?.toLowerCase() === "inmediatamente"
+    setEntryDateType(isImmediate ? "Inmediatamente" : "Mas adelante")
+    if (lead.fecha_prev_entrada) {
+      try {
+        const d = new Date(lead.fecha_prev_entrada)
+        if (!isNaN(d.getTime())) {
+          setCustomEntryDate(d.toISOString().split('T')[0])
+        } else {
+          setCustomEntryDate("")
+        }
+      } catch (e) {
+        setCustomEntryDate("")
+      }
+    } else {
+      setCustomEntryDate("")
+    }
+    setIsEditingEntryDate(true)
+  }
+
+  const saveEntryDate = async () => {
+    if (!lead) return
+    
+    try {
+      const updateData: any = {}
+      if (entryDateType === "Inmediatamente") {
+        updateData.prev_entrada = "Inmediatamente"
+        updateData.fecha_prev_entrada = null
+      } else {
+        updateData.prev_entrada = "Mas adelante"
+        if (!customEntryDate) {
+          toast({ title: "Faltan datos", description: "Selecciona una fecha", variant: "destructive" })
+          return
+        }
+        updateData.fecha_prev_entrada = customEntryDate
+      }
+  
+      const { error } = await supabase
+        .from("Clientes")
+        .update(updateData)
+        .eq("id", lead.id)
+  
+      if (error) throw error
+  
+      const updatedLead = { ...lead, ...updateData }
+      setLead(updatedLead as Lead)
+      if (onLeadUpdate) onLeadUpdate(updatedLead as Lead)
+      
+      setIsEditingEntryDate(false)
+      toast({ title: "Guardado", description: "Fecha de entrada actualizada" })
+    } catch (err) {
+      console.error("Error updating entry date:", err)
+      toast({ title: "Error", description: "No se pudo actualizar", variant: "destructive" })
+    }
+  }
+
   const updateLeadStatus = async (newStatus: string) => {
     if (!lead) return
 
@@ -942,7 +1003,7 @@ export function LeadDetailModal({
     }
 
     // Logic to cancel visit if moving to previous status
-    const previousStatuses = ["Datos Incompletos", "Datos Completos", "Necesidad de Aval", "Pedir Aval", "Aceptado"];
+    const previousStatuses = ["Incompleto", "Datos Incompletos", "Datos Completos", "Necesidad de Aval", "Pedir Aval", "Aceptado"];
     const shouldCancelVisit = (lead.Estado === "Visita Propuesta" || lead.Estado === "Visita Confirmada") && previousStatuses.includes(newStatus);
 
     try {
@@ -1848,24 +1909,28 @@ export function LeadDetailModal({
                               setStatusConfirmOpen(true)
                             }}
                           >
-                            <SelectTrigger 
-                              className={cn(
-                                "h-auto w-auto px-3 py-1 rounded-md text-sm font-medium border-0 focus:ring-0 focus:outline-none transition-colors gap-2 [&>svg]:hidden",
-                                effectiveStatus === "Aceptado" ? "bg-green-100 text-green-800 hover:bg-green-200" :
-                                effectiveStatus === "Descartado" ? "bg-red-100 text-red-800 hover:bg-red-200" :
-                                effectiveStatus === "Visita Confirmada" ? "bg-indigo-100 text-indigo-800 hover:bg-indigo-200" :
-                                effectiveStatus === "Visita Completada" ? "bg-purple-100 text-purple-800 hover:bg-purple-200" :
-                                "bg-blue-100 text-blue-800 hover:bg-blue-200"
-                              )}
-                            >
-                               <SelectValue placeholder="Estado">
-                                 {effectiveStatus === "Aceptado" ? "Aprobado" : effectiveStatus}
-                               </SelectValue>
-                            </SelectTrigger>
+                            {(() => {
+                              const statusColors = getStatusColors(effectiveStatus)
+                              return (
+                                <SelectTrigger 
+                                  className="h-auto w-auto px-3 py-1 rounded-md text-sm font-medium border focus:ring-0 focus:outline-none transition-colors gap-2 [&>svg]:hidden"
+                                  style={{
+                                    backgroundColor: statusColors.bg,
+                                    borderColor: statusColors.border,
+                                    color: statusColors.text,
+                                  }}
+                                >
+                                   <SelectValue placeholder="Estado">
+                                     {statusColors.label}
+                                   </SelectValue>
+                                </SelectTrigger>
+                              )
+                            })()}
                             <SelectContent className="z-[50000]">
                               {[
                                 "Datos Completos", 
                                 "Datos Incompletos", 
+                                "Incompleto",
                                 "Pedir Aval", 
                                 "Aceptado", 
                                 "Descartado", 
@@ -2334,22 +2399,68 @@ export function LeadDetailModal({
                     {/* Fecha Prevista de Entrada */}
                     <Card>
                         <div className="py-2 px-4">
-                          <h4 className="text-sm font-semibold flex items-center gap-2 mb-1">
-                            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                            Fecha Prevista Entrada
-                          </h4>
-                          <div className="pl-6 text-sm">
-                            <span className="font-medium">
-                              {lead.prev_entrada?.toLowerCase() === "inmediatamente" ? "Inmediatamente" : 
-                               lead.prev_entrada?.toLowerCase() === "mas adelante" ? "Más adelante" : 
-                               lead.prev_entrada || "No especificado"}
-                            </span>
-                            {lead.prev_entrada?.toLowerCase() === "mas adelante" && lead.fecha_prev_entrada && (
-                              <span className="ml-2 text-muted-foreground">
-                                {formatDate(lead.fecha_prev_entrada)}
-                              </span>
+                          <div className="flex justify-between items-center mb-1">
+                            <h4 className="text-sm font-semibold flex items-center gap-2">
+                              <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                              Fecha Prevista Entrada
+                            </h4>
+                            {!isEditingEntryDate && (
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-muted" onClick={startEditingEntryDate}>
+                                <Edit className="h-3 w-3 text-muted-foreground" />
+                              </Button>
                             )}
                           </div>
+                          
+                          {isEditingEntryDate ? (
+                            <div className="pl-6 space-y-3 mt-1">
+                               <div className="flex gap-2">
+                                 <Button 
+                                    variant={entryDateType === "Inmediatamente" ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setEntryDateType("Inmediatamente")}
+                                    className={cn("flex-1 text-xs h-7", entryDateType === "Inmediatamente" && "bg-primary text-primary-foreground")}
+                                 >
+                                    Inmediatamente
+                                 </Button>
+                                 <Button 
+                                    variant={entryDateType === "Mas adelante" ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setEntryDateType("Mas adelante")}
+                                    className={cn("flex-1 text-xs h-7", entryDateType === "Mas adelante" && "bg-primary text-primary-foreground")}
+                                 >
+                                    Fecha específica
+                                 </Button>
+                               </div>
+                               
+                               {entryDateType === "Mas adelante" && (
+                                 <Input 
+                                    type="date" 
+                                    value={customEntryDate}
+                                    onChange={(e) => setCustomEntryDate(e.target.value)}
+                                    className="h-8 text-sm"
+                                    min={lead.created_at ? new Date(lead.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]} 
+                                 />
+                               )}
+                               
+                               <div className="flex justify-end gap-2 pt-1">
+                                 <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setIsEditingEntryDate(false)}>Cancelar</Button>
+                                 <Button size="sm" className="h-7 text-xs" onClick={saveEntryDate}>Guardar</Button>
+                               </div>
+                            </div>
+                          ) : (
+                            <div className="pl-6 text-sm">
+                              <span className="font-medium">
+                                {lead.prev_entrada?.toLowerCase() === "inmediatamente" ? "Inmediatamente" : 
+                                 lead.prev_entrada?.toLowerCase() === "mas adelante" ? "Más adelante" : 
+                                 lead.prev_entrada || "No especificado"}
+                              </span>
+                              {lead.prev_entrada?.toLowerCase() === "mas adelante" && lead.fecha_prev_entrada && (
+                                <span className="ml-2 text-muted-foreground">
+                                  {formatDate(lead.fecha_prev_entrada)}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                     </Card>
 
@@ -2372,22 +2483,22 @@ export function LeadDetailModal({
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
                              {/* Resumen de visita */}
                              {lead.resumen_visita && (
-                                <div className="bg-[#d1fae5] border border-[#10b981] rounded-xl p-3 text-xs shadow-sm relative">
-                                    <div className="flex justify-between items-start mb-2.5 pb-2 border-b border-[#10b981]/30">
+                                <div className="bg-[#DCFCE7] border border-[#16A34A] rounded-xl p-3 text-xs shadow-sm relative">
+                                    <div className="flex justify-between items-start mb-2.5 pb-2 border-b border-[#16A34A]/30">
                                         <div className="flex items-center gap-2.5">
-                                            <div className="h-7 w-7 rounded-full bg-[#10b981]/10 flex items-center justify-center shrink-0 border border-[#10b981]/30">
-                                                <CalendarDays className="h-3.5 w-3.5 text-[#059669]" />
+                                            <div className="h-7 w-7 rounded-full bg-[#16A34A]/10 flex items-center justify-center shrink-0 border border-[#16A34A]/30">
+                                                <CalendarDays className="h-3.5 w-3.5 text-[#16A34A]" />
                                             </div>
                                             <div className="flex flex-col">
-                                                <span className="font-bold text-[#059669] text-[11px]">Resumen de Visita</span>
-                                                <span className="text-[10px] font-medium text-[#059669]/80">
+                                                <span className="font-bold text-[#16A34A] text-[11px]">Resumen de Visita</span>
+                                                <span className="text-[10px] font-medium text-[#16A34A]/80">
                                                     {lead.fecha_de_visita ? formatDate(lead.fecha_de_visita) : "Fecha no disponible"}
                                                 </span>
                                             </div>
                                         </div>
                                     </div>
                                     <div className="pl-1">
-                                        <p className="whitespace-pre-wrap text-[#059669] leading-relaxed font-medium">{lead.resumen_visita}</p>
+                                        <p className="whitespace-pre-wrap text-[#16A34A] leading-relaxed font-medium">{lead.resumen_visita}</p>
                                     </div>
                                 </div>
                              )}
