@@ -36,14 +36,14 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
-import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink, Copy, History as HistoryIcon, MessageSquare } from 'lucide-react'
+import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink, Copy, History as HistoryIcon, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { loadStripe, type Stripe as StripeJS } from "@stripe/stripe-js"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
 import { formatDate, cn, formatWebhookDate } from "@/lib/utils"
-import { format } from "date-fns"
+import { format, differenceInCalendarDays, addMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, isBefore, isWithinInterval } from "date-fns"
 import { es } from "date-fns/locale"
-import { Calendar as CalendarComponent } from "@/components/ui/calendar"
+import { DateRange } from "react-day-picker"
 import ChangePlanButton from "@/components/change-plan-button"
 import { createBrowserClient } from "@/lib/supabase/client" // Added for createBrowserClient
 import { generateSlotCandidates, isOverlapping } from "@/lib/agenda-utils"
@@ -205,6 +205,7 @@ export default function AnunciosPage() {
   const [showInfoFaqsModal, setShowInfoFaqsModal] = useState(false)
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [selectedAnuncioForStats, setSelectedAnuncioForStats] = useState<AnuncioCard & { statsPeriod?: string } | null>(null)
+  const [displayedStats, setDisplayedStats] = useState<any>(null)
   const whatsappActivoRef = useRef<boolean | undefined>(undefined)
   const [statsLeads, setStatsLeads] = useState<any[]>([]) // Leads for the currently selected stats anuncio
   const [showArchiveDialog, setShowArchiveDialog] = useState(false)
@@ -422,6 +423,21 @@ export default function AnunciosPage() {
 
   const rawDataRef = useRef<{ leads: any[]; emails: any[]; whatsapp: any[] } | null>(null)
 
+  const getCurrentBillingCycle = (resetAtValue: Date | string | null, now = new Date()) => {
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const resetAt = resetAtValue ? new Date(resetAtValue) : null
+    const validReset = resetAt && !isNaN(resetAt.getTime()) ? resetAt : null
+    const base = validReset ? validReset : monthStart
+    const msPerDay = 24 * 60 * 60 * 1000
+    const msPerPeriod = 30 * msPerDay
+    const diff = now.getTime() - base.getTime()
+    const periodsPassed = diff > 0 ? Math.floor(diff / msPerPeriod) : 0
+    const start = new Date(base.getTime() + periodsPassed * msPerPeriod)
+    const end = new Date(start.getTime() + msPerPeriod)
+    const displayEnd = new Date(end.getTime() - msPerDay)
+    return { start, end, displayEnd }
+  }
+
   const calculateAnuncioMetrics = (
     anuncio: AnuncioCard,
     period: "hoy" | "esteMes" | "ultimoMes" | "periodoActual",
@@ -437,9 +453,7 @@ export default function AnunciosPage() {
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1)
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-
-    // Determine cutoffDate for "periodoActual"
-    const cutoffDate = planResetAt ? planResetAt : thisMonthStart
+    const billingCycle = getCurrentBillingCycle(planResetAt, now)
 
     const periodStart =
       period === "hoy"
@@ -448,13 +462,15 @@ export default function AnunciosPage() {
           ? prevMonthStart
           : period === "esteMes"
             ? thisMonthStart
-            : cutoffDate
+            : billingCycle.start
     const periodEnd =
       period === "hoy"
         ? dayEnd
         : period === "ultimoMes"
           ? prevMonthEnd
-          : now
+          : period === "periodoActual"
+            ? billingCycle.end
+            : now
 
     // Leads filtering
     let leads = allLeads
@@ -610,11 +626,9 @@ export default function AnunciosPage() {
     leads: any[]
   }>({ open: false, status: "", leads: [] })
   const [qualityMetrics, setQualityMetrics] = useState<{
-    leadsRebotados: number
     datosIncompletos: number
     necesidadAval: number
   }>({
-    leadsRebotados: 0,
     datosIncompletos: 0,
     necesidadAval: 0,
   })
@@ -642,7 +656,88 @@ export default function AnunciosPage() {
 
   // Variables needed for linting fixes
   const [creatingAnuncio, setCreatingAnuncio] = useState(false)
-  const [statsPeriod, setStatsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual" | "esteAno">("esteMes")
+  const [statsPeriod, setStatsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual" | "esteAno" | "custom">("esteMes")
+  const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>(undefined)
+  const [customCalendarMonth, setCustomCalendarMonth] = useState<Date>(() => new Date())
+
+  const weekDays = useMemo(() => {
+    const start = startOfWeek(new Date(), { locale: es })
+    return Array.from({ length: 7 }, (_, i) => format(addDays(start, i), "EEEEE", { locale: es }))
+  }, [])
+
+  const buildMonthDays = useCallback((monthDate: Date) => {
+    const monthStart = startOfMonth(monthDate)
+    const monthEnd = endOfMonth(monthDate)
+    const gridStart = startOfWeek(monthStart, { locale: es })
+    const gridEnd = endOfWeek(monthEnd, { locale: es })
+    const days: Date[] = []
+    let current = gridStart
+    while (current <= gridEnd) {
+      days.push(current)
+      current = addDays(current, 1)
+    }
+    return days
+  }, [])
+
+  const activityStartDate = useMemo(() => {
+    if (!selectedAnuncioForStats?.activityStartDate) return null
+    const d = new Date(selectedAnuncioForStats.activityStartDate)
+    d.setHours(0, 0, 0, 0)
+    return d
+  }, [selectedAnuncioForStats?.activityStartDate])
+
+  const activationDate = useMemo(() => {
+    const raw =
+      selectedAnuncioForStats?.fecha_activacion ||
+      selectedAnuncioForStats?.created_at ||
+      selectedAnuncioForStats?.fechaCreacion ||
+      null
+    if (!raw) return null
+    const d = new Date(raw)
+    if (Number.isNaN(d.getTime())) return null
+    d.setHours(0, 0, 0, 0)
+    return d
+  }, [selectedAnuncioForStats?.fecha_activacion, selectedAnuncioForStats?.created_at, selectedAnuncioForStats?.fechaCreacion])
+
+  const getActivityRatio = useCallback((date: Date) => {
+    const activityData = selectedAnuncioForStats?.activityData || []
+    if (!activityStartDate || activityData.length === 0) return 0
+    const d = new Date(date)
+    d.setHours(0, 0, 0, 0)
+    const diffDays = differenceInCalendarDays(d, activityStartDate)
+    if (diffDays < 0 || diffDays >= activityData.length) return 0
+    const max = Math.max(...activityData, 1)
+    return activityData[diffDays] / max
+  }, [activityStartDate, selectedAnuncioForStats?.activityData])
+
+  const handleCustomDayClick = useCallback((day: Date) => {
+    const normalized = new Date(day)
+    normalized.setHours(0, 0, 0, 0)
+
+    const from = customDateRange?.from ? new Date(customDateRange.from) : undefined
+    if (from) from.setHours(0, 0, 0, 0)
+    const to = customDateRange?.to ? new Date(customDateRange.to) : undefined
+    if (to) to.setHours(0, 0, 0, 0)
+
+    let nextRange: DateRange
+    if (!from || (from && to)) {
+      nextRange = { from: normalized, to: undefined }
+    } else if (isBefore(normalized, from)) {
+      nextRange = { from: normalized, to: from }
+    } else {
+      nextRange = { from, to: normalized }
+    }
+
+    setCustomDateRange(nextRange)
+    setStatsPeriod("custom")
+
+    if (nextRange.from && nextRange.to) {
+      const diff = differenceInCalendarDays(nextRange.to, nextRange.from)
+      if (diff <= 1) setTrendTimeframe("24h")
+      else if (diff <= 30) setTrendTimeframe("1m")
+      else setTrendTimeframe("7d")
+    }
+  }, [customDateRange, setCustomDateRange, setStatsPeriod, setTrendTimeframe])
 
   const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
   const [attachmentPreviewKind, setAttachmentPreviewKind] = useState<"pdf" | "image" | "unknown">("unknown")
@@ -939,7 +1034,7 @@ export default function AnunciosPage() {
     } catch {}
   }, [inmobiliariaId, planResetAt])
 
-  const fetchQualityMetrics = async (anuncioReferencia: string, period: string, activationDateStr?: string | null) => {
+  const fetchQualityMetrics = useCallback(async (anuncioReferencia: string, period: string, activationDateStr?: string | null) => {
     const supabase = createClient()
 
     // Calculate date range based on period
@@ -961,6 +1056,16 @@ export default function AnunciosPage() {
     } else if (period === "esteAno") {
       startDate = new Date(now.getFullYear(), 0, 1)
       endDate = new Date(now)
+    } else if (period === "custom" && customDateRange?.from) {
+      startDate = new Date(customDateRange.from)
+      startDate.setHours(0, 0, 0, 0)
+      if (customDateRange.to) {
+        endDate = new Date(customDateRange.to)
+        endDate.setHours(23, 59, 59, 999)
+      } else {
+        endDate = new Date(customDateRange.from)
+        endDate.setHours(23, 59, 59, 999)
+      }
     } else {
       // Default to last 30 days or similar if unknown
       startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
@@ -991,7 +1096,7 @@ export default function AnunciosPage() {
 
     if (leadsError) {
       console.error("[v0] Error fetching leads for quality metrics:", leadsError)
-      return { leadsRebotados: 0, datosIncompletos: 0, necesidadAval: 0 }
+      return { datosIncompletos: 0, necesidadAval: 0 }
     }
 
     // Count "Datos Incompletos" status
@@ -1012,51 +1117,8 @@ export default function AnunciosPage() {
     console.log("[v0] Necesidad Aval count:", necesidadAval)
     // </CHANGE>
 
-    // Calculate "Leads Rebotados" - leads with no communications (emails or whatsapp)
-    // Leads que no tengan mensajes recibidos, excepto el primero, pero despues ningun mensaje recibido.
-    // Ignota para esta cuenta los enviados.
-    // EXCEPCIÓN: Si el lead tiene Fecha_Datos_Completos, NO es rebotado.
-    let leadsRebotados = 0
-    if (leads && leads.length > 0) {
-      for (const lead of leads) {
-        // If lead has reached "Datos Completos", it is NOT a bounce, regardless of messages
-        if (lead.Fecha_Datos_Completos) {
-            continue
-        }
-
-        // Count received emails
-        // We fetch emails for this lead and check if From matches lead's email
-        // Or we just count all emails since we assume they are communication threads
-        // But user said "ignore sent".
-        // Strategy: Fetch all emails for lead. If From == lead.Correo -> Received.
-        const { data: emails } = await supabase
-          .from("Correos")
-          .select("id, \"From\"") // Escape From if it's a keyword, though usually it's fine in string
-          .eq("IDC", lead.IDC)
-        
-        const receivedEmailsCount = emails?.filter(e => e.From === lead.Correo).length || 0
-
-        // Count received whatsapps
-        const { data: whatsapp } = await supabase
-          .from("Whatsapp")
-          .select("id")
-          .eq("IDC", lead.IDC)
-          .eq("Tipo", "Recibido")
-        
-        const receivedWhatsappCount = whatsapp?.length || 0
-        
-        const totalReceived = receivedEmailsCount + receivedWhatsappCount
-
-        // If total received messages <= 1 (only the initial inquiry or none), count as rebotado
-        if (totalReceived <= 1) {
-          leadsRebotados++
-        }
-      }
-    }
-    console.log("[v0] Leads Rebotados count:", leadsRebotados)
-
-    return { leadsRebotados, datosIncompletos, necesidadAval }
-  }
+    return { datosIncompletos, necesidadAval }
+  }, [customDateRange])
 
   const fetchLeadsByPhase = async (
     anuncioRef: string,
@@ -1067,9 +1129,10 @@ export default function AnunciosPage() {
     let status = ""
     let statuses: string[] = []
     
+    const useVisitCompletedFilter = phase === "visita_completada"
+
     if (phase === "aceptado") status = "Aceptado"
     else if (phase === "visita_propuesta") statuses = ["Visita Propuesta", "Visita Confirmada"]
-    else if (phase === "visita_completada") status = "Visita Completada"
     else if (phase === "datos_completos") status = "Datos Completos"
     else if (phase === "descartado") status = "Descartado"
 
@@ -1085,6 +1148,8 @@ export default function AnunciosPage() {
       query = query.in("Estado", statuses)
     } else if (status) {
       query = query.eq("Estado", status)
+    } else if (useVisitCompletedFilter) {
+      // no filter, handled after fetch
     } else {
       return []
     }
@@ -1096,6 +1161,12 @@ export default function AnunciosPage() {
       return []
     }
     console.log(`[v0] Fetched ${data?.length || 0} leads for phase ${phase}`)
+    if (useVisitCompletedFilter) {
+      return (data || []).filter((lead) => {
+        const est = String(lead.Estado || "").toLowerCase()
+        return est === "visita completada" || isVisitCompleted(lead.visita_completada)
+      })
+    }
     return data || []
   }
 
@@ -1117,12 +1188,22 @@ export default function AnunciosPage() {
 
   
 
+  const isVisitCompleted = (status: any) => {
+    if (status === true) return true
+    if (typeof status === "string") {
+      const s = status.toLowerCase().trim()
+      return s === "true" || s === "completada" || s === "realizada" || s === "si"
+    }
+    return false
+  }
+
   const calculateMetricsForPeriod = (leads: any[], period: "hoy" | "esteMes" | "ultimoMes" | "periodoActual", planResetAt: Date | string | null, anuncioFechaActivacion?: string) => {
     const now = new Date()
     const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0)
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const billingCycle = getCurrentBillingCycle(planResetAt, now)
     
     // Determine start/end dates
     let start: Date
@@ -1136,7 +1217,8 @@ export default function AnunciosPage() {
     } else if (period === "esteMes") {
       start = thisMonthStart
     } else { // periodoActual
-      start = planResetAt ? new Date(planResetAt) : thisMonthStart
+      start = billingCycle.start
+      end = billingCycle.end
     }
     
     // Ensure end of day for range comparisons if needed, but simple comparison works
@@ -1158,7 +1240,7 @@ export default function AnunciosPage() {
     const completos = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "datos completos").length
     const aceptados = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "aceptado").length
     const visitaPropuesta = filteredLeads.filter(l => ["visita propuesta", "visita confirmada"].includes(String(l.Estado || "").toLowerCase())).length
-    const visitaCompletada = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "visita completada").length
+    const visitaCompletada = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "visita completada" || isVisitCompleted(l.visita_completada)).length
     const descartados = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "descartado").length
     
     return {
@@ -1172,9 +1254,69 @@ export default function AnunciosPage() {
   }
 
   const handlePhaseMetricClick = async (phase: string) => {
-    if (!selectedAnuncioForStats) return
+    if (!selectedAnuncioForStats || !statsLeads) return
 
-    const leads = await fetchLeadsByPhase(selectedAnuncioForStats.referencia, phase)
+    // 1. Filter by Period (same logic as useEffect)
+    const now = new Date()
+    const dayStart = new Date(now); dayStart.setHours(0,0,0,0)
+    const dayEnd = new Date(dayStart.getTime() + 24*60*60*1000)
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
+    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1)
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const yearStart = new Date(now.getFullYear(), 0, 1)
+    const billingCycle = getCurrentBillingCycle(planResetAt, now)
+    
+    // Period logic
+    const periodStart =
+        statsPeriod === "hoy"
+          ? dayStart
+          : statsPeriod === "ultimoMes"
+          ? prevMonthStart
+          : statsPeriod === "esteMes"
+          ? thisMonthStart
+          : statsPeriod === "esteAno"
+          ? yearStart
+          : billingCycle.start
+          
+    const periodEnd = statsPeriod === "hoy" ? dayEnd : statsPeriod === "ultimoMes" ? prevMonthEnd : statsPeriod === "periodoActual" ? billingCycle.end : now
+
+    const filteredLeads = statsLeads.filter(l => {
+      const d = new Date(l.created_at)
+      return d >= periodStart && d < periodEnd
+    })
+
+    // 2. Filter by Phase
+    let phaseLeads: any[] = []
+    if (phase === "total") {
+        phaseLeads = filteredLeads
+    } else {
+        // Use the same logic as countMetrics
+        if (phase === "datos_completos") {
+             phaseLeads = filteredLeads.filter(l => 
+                ["datos completos", "aceptado", "visita propuesta", "visita confirmada", "pedir aval"].includes(String(l.Estado || "").toLowerCase())
+             )
+        } else if (phase === "visita_propuesta") {
+             phaseLeads = filteredLeads.filter(l => 
+                ["visita propuesta", "visita confirmada"].includes(String(l.Estado || "").toLowerCase())
+             )
+        } else if (phase === "visita_completada") {
+            phaseLeads = filteredLeads.filter(l => {
+              const est = String(l.Estado || "").toLowerCase()
+              return est === "visita completada" || isVisitCompleted(l.visita_completada)
+            })
+        } else {
+            const statusMap: Record<string, string> = {
+                aceptado: "aceptado",
+                descartado: "descartado"
+            }
+            const targetStatus = statusMap[phase]
+            if (targetStatus) {
+                phaseLeads = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === targetStatus)
+            } else {
+                phaseLeads = []
+            }
+        }
+    }
 
     const statusLabels: Record<string, string> = {
       aceptado: "Candidatos Aprobados",
@@ -1188,7 +1330,7 @@ export default function AnunciosPage() {
     setPhaseLeadsDialog({
       open: true,
       status: statusLabels[phase] || phase,
-      leads,
+      leads: phaseLeads,
     })
   }
 
@@ -1199,6 +1341,7 @@ export default function AnunciosPage() {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
     const now = new Date()
+    const billingCycle = getCurrentBillingCycle(planResetAt, now)
 
     // Helper to count metrics with activation date filtering
     const countMetrics = (leads: any[]) => {
@@ -1223,7 +1366,7 @@ export default function AnunciosPage() {
         if (["datos completos", "aceptado", "visita propuesta", "visita confirmada", "pedir aval"].includes(est)) completos++
         if (est === "aceptado") aceptados++
         if (["visita propuesta", "visita confirmada"].includes(est)) visitaPropuesta++
-        if (est === "visita completada") visitaCompletada++
+        if (est === "visita completada" || isVisitCompleted(lead.visita_completada)) visitaCompletada++
         if (est === "descartado") descartados++
       }
       return { total, completos, aceptados, visitaPropuesta, visitaCompletada, descartados }
@@ -1240,7 +1383,7 @@ export default function AnunciosPage() {
 
       const { data, error } = await supabase
         .from("Clientes")
-        .select("IDC, Estado, created_at")
+        .select("IDC, Estado, created_at, visita_completada")
         .ilike("Inmueble", anuncio.referencia)
         .gte("created_at", start.toISOString())
         .lt("created_at", end.toISOString())
@@ -1333,28 +1476,59 @@ export default function AnunciosPage() {
 
       return monthlyData
     } else if (period === "periodoActual") {
-      const periodStart = planResetAt ? new Date(planResetAt) : new Date(now.getFullYear(), now.getMonth(), 1)
-      const weeksData: { name: string; total: number; completos: number; aceptados: number; visitaPropuesta: number; visitaCompletada: number; descartados: number }[] = []
+      const periodStart = new Date(billingCycle.start)
+      periodStart.setHours(0, 0, 0, 0)
+      const periodEnd = billingCycle.end < now ? new Date(billingCycle.end) : new Date(now)
+      periodEnd.setHours(23, 59, 59, 999)
 
-      let currentWeekStart = new Date(periodStart)
-      currentWeekStart.setHours(0, 0, 0, 0)
+      const dailyData: { name: string; total: number; completos: number; aceptados: number; visitaPropuesta: number; visitaCompletada: number; descartados: number }[] = []
+      let currentDay = new Date(periodStart)
 
-      while (currentWeekStart <= now) {
-        const weekEnd = new Date(currentWeekStart)
-        weekEnd.setDate(currentWeekStart.getDate() + 6)
-        weekEnd.setHours(23, 59, 59, 999)
+      while (currentDay <= periodEnd) {
+        const dayStart = new Date(currentDay)
+        dayStart.setHours(0, 0, 0, 0)
 
-        const data = await fetchLeadsForRange(currentWeekStart, new Date(weekEnd.getTime() + 1))
+        const dayEnd = new Date(dayStart)
+        dayEnd.setHours(23, 59, 59, 999)
 
-        const weekLabel = `Sem ${Math.ceil((currentWeekStart.getDate() + currentWeekStart.getDay()) / 7)}`
+        const data = await fetchLeadsForRange(dayStart, new Date(dayEnd.getTime() + 1))
+
+        const dayLabel = dayStart.toLocaleDateString("es-ES", { day: "numeric", month: "short" })
 
         const metrics = countMetrics(data || [])
-        weeksData.push({ name: weekLabel, ...metrics })
+        dailyData.push({ name: dayLabel, ...metrics })
 
-        currentWeekStart.setDate(currentWeekStart.getDate() + 7)
+        currentDay.setDate(currentDay.getDate() + 1)
       }
 
-      return weeksData
+      return dailyData
+    } else if (period === "custom" && customDateRange?.from) {
+      const periodStart = new Date(customDateRange.from)
+      periodStart.setHours(0, 0, 0, 0)
+      const periodEnd = customDateRange.to ? new Date(customDateRange.to) : new Date(customDateRange.from)
+      periodEnd.setHours(23, 59, 59, 999)
+
+      const dailyData: { name: string; total: number; completos: number; aceptados: number; visitaPropuesta: number; visitaCompletada: number; descartados: number }[] = []
+      let currentDay = new Date(periodStart)
+
+      while (currentDay <= periodEnd) {
+        const dayStart = new Date(currentDay)
+        dayStart.setHours(0, 0, 0, 0)
+
+        const dayEnd = new Date(dayStart)
+        dayEnd.setHours(23, 59, 59, 999)
+
+        const data = await fetchLeadsForRange(dayStart, new Date(dayEnd.getTime() + 1))
+
+        const dayLabel = dayStart.toLocaleDateString("es-ES", { day: "numeric", month: "short" })
+
+        const metrics = countMetrics(data || [])
+        dailyData.push({ name: dayLabel, ...metrics })
+
+        currentDay.setDate(currentDay.getDate() + 1)
+      }
+
+      return dailyData
     } else {
       const dailyData: { name: string; total: number; completos: number; aceptados: number; visitaPropuesta: number; visitaCompletada: number; descartados: number }[] = []
 
@@ -1376,7 +1550,7 @@ export default function AnunciosPage() {
 
       return dailyData
     }
-  }, [planResetAt])
+  }, [planResetAt, customDateRange])
 
   const handleOpenArchiveDialog = (anuncio: AnuncioCard) => {
     setArchivingAnuncio(anuncio)
@@ -2147,7 +2321,7 @@ export default function AnunciosPage() {
           phaseMetrics: {
             aceptados: allLeads?.filter((lead) => lead.Estado === "Aceptado").length || 0,
             visitaPropuesta: allLeads?.filter((lead) => lead.Estado === "Visita Propuesta").length || 0,
-            visitaCompletada: allLeads?.filter((lead) => lead.Estado === "Visita Completada").length || 0,
+            visitaCompletada: allLeads?.filter((lead) => String(lead.Estado || "").toLowerCase() === "visita completada" || isVisitCompleted(lead.visita_completada)).length || 0,
             datosCompletos: allLeads?.filter((lead) => lead.Estado?.toLowerCase() === "datos completos").length || 0,
           },
         })
@@ -2274,7 +2448,7 @@ export default function AnunciosPage() {
         setLoadingTrendData(false)
       })
     }
-  }, [selectedAnuncioForStats, statsPeriod, showStatsModal, statsLeads, calculateTrendData])
+  }, [selectedAnuncioForStats, statsPeriod, customDateRange, showStatsModal, statsLeads, calculateTrendData])
 
   useEffect(() => {
     if (selectedAnuncioForStats && showStatsModal) {
@@ -2283,11 +2457,12 @@ export default function AnunciosPage() {
         setQualityMetrics(metrics)
       })
     }
-  }, [selectedAnuncioForStats, statsPeriod, showStatsModal])
+  }, [selectedAnuncioForStats, statsPeriod, customDateRange, showStatsModal, fetchQualityMetrics])
 
   useEffect(() => {
     if (selectedAnuncioForStats && showStatsModal && statsLeads) {
       const now = new Date()
+      const billingCycle = getCurrentBillingCycle(planResetAt, now)
       let startDate: Date
       let endDate: Date = new Date()
 
@@ -2303,16 +2478,19 @@ export default function AnunciosPage() {
         endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
       } else if (statsPeriod === "esteAno") {
         startDate = new Date(now.getFullYear(), 0, 1)
-      } else { // periodoActual
-        startDate = planResetAt ? new Date(planResetAt) : new Date(now.getFullYear(), now.getMonth(), 1)
-        if (planResetAt) {
-           const resetDate = new Date(planResetAt)
-           if (!isNaN(resetDate.getTime()) && (now.getTime() - resetDate.getTime() > 60000)) {
-               startDate = resetDate
-           } else {
-               startDate = new Date(now.getFullYear(), now.getMonth(), 1)
-           }
+      } else if (statsPeriod === "custom" && customDateRange?.from) {
+        startDate = new Date(customDateRange.from)
+        startDate.setHours(0, 0, 0, 0)
+        if (customDateRange.to) {
+          endDate = new Date(customDateRange.to)
+          endDate.setHours(23, 59, 59, 999)
+        } else {
+          endDate = new Date(customDateRange.from)
+          endDate.setHours(23, 59, 59, 999)
         }
+      } else { // periodoActual
+        startDate = billingCycle.start
+        endDate = billingCycle.end
       }
 
       const periodLeads = statsLeads.filter((l) => {
@@ -2382,7 +2560,7 @@ export default function AnunciosPage() {
         emailsEnviados: emailsEnviadosCount,
       })
     }
-  }, [selectedAnuncioForStats, statsPeriod, showStatsModal, statsLeads, planLimit, planResetAt, statsEmails, statsWhatsapps])
+  }, [selectedAnuncioForStats, statsPeriod, customDateRange, showStatsModal, statsLeads, planResetAt, statsEmails, statsWhatsapps, planLimit])
 
   useEffect(() => {
     fetchAnuncios(undefined, currentPage)
@@ -2880,14 +3058,14 @@ export default function AnunciosPage() {
         // Fallback to DB fetch if raw data not available
         const fetchByRef = supabase
           .from("Clientes")
-          .select("Estado,aceptado,visita_propuesta,visita_completada,IDC,Nombre,Correo,Telefono,created_at,Inmueble")
+          .select("*, status_history")
           .ilike("Inmueble", anuncio.referencia.trim())
   
         let fetchByAddr = null
         if (anuncio.direccion) {
           fetchByAddr = supabase
             .from("Clientes")
-            .select("Estado,aceptado,visita_propuesta,visita_completada,IDC,Nombre,Correo,Telefono,created_at,Inmueble")
+            .select("*, status_history")
             .ilike("Inmueble", anuncio.direccion.trim())
         }
   
@@ -2977,7 +3155,7 @@ export default function AnunciosPage() {
 
       const aceptados = leads.filter((lead) => lead.Estado === "Aceptado" || lead.aceptado === true).length || 0
       const visitaPropuesta = leads.filter((lead) => lead.Estado === "Visita Propuesta" || lead.visita_propuesta === true).length || 0
-      const visitaCompletada = leads.filter((lead) => lead.Estado === "Visita Completada" || lead.visita_completada === true).length || 0 // Keeping this for now, will replace in UI if needed, but logic stays available
+      const visitaCompletada = leads.filter((lead) => String(lead.Estado || "").toLowerCase() === "visita completada" || isVisitCompleted(lead.visita_completada)).length || 0
       const datosCompletosStrict = leads.filter((lead) => lead.Estado === "Datos Completos").length || 0
       const descartados = leads.filter((lead) => lead.Estado === "Descartado").length || 0
 
@@ -3287,8 +3465,9 @@ export default function AnunciosPage() {
       const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
       const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
       const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      const start = metricsPeriod === "hoy" ? dayStart : metricsPeriod === "ultimoMes" ? prevMonthStart : metricsPeriod === "esteMes" ? thisMonthStart : (planResetAt ? new Date(planResetAt) : thisMonthStart)
-      const end = metricsPeriod === "hoy" ? now : metricsPeriod === "ultimoMes" ? prevMonthEnd : now
+      const billingCycle = getCurrentBillingCycle(planResetAt, now)
+      const start = metricsPeriod === "hoy" ? dayStart : metricsPeriod === "ultimoMes" ? prevMonthStart : metricsPeriod === "esteMes" ? thisMonthStart : billingCycle.start
+      const end = metricsPeriod === "hoy" ? now : metricsPeriod === "ultimoMes" ? prevMonthEnd : metricsPeriod === "periodoActual" ? billingCycle.displayEnd : now
       const fmt = (d: Date) => formatDate(d)
       return metricsPeriod === "hoy" ? fmt(start) : `${fmt(start)} - ${fmt(end)}`
     }
@@ -3345,6 +3524,89 @@ export default function AnunciosPage() {
       }
     }
   }, [anunciosCards, selectedAnuncioForStats, showStatsModal])
+
+  // Calcular métricas filtradas cuando cambia el periodo o el anuncio seleccionado
+  useEffect(() => {
+    if (!selectedAnuncioForStats || !showStatsModal) {
+      setDisplayedStats(null)
+      return
+    }
+
+    // Si no hay leads cargados, mostrar los datos base del anuncio (que suelen ser lifetime o precalculados)
+    if (!statsLeads || statsLeads.length === 0) {
+      setDisplayedStats(selectedAnuncioForStats)
+      return
+    }
+
+    const now = new Date()
+    const dayStart = new Date(now)
+    dayStart.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
+    
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1)
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const yearStart = new Date(now.getFullYear(), 0, 1)
+    const billingCycle = getCurrentBillingCycle(planResetAt, now)
+
+    const periodStart =
+      statsPeriod === "hoy"
+        ? dayStart
+        : statsPeriod === "ultimoMes"
+        ? prevMonthStart
+        : statsPeriod === "esteMes"
+        ? thisMonthStart
+        : statsPeriod === "esteAno"
+        ? yearStart
+        : statsPeriod === "custom" && customDateRange?.from
+        ? customDateRange.from
+        : statsPeriod === "periodoActual"
+        ? billingCycle.start
+        : thisMonthStart
+
+    let periodEnd = statsPeriod === "hoy" ? dayEnd : statsPeriod === "ultimoMes" ? prevMonthEnd : statsPeriod === "periodoActual" ? billingCycle.end : now
+    if (statsPeriod === "custom" && customDateRange?.to) {
+      periodEnd = new Date(customDateRange.to)
+      periodEnd.setHours(23, 59, 59, 999)
+    } else if (statsPeriod === "custom" && customDateRange?.from) {
+       periodEnd = new Date(customDateRange.from)
+       periodEnd.setHours(23, 59, 59, 999)
+    }
+
+    // Filtrar leads por fecha de creación
+    const filteredLeads = statsLeads.filter(l => {
+       const d = new Date(l.created_at)
+       return d >= periodStart && d < periodEnd
+    })
+
+    const total = filteredLeads.length
+    
+    // Contar estados
+    const datosCompletosCount = filteredLeads.filter(l => 
+      ["datos completos", "aceptado", "visita propuesta", "pedir aval"].includes(l.Estado?.toLowerCase())
+    ).length
+    
+    const descartadosCount = filteredLeads.filter(l => l.Estado === "Descartado").length
+    
+    const aceptados = filteredLeads.filter(l => l.Estado === "Aceptado" || l.aceptado === true).length
+    const visitaPropuesta = filteredLeads.filter(l => l.Estado === "Visita Propuesta" || l.visita_propuesta === true).length
+    const visitaCompletada = filteredLeads.filter(l => String(l.Estado || "").toLowerCase() === "visita completada" || isVisitCompleted(l.visita_completada)).length
+    const datosCompletosStrict = filteredLeads.filter(l => l.Estado === "Datos Completos").length
+
+    setDisplayedStats({
+      ...selectedAnuncioForStats,
+      leadsTotales: total,
+      datosCompletos: datosCompletosCount,
+      descartados: descartadosCount,
+      phaseMetrics: {
+        aceptados,
+        visitaPropuesta,
+        visitaCompletada,
+        datosCompletos: datosCompletosStrict,
+      }
+    })
+
+  }, [statsPeriod, customDateRange, selectedAnuncioForStats, statsLeads, showStatsModal, planResetAt])
 
   const getHealthColor = (score: number) => {
     if (score >= 80) return "text-green-600"
@@ -5439,14 +5701,209 @@ export default function AnunciosPage() {
           }}
         >
           <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto z-[100]">
-            <DialogHeader>
-              <DialogTitle>Estadísticas - {selectedAnuncioForStats?.referencia}</DialogTitle>
-              <DialogDescription>
-                Análisis detallado del rendimiento, consumo y calidad de leads del anuncio.
-              </DialogDescription>
+            <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div className="space-y-1">
+                <DialogTitle>Estadísticas - {selectedAnuncioForStats?.referencia}</DialogTitle>
+                <DialogDescription>
+                  Análisis detallado del rendimiento, consumo y calidad de leads del anuncio.
+                </DialogDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-foreground/80 tabular-nums">
+                  {statsPeriod === "custom" && customDateRange?.from ? (
+                    customDateRange.to ? (
+                      `${format(customDateRange.from, "dd MMM", { locale: es })} - ${format(customDateRange.to, "dd MMM", { locale: es })}`
+                    ) : (
+                      format(customDateRange.from, "dd MMM", { locale: es })
+                    )
+                  ) : (
+                    new Date().toLocaleDateString("es-ES")
+                  )}
+                </span>
+                <div className="flex items-center bg-muted/50 rounded-md p-0.5">
+                  {([
+                    { value: "hoy", label: "Hoy" },
+                    { value: "esteMes", label: "Mes" },
+                    { value: "ultimoMes", label: "Mes ant." },
+                    { value: "periodoActual", label: "Ciclo" },
+                  ] as const).map((period) => (
+                    <button
+                      key={period.value}
+                      onClick={() => {
+                        const v = period.value
+                        setStatsPeriod(v)
+                        setCustomDateRange(undefined)
+                        if (v === "hoy") setTrendTimeframe("24h")
+                        else if (v === "esteMes" || v === "ultimoMes") setTrendTimeframe("1m")
+                        else setTrendTimeframe("7d")
+                      }}
+                      className={cn(
+                        "inline-flex items-center justify-center whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] rounded-md gap-1.5 h-6 text-[10px] px-2 font-medium",
+                        statsPeriod === period.value
+                          ? "bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/30 hover:bg-primary/90"
+                          : "text-foreground/70 hover:text-foreground hover:bg-accent dark:hover:bg-accent/50"
+                      )}
+                    >
+                      {period.label}
+                    </button>
+                  ))}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        onClick={() => {
+                          setStatsPeriod("custom")
+                          setTrendTimeframe("7d")
+                        }}
+                        className={cn(
+                          "inline-flex items-center justify-center whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] rounded-md gap-1.5 h-6 text-[10px] px-2 font-medium",
+                          statsPeriod === "custom"
+                            ? "bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/30 hover:bg-primary/90"
+                            : "text-foreground/70 hover:text-foreground hover:bg-accent dark:hover:bg-accent/50"
+                        )}
+                      >
+                        <Calendar className="w-3 h-3 mr-1" />
+                        Personalizado
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <div className="rounded-md border shadow-sm p-4 bg-background">
+                        <div className="flex items-center justify-between mb-3">
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-md border border-input bg-background shadow-sm h-7 w-7 hover:bg-accent hover:text-accent-foreground"
+                            onClick={() => setCustomCalendarMonth(addMonths(customCalendarMonth, -1))}
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <div className="text-sm font-medium capitalize">
+                            {format(customCalendarMonth, "MMMM yyyy", { locale: es })}
+                          </div>
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center rounded-md border border-input bg-background shadow-sm h-7 w-7 hover:bg-accent hover:text-accent-foreground"
+                            onClick={() => setCustomCalendarMonth(addMonths(customCalendarMonth, 1))}
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                          {[customCalendarMonth, addMonths(customCalendarMonth, 1)].map((monthDate, monthIndex) => (
+                            <div key={monthIndex}>
+                              <div className="text-xs font-medium text-muted-foreground mb-2 capitalize text-center">
+                                {format(monthDate, "MMMM yyyy", { locale: es })}
+                              </div>
+                              <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-muted-foreground mb-2">
+                                {weekDays.map((dayLabel, idx) => (
+                                  <div key={`${monthIndex}-${idx}`} className="h-4 flex items-center justify-center">
+                                    {dayLabel}
+                                  </div>
+                                ))}
+                              </div>
+                              <TooltipProvider>
+                              <div className="grid grid-cols-7 gap-1">
+                                {buildMonthDays(monthDate).map((day) => {
+                                  const from = customDateRange?.from
+                                  const to = customDateRange?.to
+                                  const inMonth = isSameMonth(day, monthDate)
+                                  const isStart = from && isSameDay(day, from)
+                                  const isEnd = to && isSameDay(day, to)
+                                  const inRange = from && to && isWithinInterval(day, { start: from, end: to })
+                                  const isMiddle = inRange && !isStart && !isEnd
+                                  const isSelected = isStart || isEnd || (from && !to && isSameDay(day, from))
+                                  const isActivationDay = activationDate ? isSameDay(day, activationDate) : false
+                                  const ratio = getActivityRatio(day)
+                                  const activityCount = (() => {
+                                    const activityData = selectedAnuncioForStats?.activityData || []
+                                    if (!activityStartDate || activityData.length === 0) return 0
+                                    const d = new Date(day)
+                                    d.setHours(0, 0, 0, 0)
+                                    const diffDays = differenceInCalendarDays(d, activityStartDate)
+                                    if (diffDays < 0 || diffDays >= activityData.length) return 0
+                                    return activityData[diffDays]
+                                  })()
+                                  const activityClass =
+                                    ratio <= 0
+                                      ? ""
+                                      : ratio < 0.25
+                                      ? "bg-emerald-100/80"
+                                      : ratio < 0.5
+                                      ? "bg-emerald-200/80"
+                                      : ratio < 0.75
+                                      ? "bg-emerald-300/80"
+                                      : "bg-emerald-400/80"
+
+                                  if (!inMonth) {
+                                    return <div key={day.toISOString()} className="h-9 w-9" />
+                                  }
+
+                                  return (
+                                    <UITooltip key={day.toISOString()} delayDuration={0}>
+                                      <TooltipTrigger asChild>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCustomDayClick(day)}
+                                          className={cn(
+                                            "relative h-9 w-9 rounded-md text-sm font-medium transition-colors",
+                                            "flex items-center justify-center",
+                                            isSelected && "bg-stone-300/80 text-stone-950 dark:bg-stone-700/60 dark:text-stone-50",
+                                            isMiddle && "bg-stone-300/80 text-stone-950 dark:bg-stone-700/60 dark:text-stone-50",
+                                            !isSelected && !isMiddle && activityClass,
+                                            !isSelected && !isMiddle && "hover:bg-accent hover:text-accent-foreground",
+                                          )}
+                                        >
+                                          {(isSelected || isMiddle) && (
+                                            <span
+                                              className={cn(
+                                                "absolute inset-0 rounded-md bg-stone-300/80 dark:bg-stone-700/60"
+                                              )}
+                                            />
+                                          )}
+                                          <span
+                                            className={cn(
+                                              "relative z-10",
+                                              isMiddle
+                                                ? "text-stone-950 dark:text-stone-50"
+                                                : ""
+                                            )}
+                                          >
+                                            {format(day, "d")}
+                                          </span>
+                                          {isActivationDay && (
+                                            <span
+                                              className={cn(
+                                                "absolute top-1 right-1 h-1.5 w-1.5 rounded-full z-10",
+                                                isSelected || isMiddle ? "bg-amber-300" : "bg-amber-500"
+                                              )}
+                                            />
+                                          )}
+                                          {isStart && (
+                                            <span className="absolute left-0 top-0 bottom-0 w-1 rounded-l-md bg-stone-900 dark:bg-stone-100" />
+                                          )}
+                                          {isEnd && (
+                                            <span className="absolute right-0 top-0 bottom-0 w-1 rounded-r-md bg-stone-900 dark:bg-stone-100" />
+                                          )}
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="z-[9999]">
+                                        <p>{activityCount} leads</p>
+                                        {isActivationDay && <p>Activación del anuncio</p>}
+                                      </TooltipContent>
+                                    </UITooltip>
+                                  )
+                                })}
+                              </div>
+                              </TooltipProvider>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
             </DialogHeader>
             <div className="space-y-6 py-4">
-              {selectedAnuncioForStats && (
+              {displayedStats && (
                 <>
                   {/* Métricas Principales */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -5459,7 +5916,7 @@ export default function AnunciosPage() {
                             onClick={() => handlePhaseMetricClick("total")}
                             tabIndex={-1}
                           >
-                            <span className="text-3xl font-bold text-foreground">{selectedAnuncioForStats.leadsTotales}</span>
+                            <span className="text-3xl font-bold text-foreground">{displayedStats.leadsTotales}</span>
                             <span className="text-xs text-muted-foreground font-normal">Leads Totales</span>
                           </Button>
                         </TooltipTrigger>
@@ -5476,7 +5933,7 @@ export default function AnunciosPage() {
                             className="w-full h-auto text-center p-4 bg-muted rounded-lg border hover:bg-muted/80 hover:border-primary/50 transition-colors flex flex-col items-center gap-1 focus-visible:ring-0 focus-visible:ring-offset-0"
                             tabIndex={-1}
                           >
-                            <span className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{selectedAnuncioForStats.datosCompletos}</span>
+                            <span className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{displayedStats.datosCompletos}</span>
                             <span className="text-xs text-muted-foreground font-normal">Datos Completos</span>
                           </Button>
                         </TooltipTrigger>
@@ -5494,9 +5951,9 @@ export default function AnunciosPage() {
                             tabIndex={-1}
                           >
                             <span className="text-3xl font-bold text-violet-600 dark:text-violet-400">
-                              {selectedAnuncioForStats.leadsTotales > 0
+                              {displayedStats.leadsTotales > 0
                                 ? (
-                                    (selectedAnuncioForStats.datosCompletos / selectedAnuncioForStats.leadsTotales) *
+                                    (displayedStats.datosCompletos / displayedStats.leadsTotales) *
                                     100
                                 ).toFixed(1)
                                 : "0.0"}
@@ -5518,7 +5975,7 @@ export default function AnunciosPage() {
                             className="w-full h-auto text-center p-4 bg-muted rounded-lg border hover:bg-muted/80 hover:border-primary/50 transition-colors flex flex-col items-center gap-1 focus-visible:ring-0 focus-visible:ring-offset-0"
                             tabIndex={-1}
                           >
-                            <span className="text-3xl font-bold text-red-600 dark:text-red-400">{selectedAnuncioForStats.descartados || 0}</span>
+                            <span className="text-3xl font-bold text-red-600 dark:text-red-400">{displayedStats.descartados || 0}</span>
                             <span className="text-xs text-muted-foreground font-normal">Descartados</span>
                           </Button>
                         </TooltipTrigger>
@@ -5531,7 +5988,7 @@ export default function AnunciosPage() {
 
                   <div className="space-y-3">
                     <h4 className="font-semibold">Preparados para la fase de visita</h4>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-4 gap-3">
                       <TooltipProvider>
                         <UITooltip delayDuration={0}>
                           <TooltipTrigger asChild>
@@ -5543,7 +6000,7 @@ export default function AnunciosPage() {
                             >
                               <span className="text-xs text-muted-foreground">Datos Completados</span>
                               <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                                {selectedAnuncioForStats.phaseMetrics?.datosCompletos || 0}
+                                {displayedStats.phaseMetrics?.datosCompletos || 0}
                               </span>
                             </Button>
                           </TooltipTrigger>
@@ -5564,7 +6021,7 @@ export default function AnunciosPage() {
                             >
                               <span className="text-xs text-muted-foreground">Candidatos Aprobados</span>
                               <span className="text-lg font-bold text-green-600 dark:text-green-400">
-                                {selectedAnuncioForStats.phaseMetrics?.aceptados || 0}
+                                {displayedStats.phaseMetrics?.aceptados || 0}
                               </span>
                             </Button>
                           </TooltipTrigger>
@@ -5585,12 +6042,33 @@ export default function AnunciosPage() {
                             >
                               <span className="text-xs text-muted-foreground">Visita Propuesta</span>
                               <span className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                                {selectedAnuncioForStats.phaseMetrics?.visitaPropuesta || 0}
+                                {displayedStats.phaseMetrics?.visitaPropuesta || 0}
                               </span>
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="z-[9999]">
                             <p>Leads con estado Visita Propuesta</p>
+                          </TooltipContent>
+                        </UITooltip>
+                      </TooltipProvider>
+
+                      <TooltipProvider>
+                        <UITooltip delayDuration={0}>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="w-full justify-between hover:bg-violet-50 dark:hover:bg-violet-950/30 h-auto p-4 flex flex-col items-center gap-2 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                              onClick={() => handlePhaseMetricClick("visita_completada")}
+                              tabIndex={-1}
+                            >
+                              <span className="text-xs text-muted-foreground">Visita Completada</span>
+                              <span className="text-lg font-bold text-violet-600 dark:text-violet-400">
+                                {displayedStats.phaseMetrics?.visitaCompletada || 0}
+                              </span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="z-[9999]">
+                            <p>Leads con estado Visita Completada</p>
                           </TooltipContent>
                         </UITooltip>
                       </TooltipProvider>
@@ -5600,61 +6078,6 @@ export default function AnunciosPage() {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <h4 className="font-semibold">Visualización de Leads</h4>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="h-7 text-[10px]">
-                          {(() => {
-                            const period = statsPeriod || "esteMes"
-                              const now = new Date()
-                              const dayStart = new Date(now); dayStart.setHours(0,0,0,0)
-                              const dayEnd = new Date(dayStart.getTime() + 24*60*60*1000)
-                              const prevMonthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
-                              const prevMonthEndDisplay = new Date(now.getFullYear(), now.getMonth(), 0)
-                              const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-                              const yearStart = new Date(now.getFullYear(), 0, 1)
-                              const start =
-                                period === "hoy"
-                                  ? dayStart
-                                  : period === "ultimoMes"
-                                  ? prevMonthStart
-                                  : period === "esteMes"
-                                  ? thisMonthStart
-                                  : period === "esteAno"
-                                  ? yearStart
-                                  : (planResetAt ? new Date(planResetAt) : thisMonthStart)
-                              const end = period === "hoy" ? dayEnd : period === "ultimoMes" ? prevMonthEndDisplay : now
-                              const fmt = (d: Date) => d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" })
-                              const label =
-                                period === "hoy"
-                                  ? "Hoy"
-                                  : period === "ultimoMes"
-                                  ? "Último mes"
-                                  : period === "esteMes"
-                                  ? "Este mes"
-                                  : period === "esteAno"
-                                  ? "Este año"
-                                  : "Periodo actual"
-                              return period === "hoy" ? `${label}: ${fmt(start)}` : `${label}: ${fmt(start)} – ${fmt(end)}`
-                          })()}
-                        </Badge>
-                        <Select value={statsPeriod} onValueChange={(v) => {
-                          setStatsPeriod(v as any)
-                          setSelectedAnuncioForStats(prev => prev ? { ...prev, statsPeriod: v } : prev)
-                          if (v === "hoy") setTrendTimeframe("24h")
-                          else if (v === "esteMes" || v === "ultimoMes") setTrendTimeframe("1m")
-                          else setTrendTimeframe("7d")
-                        }}>
-                          <SelectTrigger className="h-7 w-[140px] text-xs">
-                            <SelectValue placeholder="Periodo" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="hoy">Hoy</SelectItem>
-                            <SelectItem value="esteMes">Este mes</SelectItem>
-                            <SelectItem value="ultimoMes">Último mes</SelectItem>
-                            <SelectItem value="esteAno">Este año</SelectItem>
-                            <SelectItem value="periodoActual">Periodo actual</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
                     </div>
                     
                     {/* Layout de gráficos uno al lado del otro */}
@@ -5664,7 +6087,7 @@ export default function AnunciosPage() {
                       <div className="space-y-3">
                         <h4 className="font-semibold text-sm">Actividad de Leads</h4>
                         <div className="bg-muted p-4 rounded-lg">
-                          {!selectedAnuncioForStats?.activityData || selectedAnuncioForStats.activityData.length === 0 ? (
+                          {!displayedStats?.activityData || displayedStats.activityData.length === 0 ? (
                             <div className="flex items-center justify-center h-32">
                               <div className="text-sm text-muted-foreground">Sin datos</div>
                             </div>
@@ -5677,6 +6100,7 @@ export default function AnunciosPage() {
                               const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1)
                               const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
                               const yearStart = new Date(now.getFullYear(), 0, 1)
+                              const billingCycle = getCurrentBillingCycle(planResetAt, now)
                               const periodStart =
                                 statsPeriod === "hoy"
                                   ? dayStart
@@ -5686,12 +6110,12 @@ export default function AnunciosPage() {
                                   ? thisMonthStart
                                   : statsPeriod === "esteAno"
                                   ? yearStart
-                                  : (planResetAt ? new Date(planResetAt) : thisMonthStart)
-                              const periodEnd = statsPeriod === "hoy" ? dayEnd : statsPeriod === "ultimoMes" ? prevMonthEnd : now
+                                  : billingCycle.start
+                              const periodEnd = statsPeriod === "hoy" ? dayEnd : statsPeriod === "ultimoMes" ? prevMonthEnd : statsPeriod === "periodoActual" ? billingCycle.end : now
                               return (
                                 <ActivityHeatmap
-                                  data={selectedAnuncioForStats.activityData}
-                                  startDate={selectedAnuncioForStats.activityStartDate || thisMonthStart}
+                                  data={displayedStats.activityData}
+                                  startDate={displayedStats.activityStartDate || thisMonthStart}
                                   periodStart={periodStart}
                                   periodEnd={periodEnd}
                                 />
@@ -5771,37 +6195,7 @@ export default function AnunciosPage() {
                   {/* Análisis de Calidad */}
                   <div className="space-y-3">
                     <h4 className="font-semibold">Análisis de Calidad</h4>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="text-center p-4 bg-muted rounded-lg border">
-                        <div className="flex items-center justify-center gap-1 mb-2">
-                          <span className="text-xs text-muted-foreground">Leads Rebotados</span>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <button className="inline-flex items-center justify-center rounded-full w-4 h-4 bg-muted hover:bg-muted/80 transition-colors">
-                                <Info className="h-3 w-3 text-foreground/60" />
-                              </button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-80" side="top">
-                              <div className="space-y-2">
-                                <h4 className="font-semibold text-sm">¿Qué son los Leads Rebotados?</h4>
-                                <p className="text-sm text-muted-foreground">
-                                  Leads que han entrado en tu flujo pero no han respondido ni interactuado contigo ni una sola vez. No tienen ningún correo ni mensaje de WhatsApp registrado.
-                                </p>
-                                <div className="pt-2 border-t">
-                                  <p className="text-sm font-medium mb-1">Cómo usarlo:</p>
-                                  <ul className="text-sm text-muted-foreground space-y-1 list-disc pl-4">
-                                    <li>Revisa si el anuncio está atrayendo el público correcto</li>
-                                    <li>Considera ajustar el mensaje inicial de contacto</li>
-                                    <li>Verifica que los canales de comunicación funcionan correctamente</li>
-                                  </ul>
-                                </div>
-                              </div>
-                            </PopoverContent>
-                          </Popover>
-                        </div>
-                        <div className="text-3xl font-bold text-orange-600 dark:text-orange-400">{qualityMetrics.leadsRebotados}</div>
-                      </div>
-
+                    <div className="grid grid-cols-2 gap-3">
                       <div className="text-center p-4 bg-muted rounded-lg border">
                         <div className="text-xs text-muted-foreground mb-2">Datos Incompletos</div>
                         <div className="text-3xl font-bold text-amber-600 dark:text-amber-400">{qualityMetrics.datosIncompletos}</div>
@@ -5829,23 +6223,27 @@ export default function AnunciosPage() {
                       <h4 className="font-semibold">Consumo y Rendimiento</h4>
                       <Button
                         size="sm"
-                        variant={selectedAnuncioForStats.whatsapp_activo ? "destructive" : "outline"}
+                        variant={selectedAnuncioForStats?.whatsapp_activo ? "destructive" : "outline"}
                         onClick={() => {
+                          if (!selectedAnuncioForStats) return
                           if (selectedAnuncioForStats.whatsapp_activo) {
                             setConfirmStopWhatsApp({ open: true, anuncioId: selectedAnuncioForStats.id })
                           } else {
                             handleDetenerWhatsApps(selectedAnuncioForStats.id, selectedAnuncioForStats.whatsapp_activo)
                           }
                         }}
-                        disabled={processingId === selectedAnuncioForStats.id}
+                        disabled={!selectedAnuncioForStats || processingId === selectedAnuncioForStats.id}
                         className="h-7 text-xs"
                       >
                         <MessageSquare className="h-3 w-3 mr-1" />
-                        {processingId === selectedAnuncioForStats.id ? "Procesando..." : selectedAnuncioForStats.whatsapp_activo ? "Detener WhatsApps" : "Activar WhatsApps"}
+                        {!selectedAnuncioForStats ? "Activar WhatsApps" : processingId === selectedAnuncioForStats.id ? "Procesando..." : selectedAnuncioForStats.whatsapp_activo ? "Detener WhatsApps" : "Activar WhatsApps"}
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground -mt-2 mb-2">
-                       Ciclo actual: {planResetAt ? formatDate(planResetAt) : formatDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1))} - {formatDate(new Date())}
+                       Ciclo actual: {(() => {
+                         const billingCycle = getCurrentBillingCycle(planResetAt)
+                         return `${formatDate(billingCycle.start)} - ${formatDate(billingCycle.displayEnd)}`
+                       })()}
                     </p>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-4">
@@ -5903,11 +6301,11 @@ export default function AnunciosPage() {
                     <h4 className="font-semibold">Información del Portal</h4>
                     <div className="p-4 bg-muted rounded-lg">
                       <div className="flex items-center justify-between">
-                        <span className="font-medium">{selectedAnuncioForStats.portal}</span>
-                        <Badge variant="outline">{selectedAnuncioForStats.estado}</Badge>
+                        <span className="font-medium">{selectedAnuncioForStats?.portal ?? "-"}</span>
+                        <Badge variant="outline">{selectedAnuncioForStats?.estado ?? "-"}</Badge>
                       </div>
                       <div className="mt-2 text-sm text-muted-foreground">
-                        Última actividad: {selectedAnuncioForStats.ultimaActividad}
+                        Última actividad: {selectedAnuncioForStats?.ultimaActividad ?? "-"}
                       </div>
                     </div>
                   </div>
