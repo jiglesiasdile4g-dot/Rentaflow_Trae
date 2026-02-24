@@ -304,7 +304,8 @@ export function LeadDetailModal({
 
   useEffect(() => {
     const fetchUserName = async () => {
-        const { data: { user } } = await supabase.auth.getUser()
+        const supabaseClient = createClient()
+        const { data: { user } } = await supabaseClient.auth.getUser()
         if (user && user.email) {
             const res = await resolveUserName(user.email)
             if (res.name) setCurrentUserName(res.name)

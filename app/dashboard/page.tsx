@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { User } from "lucide-react"
+import { InmobiliariaStatsModal } from "@/components/inmobiliaria-stats-modal"
 
 export default async function DashboardPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const supabase = await createClient()
@@ -326,6 +327,8 @@ export default async function DashboardPage({ searchParams }: { searchParams?: P
             </CardContent>
           </Card>
         )}
+
+        <InmobiliariaStatsModal idi={inmobiliariaId} />
       </div>
     </div>
   )

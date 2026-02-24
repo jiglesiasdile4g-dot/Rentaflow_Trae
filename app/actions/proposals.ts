@@ -125,8 +125,8 @@ export async function createVisitProposal(data: {
     
     // Remove status_history from leads
     const cleanLeads = (leads || []).map((lead: any) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { status_history, ...rest } = lead
+      const rest = { ...lead }
+      if ("status_history" in rest) delete rest.status_history
       return rest
     })
     

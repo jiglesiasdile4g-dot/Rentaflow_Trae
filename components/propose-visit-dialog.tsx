@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -12,7 +12,6 @@ import { cn } from "@/lib/utils"
 import { createVisitProposal, getAvailableSlotsForProposal, getAvailableDatesForProposal } from "@/app/actions/proposals"
 import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useEffect } from "react"
 
 interface ProposeVisitDialogProps {
   open: boolean
@@ -44,10 +43,10 @@ export function ProposeVisitDialog({
   const { toast } = useToast()
 
   // Helper to get ad ID
-  const getAdId = () => {
+  const getAdId = useCallback(() => {
     if (!selectedAdvertisement) return undefined
     return selectedAdvertisement.ida || selectedAdvertisement.id
-  }
+  }, [selectedAdvertisement])
 
   // Load available dates when dialog opens
   useEffect(() => {
@@ -69,7 +68,7 @@ export function ProposeVisitDialog({
         })
         .finally(() => setLoadingDates(false))
     }
-  }, [open, currentAgentId, inmobiliariaId, selectedAdvertisement])
+  }, [open, currentAgentId, inmobiliariaId, getAdId])
 
   // Load slots when date is selected
   useEffect(() => {
@@ -92,7 +91,7 @@ export function ProposeVisitDialog({
     } else if (!date) {
         setAvailableSlots([])
     }
-  }, [date, currentAgentId, inmobiliariaId, selectedAdvertisement, open])
+  }, [date, currentAgentId, inmobiliariaId, open, time, getAdId])
 
   const handleCreateProposal = async () => {
     if (!date || !time) {

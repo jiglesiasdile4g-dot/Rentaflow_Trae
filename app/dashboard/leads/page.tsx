@@ -297,7 +297,7 @@ export default function LeadsPage() {
     }
     
     restoreState()
-  }, []) // Se ejecuta solo una vez al montar
+  }, [searchParams]) // Se ejecuta solo una vez al montar
 
   useEffect(() => {
     if (!isStateRestored) return
@@ -318,15 +318,13 @@ export default function LeadsPage() {
 
   useEffect(() => {
     const fetchUserName = async () => {
-        const { data: { user } } = await supabase.auth.getUser()
+        const supabaseClient = createClient()
+        const { data: { user } } = await supabaseClient.auth.getUser()
         if (user) {
-            // setCurrentUser(user) - Removed to avoid type conflict and duplicate state
             if (user.email) {
-                // Resolve name
                 const res = await resolveUserName(user.email)
                 if (res.name) setCurrentUserName(res.name)
                 
-                // Resolve agent ID
                 const agentRes = await getAgentByEmail(user.email)
                 if (agentRes.data && agentRes.data.idag) {
                     setCurrentAgentId(agentRes.data.idag)
