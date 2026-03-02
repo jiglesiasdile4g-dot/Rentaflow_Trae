@@ -1,12 +1,12 @@
 {
   "name": "dashboard-basico-alfa",
-  "version": "0.9.13",
+  "version": "0.9.14",
   "private": true,
   "scripts": {
     "build": "next build",
     "dev": "next dev",
     "lint": "eslint .",
-    "start": "next start",
+    "start": "sh -c \"node scripts/reminder-cron.js & next start\"",
     "release:patch": "npm version patch -m \"chore(release): v%s\"",
     "release:minor": "npm version minor -m \"chore(release): v%s\"",
     "release:major": "npm version major -m \"chore(release): v%s\"",

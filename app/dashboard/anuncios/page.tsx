@@ -6080,60 +6080,7 @@ export default function AnunciosPage() {
                       <h4 className="font-semibold">Visualización de Leads</h4>
                     </div>
                     
-                    {/* Layout de gráficos uno al lado del otro */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      
-                      {/* Actividad de Leads */}
-                      <div className="space-y-3">
-                        <h4 className="font-semibold text-sm">Actividad de Leads</h4>
-                        <div className="bg-muted p-4 rounded-lg">
-                          {!displayedStats?.activityData || displayedStats.activityData.length === 0 ? (
-                            <div className="flex items-center justify-center h-32">
-                              <div className="text-sm text-muted-foreground">Sin datos</div>
-                            </div>
-                          ) : (
-                            (() => {
-                              const now = new Date()
-                              const dayStart = new Date(now); dayStart.setHours(0,0,0,0)
-                              const dayEnd = new Date(dayStart.getTime() + 24*60*60*1000)
-                              const prevMonthStart = new Date(now.getFullYear(), now.getMonth()-1, 1)
-                              const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1)
-                              const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-                              const yearStart = new Date(now.getFullYear(), 0, 1)
-                              const billingCycle = getCurrentBillingCycle(planResetAt, now)
-                              const periodStart =
-                                statsPeriod === "hoy"
-                                  ? dayStart
-                                  : statsPeriod === "ultimoMes"
-                                  ? prevMonthStart
-                                  : statsPeriod === "esteMes"
-                                  ? thisMonthStart
-                                  : statsPeriod === "esteAno"
-                                  ? yearStart
-                                  : billingCycle.start
-                              const periodEnd = statsPeriod === "hoy" ? dayEnd : statsPeriod === "ultimoMes" ? prevMonthEnd : statsPeriod === "periodoActual" ? billingCycle.end : now
-                              return (
-                                <ActivityHeatmap
-                                  data={displayedStats.activityData}
-                                  startDate={displayedStats.activityStartDate || thisMonthStart}
-                                  periodStart={periodStart}
-                                  periodEnd={periodEnd}
-                                />
-                              )
-                            })()
-                          )}
-                          <div className="flex items-center justify-end mt-2 gap-1 text-[10px] text-muted-foreground">
-                            <span>Menor</span>
-                            <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-muted/30" />
-                            <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-200/80" />
-                            <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-400/80" />
-                            <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-600" />
-                            <span className="inline-block w-2.5 h-2.5 rounded-[2px] border border-muted-foreground/20 bg-emerald-800" />
-                            <span>Mayor</span>
-                          </div>
-                        </div>
-                      </div>
-
+                    <div className="grid grid-cols-1 gap-6">
                       {/* Gráfico de Totales (línea) */}
                       <div className="space-y-3">
                         <h4 className="font-semibold text-sm">Leads por día</h4>

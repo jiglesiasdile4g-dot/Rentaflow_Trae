@@ -26,7 +26,8 @@ import {
   deleteAgentAction, 
   toggleAgentFunctionsAction, 
   resendUserConfirmationAction,
-  updateUserDetailsAction
+  updateUserDetailsAction,
+  triggerVisitReminderAction
 } from "./actions"
 import { LogoUpload } from "./logo-upload"
 import { UserActions } from "./user-actions"
@@ -56,6 +57,8 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
   const addDebug = (label: string, value: any) => {
     debugItems.push({ label, value: String(value) })
   }
+  const reminderStatus = typeof searchParams?.reminder === "string" ? searchParams.reminder : null
+  const reminderMsg = typeof searchParams?.rmsg === "string" ? searchParams.rmsg : null
   async function fetchPerfilesByIdi(client: any, idi: number, log?: (label: string, value: any) => void) {
     // Standard fetch (numeric idi)
     try {
@@ -411,46 +414,64 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                 </CardDescription>
               </div>
               {userRoleLabel === "Administrador" && (
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button size="sm" className="h-8 text-xs" variant="outline">
-                      <UserPlus className="mr-2 h-3 w-3" />
-                      Nuevo
+                <div className="flex items-center gap-2">
+                  <form action={triggerVisitReminderAction} method="POST">
+                    <Button type="submit" size="sm" className="h-8 text-xs" variant="outline">
+                      <Bell className="mr-2 h-3 w-3" />
+                      Ejecutar recordatorio
                     </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Nuevo Usuario</DialogTitle>
-                      <DialogDescription>
-                        Invita a un nuevo usuario a tu equipo. Recibirá un correo para configurar su contraseña.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <form action={createAgentAction} className="space-y-4 py-4">
-                      <input type="hidden" name="idi" value={String(currentIdi ?? "")} />
-                      <div className="space-y-2">
-                        <Label htmlFor="newEmail">Correo electrónico</Label>
-                        <Input id="newEmail" name="newEmail" type="email" placeholder="agente@ejemplo.com" required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="newName">Nombre Completo</Label>
-                        <Input id="newName" name="newName" type="text" placeholder="Juan Pérez" required />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="newPhone">Teléfono</Label>
-                        <Input id="newPhone" name="newPhone" type="tel" placeholder="+34 600 000 000" />
-                      </div>
-                      <DialogFooter>
-                        <Button type="submit" disabled={!canCreateAgents}>
-                          Enviar invitación
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </DialogContent>
-                </Dialog>
+                  </form>
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button size="sm" className="h-8 text-xs" variant="outline">
+                        <UserPlus className="mr-2 h-3 w-3" />
+                        Nuevo
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Nuevo Usuario</DialogTitle>
+                        <DialogDescription>
+                          Invita a un nuevo usuario a tu equipo. Recibirá un correo para configurar su contraseña.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <form action={createAgentAction} className="space-y-4 py-4">
+                        <input type="hidden" name="idi" value={String(currentIdi ?? "")} />
+                        <div className="space-y-2">
+                          <Label htmlFor="newEmail">Correo electrónico</Label>
+                          <Input id="newEmail" name="newEmail" type="email" placeholder="agente@ejemplo.com" required />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="newName">Nombre Completo</Label>
+                          <Input id="newName" name="newName" type="text" placeholder="Juan Pérez" required />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="newPhone">Teléfono</Label>
+                          <Input id="newPhone" name="newPhone" type="tel" placeholder="+34 600 000 000" />
+                        </div>
+                        <DialogFooter>
+                          <Button type="submit" disabled={!canCreateAgents}>
+                            Enviar invitación
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </div>
               )}
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {reminderStatus === "success" && reminderMsg && (
+              <Alert className="py-2">
+                <AlertDescription className="text-xs">{reminderMsg}</AlertDescription>
+              </Alert>
+            )}
+            {reminderStatus === "error" && reminderMsg && (
+              <Alert variant="destructive" className="py-2">
+                <AlertDescription className="text-xs">{reminderMsg}</AlertDescription>
+              </Alert>
+            )}
             {manageStatus === "success" && manageMsg && (
               <Alert className="py-2">
                 <AlertDescription className="text-xs">{manageMsg}</AlertDescription>
