@@ -41,6 +41,7 @@ import {
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { cn, formatDateTime, formatWebhookDate } from "@/lib/utils"
+import { isDocumentInvalid } from "@/lib/lead-validation"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { generateSlotCandidates, isOverlapping } from "@/lib/agenda-utils"
@@ -752,8 +753,20 @@ export function LeadDetailModal({
         Observaciones: mergedObservaciones,
         Obsevaciones: mergedObservaciones,
       }
-      setLead(normalizedLead as Lead)
-      setEditFormData(normalizedLead as Lead)
+      const hasInvalidDoc = [
+        isDocumentInvalid(normalizedLead?.Tipo_Documento, normalizedLead?.Documento),
+        isDocumentInvalid(normalizedLead?.Tipo_Documento_2, normalizedLead?.Documento_2),
+        isDocumentInvalid(normalizedLead?.Tipo_Documento_3, normalizedLead?.Documento_3),
+        isDocumentInvalid(normalizedLead?.["Tipo_Documento 4"], normalizedLead?.Documento_4),
+      ].some(Boolean)
+      let finalLead: Lead = normalizedLead as Lead
+      const currentStatus = String(normalizedLead?.Estado || "").trim().toLowerCase()
+      if (hasInvalidDoc && ["datos completos", "datos completas", "pendiente", "", "null"].includes(currentStatus)) {
+        await supabase.from("Clientes").update({ Estado: "Datos Incompletos" }).eq("id", leadId)
+        finalLead = { ...(normalizedLead as Lead), Estado: "Datos Incompletos" }
+      }
+      setLead(finalLead)
+      setEditFormData(finalLead)
       setSelectedPersona(1)
       setIsEditingPersonalInfo(false)
       
@@ -917,8 +930,19 @@ export function LeadDetailModal({
 
       const mergedObservaciones = editFormData.Observaciones ?? editFormData.Obsevaciones
       const updatedLead = { ...lead, ...editFormData, Observaciones: mergedObservaciones, Obsevaciones: mergedObservaciones }
-      setLead(updatedLead as Lead)
-      if (onLeadUpdate) onLeadUpdate(updatedLead as Lead)
+      const hasInvalidDoc = [
+        isDocumentInvalid(editFormData.Tipo_Documento, editFormData.Documento),
+        isDocumentInvalid(editFormData.Tipo_Documento_2, editFormData.Documento_2),
+        isDocumentInvalid(editFormData.Tipo_Documento_3, editFormData.Documento_3),
+        isDocumentInvalid(editFormData["Tipo_Documento 4"], editFormData.Documento_4),
+      ].some(Boolean)
+      let finalLead = updatedLead
+      if (hasInvalidDoc) {
+        await updateLeadStatus("Datos Incompletos")
+        finalLead = { ...updatedLead, Estado: "Datos Incompletos" }
+      }
+      setLead(finalLead as Lead)
+      if (onLeadUpdate) onLeadUpdate(finalLead as Lead)
       
       setIsEditingPersonalInfo(false)
       toast({
@@ -2224,6 +2248,9 @@ export function LeadDetailModal({
                                 
                                 const getVal = (key: string) => editFormData[key] || ""
                                 const setVal = (key: string, val: any) => setEditFormData({ ...editFormData, [key]: val })
+                                const editingDocInvalid = isDocumentInvalid(getVal(docTypeKey), getVal(docKey))
+                                const viewDocInvalid = isDocumentInvalid(lead[docTypeKey], lead[docKey])
+                                const docInvalid = isEditingPersonalInfo ? editingDocInvalid : viewDocInvalid
 
                                 return (
                                     <div className="space-y-4">
@@ -2280,12 +2307,15 @@ export function LeadDetailModal({
                                             <div className="space-y-1.5">
                                                 <Label className="text-xs text-muted-foreground">Documento</Label>
                                                 {isEditingPersonalInfo ? (
-                                                    <Input value={getVal(docKey)} onChange={e => setVal(docKey, e.target.value)} className="h-8 text-xs" />
+                                                    <Input value={getVal(docKey)} onChange={e => setVal(docKey, e.target.value)} className={`h-8 text-xs ${docInvalid ? "border-red-500 text-red-600 focus-visible:ring-red-500" : ""}`} />
                                                 ) : (
                                                     <div className="flex items-center gap-2 text-sm min-h-[2rem]">
-                                                        <span className="truncate">{lead[docKey] || "—"}</span>
+                                                        <span className={`truncate ${docInvalid ? "text-red-600" : ""}`}>{lead[docKey] || "—"}</span>
                                                         {lead[docKey] && <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => copyToClipboard(lead[docKey], "Documento")}><Copy className="h-3 w-3" /></Button>}
                                                     </div>
+                                                )}
+                                                {docInvalid && (
+                                                    <div className="text-xs text-red-600">Número de documento no válido</div>
                                                 )}
                                             </div>
                                         </div>

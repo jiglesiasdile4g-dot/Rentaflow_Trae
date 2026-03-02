@@ -39,6 +39,7 @@ import { LeadApproveWrapper } from "@/components/lead-approve-wrapper"
 import { LeadDenyWrapper } from "@/components/lead-deny-wrapper"
 import { ProposeVisitDialog } from "@/components/propose-visit-dialog"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
+import { isDocumentInvalid } from "@/lib/lead-validation"
 import { 
   generateSlotCandidates, 
   isOverlapping 
@@ -1723,11 +1724,37 @@ export default function LeadsPage() {
       
       if (signal?.aborted) return
 
+      const hasInvalidDoc = (lead: any) => {
+        return [
+          isDocumentInvalid(lead?.Tipo_Documento, lead?.Documento),
+          isDocumentInvalid(lead?.Tipo_Documento_2, lead?.Documento_2),
+          isDocumentInvalid(lead?.Tipo_Documento_3, lead?.Documento_3),
+          isDocumentInvalid(lead?.["Tipo_Documento 4"], lead?.Documento_4),
+        ].some(Boolean)
+      }
+      const invalidToFix = baseRows.filter((lead: any) => {
+        const s = String(lead?.Estado || "")
+        return (s === "Datos Completos" || s === "Datos Completas" || s === "Pendiente" || s === "" || s === "null") && hasInvalidDoc(lead)
+      })
+      if (invalidToFix.length > 0) {
+        try {
+          await Promise.all(
+            invalidToFix.map((lead: any) =>
+              supabase.from("Clientes").update({ Estado: "Datos Incompletos" }).eq("id", lead.id)
+            )
+          )
+          const invalidIds = new Set(invalidToFix.map((l: any) => String(l.id)))
+          baseRows = baseRows.map((l: any) => (invalidIds.has(String(l.id)) ? { ...l, Estado: "Datos Incompletos" } : l))
+        } catch (e) {
+          console.error("[v0] Error corrigiendo estados inválidos:", e)
+        }
+      }
+
       const toCorrect = baseRows.filter((lead: any) => {
         const s = String(lead?.Estado || "")
         // Only auto-correct if status is "Datos Incompletos" or empty/null
         // Do NOT overwrite advanced statuses like "Visita Propuesta", "Aceptado", etc.
-        return (s === "Datos Incompletos" || s === "" || s === "null") && isPersona1CompleteExceptCP(lead)
+        return (s === "Datos Incompletos" || s === "" || s === "null") && isPersona1CompleteExceptCP(lead) && !hasInvalidDoc(lead)
       })
       console.log("[regla-cp] candidates_to_correct", toCorrect.length)
       if (toCorrect.length > 0) {
@@ -2153,7 +2180,16 @@ export default function LeadsPage() {
       setLeads(leads.map((lead) => (lead.id === selectedLead.id ? updatedLead : lead)))
       setIsEditingPersonalInfo(false)
 
-      if (isPersona1CompleteExceptCP(updatedLead)) {
+      const hasInvalidDoc = [
+        isDocumentInvalid(updatedLead.Tipo_Documento, updatedLead.Documento),
+        isDocumentInvalid(updatedLead.Tipo_Documento_2, updatedLead.Documento_2),
+        isDocumentInvalid(updatedLead.Tipo_Documento_3, updatedLead.Documento_3),
+        isDocumentInvalid(updatedLead["Tipo_Documento 4"], updatedLead.Documento_4),
+      ].some(Boolean)
+      if (hasInvalidDoc) {
+        await updateLeadStatus(Number(selectedLead.id), "Datos Incompletos")
+        setSelectedLead({ ...updatedLead, Estado: "Datos Incompletos" })
+      } else if (isPersona1CompleteExceptCP(updatedLead)) {
         await updateLeadStatus(Number(selectedLead.id), "Datos Completos")
         setSelectedLead({ ...updatedLead, Estado: "Datos Completos" })
       }
@@ -2535,7 +2571,8 @@ export default function LeadsPage() {
       ]
       const stringsOk = requiredStrings.every((field) => field !== null && field !== undefined && String(field).trim() !== "")
       const ingresosOk = typeof lead.Ingresos === "number" ? lead.Ingresos > 0 : String(lead.Ingresos || "").trim() !== ""
-      return stringsOk && ingresosOk
+      const docInvalid = isDocumentInvalid(lead.Tipo_Documento, lead.Documento)
+      return stringsOk && ingresosOk && !docInvalid
     }
 
     const countPersonas = (lead: Lead) => {
@@ -2627,8 +2664,8 @@ export default function LeadsPage() {
 
         const { Observaciones, Obsevaciones, ...restLeadData } = newLeadFormData
         
-        // Initial status history entry
-        const initialStatus = newLeadFormData.Estado || "Pendiente"
+        const docInvalid = isDocumentInvalid(newLeadFormData.Tipo_Documento, newLeadFormData.Documento)
+        const initialStatus = docInvalid ? "Datos Incompletos" : newLeadFormData.Estado || "Pendiente"
         const initialHistoryEntry = {
           status: initialStatus,
           timestamp: new Date().toISOString(),
@@ -2638,6 +2675,7 @@ export default function LeadsPage() {
 
         const leadData = {
           ...restLeadData,
+          Estado: initialStatus,
           ...(Observaciones || Obsevaciones ? { Obsevaciones: Observaciones ?? Obsevaciones } : {}),
           usuario: inmobiliariaId,
           created_at: new Date().toISOString(),
@@ -3890,7 +3928,13 @@ export default function LeadsPage() {
                             const isDescartado = lead.Estado === "Descartado"
                             const isAceptado = lead.Estado === "Aceptado"
                             const { percentage: completionPercentage, totalFields } = calculateCompleteness(lead)
-                            const isDataComplete = completionPercentage >= 80 // 80% or more is considered complete
+                            const docInvalid = [
+                              isDocumentInvalid(lead.Tipo_Documento, lead.Documento),
+                              isDocumentInvalid(lead.Tipo_Documento_2, lead.Documento_2),
+                              isDocumentInvalid(lead.Tipo_Documento_3, lead.Documento_3),
+                              isDocumentInvalid(lead["Tipo_Documento 4"], lead.Documento_4),
+                            ].some(Boolean)
+                            const isDataComplete = completionPercentage >= 80 && !docInvalid
                             const personaCount = countPersonas(lead)
 
                             // Add checkbox for individual selection
@@ -3951,24 +3995,22 @@ export default function LeadsPage() {
 
                                           <div className="flex items-center gap-1.5">
                                             {(() => {
-                                              // Promote "Visita Propuesta" with a date to "Visita Confirmada" for display
                                               const currentStatus = String(lead.Estado || "").trim()
                                               const hasDate = Boolean(lead.fecha_de_visita)
-                                              const effectiveStatus = (currentStatus === "Visita Propuesta" && hasDate) 
-                                                ? "Visita Confirmada" 
-                                                : lead.Estado
+                                              const statusForDisplay = docInvalid
+                                                ? "Datos Incompletos"
+                                                : (currentStatus === "Visita Propuesta" && hasDate)
+                                                  ? "Visita Confirmada"
+                                                  : (currentStatus || "Pendiente")
 
-                                              const statusColors = getStatusColors(effectiveStatus)
-                                              const showEstadoBadge =
-                                                lead.Estado &&
-                                                lead.Estado !== "Datos Incompletos" &&
-                                                lead.Estado !== "Completo"
+                                              const statusColors = getStatusColors(statusForDisplay)
+                                              const showEstadoBadge = Boolean(statusForDisplay) && statusForDisplay !== "Completo"
 
                                             if (showEstadoBadge) {
                                               return (
                                                 <div
                                                   className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
-                                                    ["Visita Propuesta", "Visita Confirmada", "Completo", "Completado"].includes(String(effectiveStatus || "")) ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
+                                                    ["Visita Propuesta", "Visita Confirmada", "Completo", "Completado"].includes(String(statusForDisplay || "")) ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
                                                   }`}
                                                   style={{
                                                     backgroundColor: statusColors.bg,
@@ -3976,7 +4018,7 @@ export default function LeadsPage() {
                                                   }}
                                                   onClick={async () => {
                                                     console.log("[v0] Estado div clicked, Estado:", lead.Estado)
-                                                    if (lead.Estado === "Visita Propuesta" || lead.Estado === "Visita Confirmada") {
+                                                    if (statusForDisplay === "Visita Propuesta" || statusForDisplay === "Visita Confirmada") {
                                                       console.log("[v0] Opening visit date dialog for lead:", lead.Nombre, lead.Apellidos)
                                                       console.log("[v0] Current fecha_de_visita:", lead.fecha_de_visita)
                                                   setSelectedLeadForVisit(lead)
@@ -3996,7 +4038,7 @@ export default function LeadsPage() {
                                                       }
                                                       setVisitDateDialogOpen(true)
                                                       console.log("[v0] Dialog should now be open")
-                                                    } else if (lead.Estado === "Completo" || lead.Estado === "Completado") {
+                                                    } else if (statusForDisplay === "Completo" || statusForDisplay === "Completado") {
                                                       setSelectedLeadForVisit(lead)
                                                       setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
                                                       if (lead.fecha_de_visita) {
@@ -4020,10 +4062,10 @@ export default function LeadsPage() {
                                                       className="text-xs font-semibold"
                                                       style={{ color: statusColors.text }}
                                                     >
-                                                      {effectiveStatus === "Aceptado" ? "✓ " : ""}
-                                                      {(effectiveStatus === "Visita Propuesta" || effectiveStatus === "Visita Confirmada") && lead.fecha_de_visita ? (
+                                                      {statusForDisplay === "Aceptado" ? "✓ " : ""}
+                                                      {(statusForDisplay === "Visita Propuesta" || statusForDisplay === "Visita Confirmada") && lead.fecha_de_visita ? (
                                                         <>
-                                                          {effectiveStatus} -{" "}
+                                                          {statusForDisplay} -{" "}
                                                           {formatDate(lead.fecha_de_visita) + " " + new Date(lead.fecha_de_visita).toLocaleTimeString("es-ES", {
                                                             hour: "2-digit",
                                                             minute: "2-digit"
@@ -4369,7 +4411,13 @@ export default function LeadsPage() {
                           const isDescartado = lead.Estado === "Descartado"
                           const isAceptado = lead.Estado === "Aceptado"
                           const { percentage: completionPercentage } = calculateCompleteness(lead)
-                          const isDataComplete = completionPercentage >= 80 // 80% or more is considered complete
+                          const docInvalid = [
+                            isDocumentInvalid(lead.Tipo_Documento, lead.Documento),
+                            isDocumentInvalid(lead.Tipo_Documento_2, lead.Documento_2),
+                            isDocumentInvalid(lead.Tipo_Documento_3, lead.Documento_3),
+                            isDocumentInvalid(lead["Tipo_Documento 4"], lead.Documento_4),
+                          ].some(Boolean)
+                          const isDataComplete = completionPercentage >= 80 && !docInvalid
                           const personaCount = countPersonas(lead)
                           const isSelected = selectedLeadIds.includes(lead.id)
 
@@ -4422,17 +4470,21 @@ export default function LeadsPage() {
 
                                         <div className="flex items-center gap-1.5">
                                           {(() => {
-                                            const statusColors = getStatusColors(lead.Estado)
-                                            const showEstadoBadge =
-                                              lead.Estado &&
-                                              lead.Estado !== "Datos Incompletos" &&
-                                              lead.Estado !== "Completo"
+                                            const currentStatus = String(lead.Estado || "").trim()
+                                            const hasDate = Boolean(lead.fecha_de_visita)
+                                            const statusForDisplay = docInvalid
+                                              ? "Datos Incompletos"
+                                              : (currentStatus === "Visita Propuesta" && hasDate)
+                                                ? "Visita Confirmada"
+                                                : (currentStatus || "Pendiente")
+                                            const statusColors = getStatusColors(statusForDisplay)
+                                            const showEstadoBadge = Boolean(statusForDisplay) && statusForDisplay !== "Completo"
 
                                             if (showEstadoBadge) {
                                               return (
                                                 <div
                                                     className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
-                                                      ["Visita Propuesta", "Visita Confirmada", "Datos Completos", "Completo", "Completado"].includes(String(lead.Estado || "")) ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
+                                                      ["Visita Propuesta", "Visita Confirmada", "Datos Completos", "Completo", "Completado"].includes(String(statusForDisplay || "")) ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
                                                     }`}
                                                   style={{
                                                     backgroundColor: statusColors.bg,
@@ -4440,7 +4492,7 @@ export default function LeadsPage() {
                                                   }}
                                                     onClick={async () => {
                                                       console.log("[v0] Estado div clicked, Estado:", lead.Estado)
-                                                      if (lead.Estado === "Visita Propuesta" || lead.Estado === "Visita Confirmada") {
+                                                      if (statusForDisplay === "Visita Propuesta" || statusForDisplay === "Visita Confirmada") {
                                                         console.log("[v0] Opening visit date dialog for lead:", lead.Nombre, lead.Apellidos)
                                                       console.log("[v0] Current fecha_de_visita:", lead.fecha_de_visita)
                                                     setSelectedLeadForVisit(lead)
@@ -4460,7 +4512,7 @@ export default function LeadsPage() {
                                                       }
                                                       setVisitDateDialogOpen(true)
                                                         console.log("[v0] Dialog should now be open")
-                                                      } else if (lead.Estado === "Datos Completos" || lead.Estado === "Completo" || lead.Estado === "Completado") {
+                                                      } else if (statusForDisplay === "Datos Completos" || statusForDisplay === "Completo" || statusForDisplay === "Completado") {
                                                         setSelectedLeadForVisit(lead)
                                                         setSelectedAgenteId(lead.idag ? String(lead.idag) : "")
                                                         if (lead.fecha_de_visita) {
@@ -4486,11 +4538,11 @@ export default function LeadsPage() {
                                                     className="text-xs font-semibold"
                                                     style={{ color: statusColors.text }}
                                                   >
-                                                    {lead.Estado === "Aceptado" ? "✓ " : ""}
+                                                    {statusForDisplay === "Aceptado" ? "✓ " : ""}
                                                     {/* Show only the visit date without "Visita Propuesta" text */}
-                                                    {(lead.Estado === "Visita Propuesta" || lead.Estado === "Visita Confirmada") && lead.fecha_de_visita ? (
+                                                    {(statusForDisplay === "Visita Propuesta" || statusForDisplay === "Visita Confirmada") && lead.fecha_de_visita ? (
                                                       <>
-                                                          {lead.Estado} -{" "}
+                                                          {statusForDisplay} -{" "}
                                                           {formatDate(lead.fecha_de_visita) + " " + new Date(lead.fecha_de_visita).toLocaleTimeString("es-ES", {
                                                             hour: "2-digit",
                                                             minute: "2-digit"
@@ -5273,12 +5325,17 @@ export default function LeadsPage() {
                                     value={editFormData.Documento || ""}
                                     onChange={(e) => setEditFormData({ ...editFormData, Documento: e.target.value })}
                                     placeholder="12345678A"
-                                    className="h-9 text-sm"
+                                    className={`h-9 text-sm ${isDocumentInvalid(editFormData.Tipo_Documento, editFormData.Documento) ? "border-red-500 text-red-600 focus-visible:ring-red-500" : ""}`}
                                   />
                                 ) : (
-                                  <div className={`text-sm ${selectedLead.Documento ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                  <div className={`text-sm ${selectedLead.Documento ? "not-italic text-foreground" : "italic text-muted-foreground"} ${isDocumentInvalid(selectedLead.Tipo_Documento, selectedLead.Documento) ? "text-red-600" : ""}`}>
                                     {selectedLead.Documento || "No proporcionado"}
                                   </div>
+                                )}
+                                {(isEditingPersonalInfo
+                                  ? isDocumentInvalid(editFormData.Tipo_Documento, editFormData.Documento)
+                                  : isDocumentInvalid(selectedLead.Tipo_Documento, selectedLead.Documento)) && (
+                                  <div className="text-xs text-red-600">Número de documento no válido</div>
                                 )}
                               </div>
                               <div style={{ flex: "2" }}></div>
@@ -5542,12 +5599,17 @@ export default function LeadsPage() {
                                     value={editFormData.Documento_2 || ""}
                                     onChange={(e) => setEditFormData({ ...editFormData, Documento_2: e.target.value })}
                                     placeholder="12345678A"
-                                    className="h-9 text-sm"
+                                    className={`h-9 text-sm ${isDocumentInvalid(editFormData.Tipo_Documento_2, editFormData.Documento_2) ? "border-red-500 text-red-600 focus-visible:ring-red-500" : ""}`}
                                   />
                                 ) : (
-                                  <div className={`text-sm ${selectedLead.Documento_2 ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                  <div className={`text-sm ${selectedLead.Documento_2 ? "not-italic text-foreground" : "italic text-muted-foreground"} ${isDocumentInvalid(selectedLead.Tipo_Documento_2, selectedLead.Documento_2) ? "text-red-600" : ""}`}>
                                     {selectedLead.Documento_2 || "No especificado"}
                                   </div>
+                                )}
+                                {(isEditingPersonalInfo
+                                  ? isDocumentInvalid(editFormData.Tipo_Documento_2, editFormData.Documento_2)
+                                  : isDocumentInvalid(selectedLead.Tipo_Documento_2, selectedLead.Documento_2)) && (
+                                  <div className="text-xs text-red-600">Número de documento no válido</div>
                                 )}
                               </div>
                             </div>
@@ -5791,12 +5853,17 @@ export default function LeadsPage() {
                                     value={editFormData.Documento_4 || ""}
                                     onChange={(e) => setEditFormData({ ...editFormData, Documento_4: e.target.value })}
                                     placeholder="12345678A"
-                                    className="h-9 text-sm"
+                                    className={`h-9 text-sm ${isDocumentInvalid(editFormData["Tipo_Documento 4"], editFormData.Documento_4) ? "border-red-500 text-red-600 focus-visible:ring-red-500" : ""}`}
                                   />
                                 ) : (
-                                  <div className={`text-sm ${selectedLead.Documento_4 ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                  <div className={`text-sm ${selectedLead.Documento_4 ? "not-italic text-foreground" : "italic text-muted-foreground"} ${isDocumentInvalid(selectedLead["Tipo_Documento 4"], selectedLead.Documento_4) ? "text-red-600" : ""}`}>
                                     {selectedLead.Documento_4 || "No especificado"}
                                   </div>
+                                )}
+                                {(isEditingPersonalInfo
+                                  ? isDocumentInvalid(editFormData["Tipo_Documento 4"], editFormData.Documento_4)
+                                  : isDocumentInvalid(selectedLead["Tipo_Documento 4"], selectedLead.Documento_4)) && (
+                                  <div className="text-xs text-red-600">Número de documento no válido</div>
                                 )}
                               </div>
                             </div>
@@ -6038,12 +6105,17 @@ export default function LeadsPage() {
                                     value={editFormData.Documento_3 || ""}
                                     onChange={(e) => setEditFormData({ ...editFormData, Documento_3: e.target.value })}
                                     placeholder="12345678A"
-                                    className="h-9 text-sm"
+                                    className={`h-9 text-sm ${isDocumentInvalid(editFormData.Tipo_Documento_3, editFormData.Documento_3) ? "border-red-500 text-red-600 focus-visible:ring-red-500" : ""}`}
                                   />
                                 ) : (
-                                  <div className={`text-sm ${selectedLead.Documento_3 ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                  <div className={`text-sm ${selectedLead.Documento_3 ? "not-italic text-foreground" : "italic text-muted-foreground"} ${isDocumentInvalid(selectedLead.Tipo_Documento_3, selectedLead.Documento_3) ? "text-red-600" : ""}`}>
                                     {selectedLead.Documento_3 || "No especificado"}
                                   </div>
+                                )}
+                                {(isEditingPersonalInfo
+                                  ? isDocumentInvalid(editFormData.Tipo_Documento_3, editFormData.Documento_3)
+                                  : isDocumentInvalid(selectedLead.Tipo_Documento_3, selectedLead.Documento_3)) && (
+                                  <div className="text-xs text-red-600">Número de documento no válido</div>
                                 )}
                               </div>
                             </div>
@@ -6767,8 +6839,11 @@ export default function LeadsPage() {
                         value={newLeadFormData.Documento || ""}
                         onChange={(e) => setNewLeadFormData({ ...newLeadFormData, Documento: e.target.value })}
                         placeholder="12345678A"
-                        className="h-9 text-sm"
+                        className={`h-9 text-sm ${isDocumentInvalid(newLeadFormData.Tipo_Documento, newLeadFormData.Documento) ? "border-red-500 text-red-600 focus-visible:ring-red-500" : ""}`}
                       />
+                      {isDocumentInvalid(newLeadFormData.Tipo_Documento, newLeadFormData.Documento) && (
+                        <div className="text-xs text-red-600">Número de documento no válido</div>
+                      )}
                     </div>
                   </div>
                 </CardContent>
