@@ -32,8 +32,9 @@ export async function listComunicaciones() {
   } catch {}
 
   let query = supabase.from("comunicaciones").select("*").order("created_at", { ascending: false }).limit(200)
-  if (!isAdmin && inmobiliariaId != null) {
-    query = query.eq("inmobiliaria", String(inmobiliariaId))
+  if (inmobiliariaId != null) {
+    const inmobiliariaValue = String(inmobiliariaId)
+    query = query.eq("inmobiliaria", inmobiliariaValue)
   }
 
   const { data, error } = await query
@@ -41,6 +42,15 @@ export async function listComunicaciones() {
     const message = error.message || "Error al cargar comunicaciones"
     if (message.toLowerCase().includes("permission") || message.toLowerCase().includes("rls")) {
       if (adminData && isAdmin) {
+        if (inmobiliariaId != null) {
+          const inmobiliariaValue = String(inmobiliariaId)
+          const filtered = adminData.filter((row: any) => {
+            if (row == null) return false
+            if (row.inmobiliaria != null && String(row.inmobiliaria) === inmobiliariaValue) return true
+            return false
+          })
+          return { data: filtered, columns: [], error: null }
+        }
         return { data: adminData || [], columns: [], error: null }
       }
       return { data: [], columns: [], error: message }
@@ -49,6 +59,15 @@ export async function listComunicaciones() {
   }
 
   if (isAdmin && adminData && adminData.length > 0 && (!data || data.length === 0)) {
+    if (inmobiliariaId != null) {
+      const inmobiliariaValue = String(inmobiliariaId)
+      const filtered = adminData.filter((row: any) => {
+        if (row == null) return false
+        if (row.inmobiliaria != null && String(row.inmobiliaria) === inmobiliariaValue) return true
+        return false
+      })
+      return { data: filtered, columns: [], error: null }
+    }
     return { data: adminData, columns: [], error: null }
   }
 
@@ -76,8 +95,9 @@ export async function createComunicacion(payload: Record<string, any>) {
   const inmobiliariaId = profile?.inmobiliaria ?? null
 
   const nextPayload = { ...payload }
-  if (!isAdmin && inmobiliariaId != null && !nextPayload.inmobiliaria) {
-    nextPayload.inmobiliaria = String(inmobiliariaId)
+  if (inmobiliariaId != null) {
+    const inmobiliariaValue = String(inmobiliariaId)
+    if (!nextPayload.inmobiliaria) nextPayload.inmobiliaria = inmobiliariaValue
   }
 
   const { error } = await supabase.from("comunicaciones").insert([nextPayload])

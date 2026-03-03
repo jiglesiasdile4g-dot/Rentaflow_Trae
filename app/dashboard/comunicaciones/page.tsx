@@ -66,6 +66,7 @@ export default function ComunicacionesPage() {
   const [filterQuery, setFilterQuery] = useState("")
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isCreatingNew, setIsCreatingNew] = useState(false)
   const wysiwygRef = useRef<HTMLDivElement | null>(null)
   const htmlEditorRef = useRef<HTMLTextAreaElement | null>(null)
   const editPreviewRef = useRef<HTMLDivElement | null>(null)
@@ -462,6 +463,7 @@ export default function ComunicacionesPage() {
       const keyField = getKeyField(row, columns)
       setSelectedId(row[keyField])
       setEditDraft(buildDraft(draftFieldColumns.length > 0 ? draftFieldColumns : fallbackDraftColumns, row))
+      setIsCreatingNew(false)
     },
     [columns, draftFieldColumns]
   )
@@ -469,10 +471,11 @@ export default function ComunicacionesPage() {
   useEffect(() => {
     if (loading) return
     if (filteredRows.length === 0) return
+    if (isCreatingNew) return
     const hasSelected = selectedId != null && filteredRows.some((row) => String(row[listKeyField]) === String(selectedId))
     if (hasSelected) return
     handleSelect(filteredRows[0])
-  }, [filteredRows, handleSelect, listKeyField, loading, selectedId])
+  }, [filteredRows, handleSelect, isCreatingNew, listKeyField, loading, selectedId])
 
   const handleUpdate = async () => {
     if (!selectedId) return
@@ -507,6 +510,31 @@ export default function ComunicacionesPage() {
       setSaving(false)
     }
   }
+
+  const handleCancelEdit = useCallback(() => {
+    if (!selectedId) {
+      setIsEditOpen(false)
+      return
+    }
+    const row = rows.find((r) => String(r[getKeyField(r, columns)]) === String(selectedId))
+    if (row) {
+      setEditDraft(buildDraft(draftFieldColumns.length > 0 ? draftFieldColumns : fallbackDraftColumns, row))
+    }
+    setActivePanel(null)
+    setActiveLine(null)
+    setActiveRange(null)
+    setIsEditOpen(false)
+  }, [columns, draftFieldColumns, rows, selectedId])
+
+  const handleCancelCreate = useCallback(() => {
+    const nextDraftColumns = columns.filter((c) => draftFieldNames.includes(c.name))
+    setNewDraft(buildDraft(nextDraftColumns.length > 0 ? nextDraftColumns : fallbackDraftColumns))
+    setActivePanel(null)
+    setActiveLine(null)
+    setActiveRange(null)
+    setIsCreatingNew(false)
+    setIsCreateOpen(false)
+  }, [columns])
 
   const renderField = (col: ColumnDef, draft: Record<string, any>, setDraft: (v: Record<string, any>) => void) => {
     const value = draft[col.name]
@@ -594,6 +622,7 @@ export default function ComunicacionesPage() {
               <Button
                 variant="outline"
                 onClick={() => {
+                  setIsCreatingNew(true)
                   setSelectedId(null)
                   const nextDraftColumns = columns.filter((c) => draftFieldNames.includes(c.name))
                   setNewDraft(buildDraft(nextDraftColumns.length > 0 ? nextDraftColumns : fallbackDraftColumns))
@@ -871,15 +900,25 @@ export default function ComunicacionesPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             {selectedId ? (
-              <Button onClick={handleUpdate} disabled={saving || !selectedId}>
-                <Save className="h-4 w-4 mr-2" />
-                Guardar cambios
-              </Button>
+              <>
+                <Button onClick={handleUpdate} disabled={saving || !selectedId}>
+                  <Save className="h-4 w-4 mr-2" />
+                  Guardar cambios
+                </Button>
+                <Button variant="outline" onClick={handleCancelEdit} disabled={saving}>
+                  Cancelar
+                </Button>
+              </>
             ) : (
-              <Button onClick={handleCreate} disabled={saving || (!newDraft.titulo_comunicacion && !newDraft.subject)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Crear
-              </Button>
+              <>
+                <Button onClick={handleCreate} disabled={saving || (!newDraft.titulo_comunicacion && !newDraft.subject)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Crear
+                </Button>
+                <Button variant="outline" onClick={handleCancelCreate} disabled={saving}>
+                  Cancelar
+                </Button>
+              </>
             )}
           </div>
           </div>
@@ -919,6 +958,9 @@ export default function ComunicacionesPage() {
             </div>
           </div>
           <DialogFooter>
+            <Button variant="outline" onClick={handleCancelEdit} disabled={saving}>
+              Cancelar
+            </Button>
             <Button onClick={handleUpdate} disabled={saving || !selectedId}>
               <Save className="h-4 w-4 mr-2" />
               Guardar cambios
@@ -960,6 +1002,9 @@ export default function ComunicacionesPage() {
             </div>
           </div>
           <DialogFooter>
+            <Button variant="outline" onClick={handleCancelCreate} disabled={saving}>
+              Cancelar
+            </Button>
             <Button onClick={handleCreate} disabled={saving || (modalFieldColumns.length === 0 && fallbackModalColumns.length === 0)}>
               <Plus className="h-4 w-4 mr-2" />
               Crear
