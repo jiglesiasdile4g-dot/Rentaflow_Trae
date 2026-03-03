@@ -42,6 +42,7 @@ const isVisitCompleted = (status: any) => {
 
 export function InmobiliariaStatsModal({ idi }: { idi?: number | null }) {
    const supabase = createClient()
+   const [mounted, setMounted] = useState(false)
    const [statsPeriod, setStatsPeriod] = useState<StatsPeriod>("esteMes")
    const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>(undefined)
    const [customCalendarMonth, setCustomCalendarMonth] = useState<Date>(() => new Date())
@@ -263,6 +264,10 @@ export function InmobiliariaStatsModal({ idi }: { idi?: number | null }) {
      setConsumptionMetrics({ leads: count, tiempoAhorrado: tiempo, planUtilizado: planUsed, whatsappsEnviados, emailsEnviados })
   }, [statsLeads, statsEmails, statsWhatsapps, planResetAt, planLimit])
  
+   useEffect(() => {
+     setMounted(true)
+   }, [])
+
    useEffect(() => {
      const now = new Date()
      const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0)
@@ -605,107 +610,124 @@ export function InmobiliariaStatsModal({ idi }: { idi?: number | null }) {
                 {period.label}
               </button>
             ))}
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  onClick={() => {
-                    setStatsPeriod("custom")
-                  }}
-                  className={cn(
-                    "inline-flex items-center justify-center whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] rounded-md gap-1.5 h-6 text-[10px] px-2 font-medium",
-                    statsPeriod === "custom"
-                      ? "bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/30 hover:bg-primary/90"
-                      : "text-foreground/70 hover:text-foreground hover:bg-accent dark:hover:bg-accent/50",
-                  )}
-                >
-                  <CalendarIcon className="w-3 h-3 mr-1" />
-                  Personalizado
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
-                <div className="rounded-md border shadow-sm p-4 bg-background">
-                  <div className="flex items-center justify-between mb-3">
-                    <button type="button" className="inline-flex items-center justify-center rounded-md border border-input bg-background shadow-sm h-7 w-7 hover:bg-accent hover:text-accent-foreground" onClick={() => setCustomCalendarMonth(addMonths(customCalendarMonth, -1))}>
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <div className="text-sm font-medium capitalize">{format(customCalendarMonth, "MMMM yyyy", { locale: es })}</div>
-                    <button type="button" className="inline-flex items-center justify-center rounded-md border border-input bg-background shadow-sm h-7 w-7 hover:bg-accent hover:text-accent-foreground" onClick={() => setCustomCalendarMonth(addMonths(customCalendarMonth, 1))}>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    {[customCalendarMonth, addMonths(customCalendarMonth, 1)].map((monthDate, monthIndex) => (
-                      <div key={monthIndex}>
-                        <div className="text-xs font-medium text-muted-foreground mb-2 capitalize text-center">{format(monthDate, "MMMM yyyy", { locale: es })}</div>
-                        <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-muted-foreground mb-2">
-                          {weekDays.map((dayLabel, idx) => (
-                            <div key={`${monthIndex}-${idx}`} className="h-4 flex items-center justify-center">
-                              {dayLabel}
-                            </div>
-                          ))}
-                        </div>
-                        <TooltipProvider>
-                          <div className="grid grid-cols-7 gap-1">
-                            {buildMonthDays(monthDate).map((day) => {
-                              const from = customDateRange?.from
-                              const to = customDateRange?.to
-                              const inMonth = isSameMonth(day, monthDate)
-                              const isStart = from && isSameDay(day, from)
-                              const isEnd = to && isSameDay(day, to)
-                              const inRange = from && to && isWithinInterval(day, { start: from, end: to })
-                              const isMiddle = inRange && !isStart && !isEnd
-                              const isSelected = isStart || isEnd || (from && !to && isSameDay(day, from))
-                              const ratio = (() => {
-                                if (!activityStartDate || activityData.length === 0) return 0
-                                const d = new Date(day)
-                                d.setHours(0, 0, 0, 0)
-                                const diffDays = differenceInCalendarDays(d, activityStartDate)
-                                if (diffDays < 0 || diffDays >= activityData.length) return 0
-                                const max = Math.max(...activityData, 1)
-                                return activityData[diffDays] / max
-                              })()
-                              const activityClass = ratio <= 0 ? "" : ratio < 0.25 ? "bg-emerald-100/80" : ratio < 0.5 ? "bg-emerald-200/80" : ratio < 0.75 ? "bg-emerald-300/80" : "bg-emerald-400/80"
-                              if (!inMonth) return <div key={day.toISOString()} className="h-9 w-9" />
-                              return (
-                                <UITooltip key={day.toISOString()} delayDuration={0}>
-                                  <TooltipTrigger asChild>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCustomDayClick(day)}
-                                      className={cn(
-                                        "relative h-9 w-9 rounded-md text-sm font-medium transition-colors",
-                                        "flex items-center justify-center",
-                                        isSelected && "bg-stone-300/80 text-stone-950 dark:bg-stone-700/60 dark:text-stone-50",
-                                        isMiddle && "bg-stone-300/80 text-stone-950 dark:bg-stone-700/60 dark:text-stone-50",
-                                        !isSelected && !isMiddle && activityClass,
-                                        !isSelected && !isMiddle && "hover:bg-accent hover:text-accent-foreground",
-                                      )}
-                                    >
-                                      {(isSelected || isMiddle) && <span className={cn("absolute inset-0 rounded-md bg-stone-300/80 dark:bg-stone-700/60")} />}
-                                      <span className={cn("relative z-10", isMiddle ? "text-stone-950 dark:text-stone-50" : "")}>{format(day, "d")}</span>
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top" className="z-[9999]">
-                                    <p>{(() => {
-                                      if (!activityStartDate || activityData.length === 0) return 0
-                                      const d = new Date(day)
-                                      d.setHours(0, 0, 0, 0)
-                                      const diffDays = differenceInCalendarDays(d, activityStartDate)
-                                      if (diffDays < 0 || diffDays >= activityData.length) return 0
-                                      return activityData[diffDays]
-                                    })()} leads</p>
-                                  </TooltipContent>
-                                </UITooltip>
-                              )
-                            })}
+            {mounted ? (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    onClick={() => {
+                      setStatsPeriod("custom")
+                    }}
+                    className={cn(
+                      "inline-flex items-center justify-center whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] rounded-md gap-1.5 h-6 text-[10px] px-2 font-medium",
+                      statsPeriod === "custom"
+                        ? "bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/30 hover:bg-primary/90"
+                        : "text-foreground/70 hover:text-foreground hover:bg-accent dark:hover:bg-accent/50",
+                    )}
+                  >
+                    <CalendarIcon className="w-3 h-3 mr-1" />
+                    Personalizado
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="end">
+                  <div className="rounded-md border shadow-sm p-4 bg-background">
+                    <div className="flex items-center justify-between mb-3">
+                      <button type="button" className="inline-flex items-center justify-center rounded-md border border-input bg-background shadow-sm h-7 w-7 hover:bg-accent hover:text-accent-foreground" onClick={() => setCustomCalendarMonth(addMonths(customCalendarMonth, -1))}>
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <div className="text-sm font-medium capitalize">{format(customCalendarMonth, "MMMM yyyy", { locale: es })}</div>
+                      <button type="button" className="inline-flex items-center justify-center rounded-md border border-input bg-background shadow-sm h-7 w-7 hover:bg-accent hover:text-accent-foreground" onClick={() => setCustomCalendarMonth(addMonths(customCalendarMonth, 1))}>
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      {[customCalendarMonth, addMonths(customCalendarMonth, 1)].map((monthDate, monthIndex) => (
+                        <div key={monthIndex}>
+                          <div className="text-xs font-medium text-muted-foreground mb-2 capitalize text-center">{format(monthDate, "MMMM yyyy", { locale: es })}</div>
+                          <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-muted-foreground mb-2">
+                            {weekDays.map((dayLabel, idx) => (
+                              <div key={`${monthIndex}-${idx}`} className="h-4 flex items-center justify-center">
+                                {dayLabel}
+                              </div>
+                            ))}
                           </div>
-                        </TooltipProvider>
-                      </div>
-                    ))}
+                          <TooltipProvider>
+                            <div className="grid grid-cols-7 gap-1">
+                              {buildMonthDays(monthDate).map((day) => {
+                                const from = customDateRange?.from
+                                const to = customDateRange?.to
+                                const inMonth = isSameMonth(day, monthDate)
+                                const isStart = from && isSameDay(day, from)
+                                const isEnd = to && isSameDay(day, to)
+                                const inRange = from && to && isWithinInterval(day, { start: from, end: to })
+                                const isMiddle = inRange && !isStart && !isEnd
+                                const isSelected = isStart || isEnd || (from && !to && isSameDay(day, from))
+                                const ratio = (() => {
+                                  if (!activityStartDate || activityData.length === 0) return 0
+                                  const d = new Date(day)
+                                  d.setHours(0, 0, 0, 0)
+                                  const diffDays = differenceInCalendarDays(d, activityStartDate)
+                                  if (diffDays < 0 || diffDays >= activityData.length) return 0
+                                  const max = Math.max(...activityData, 1)
+                                  return activityData[diffDays] / max
+                                })()
+                                const activityClass = ratio <= 0 ? "" : ratio < 0.25 ? "bg-emerald-100/80" : ratio < 0.5 ? "bg-emerald-200/80" : ratio < 0.75 ? "bg-emerald-300/80" : "bg-emerald-400/80"
+                                if (!inMonth) return <div key={day.toISOString()} className="h-9 w-9" />
+                                return (
+                                  <UITooltip key={day.toISOString()} delayDuration={0}>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCustomDayClick(day)}
+                                        className={cn(
+                                          "relative h-9 w-9 rounded-md text-sm font-medium transition-colors",
+                                          "flex items-center justify-center",
+                                          isSelected && "bg-stone-300/80 text-stone-950 dark:bg-stone-700/60 dark:text-stone-50",
+                                          isMiddle && "bg-stone-300/80 text-stone-950 dark:bg-stone-700/60 dark:text-stone-50",
+                                          !isSelected && !isMiddle && activityClass,
+                                          !isSelected && !isMiddle && "hover:bg-accent hover:text-accent-foreground",
+                                        )}
+                                      >
+                                        {(isSelected || isMiddle) && <span className={cn("absolute inset-0 rounded-md bg-stone-300/80 dark:bg-stone-700/60")} />}
+                                        <span className={cn("relative z-10", isMiddle ? "text-stone-950 dark:text-stone-50" : "")}>{format(day, "d")}</span>
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top" className="z-[9999]">
+                                      <p>{(() => {
+                                        if (!activityStartDate || activityData.length === 0) return 0
+                                        const d = new Date(day)
+                                        d.setHours(0, 0, 0, 0)
+                                        const diffDays = differenceInCalendarDays(d, activityStartDate)
+                                        if (diffDays < 0 || diffDays >= activityData.length) return 0
+                                        return activityData[diffDays]
+                                      })()} leads</p>
+                                    </TooltipContent>
+                                  </UITooltip>
+                                )
+                              })}
+                            </div>
+                          </TooltipProvider>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              </PopoverContent>
-            </Popover>
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <button
+                onClick={() => {
+                  setStatsPeriod("custom")
+                }}
+                className={cn(
+                  "inline-flex items-center justify-center whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] rounded-md gap-1.5 h-6 text-[10px] px-2 font-medium",
+                  statsPeriod === "custom"
+                    ? "bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/30 hover:bg-primary/90"
+                    : "text-foreground/70 hover:text-foreground hover:bg-accent dark:hover:bg-accent/50",
+                )}
+              >
+                <CalendarIcon className="w-3 h-3 mr-1" />
+                Personalizado
+              </button>
+            )}
           </div>
         </div>
       </div>

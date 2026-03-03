@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { redirect } from "next/navigation"
+import Link from "next/link"
 import { revalidatePath } from "next/cache"
 import { Suspense } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -630,6 +631,22 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
           </CardHeader>
           <CardContent>
             <NotificationSettings />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Mail className="h-5 w-5 text-muted-foreground" />
+              <CardTitle>Comunicaciones</CardTitle>
+            </div>
+            <CardDescription>Gestiona las plantillas y mensajes que envías</CardDescription>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between gap-4">
+            <div className="text-sm text-muted-foreground">Crea o edita comunicaciones para distintos escenarios</div>
+            <Button asChild>
+              <Link href="/dashboard/comunicaciones">Abrir comunicaciones</Link>
+            </Button>
           </CardContent>
         </Card>
 
