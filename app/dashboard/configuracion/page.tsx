@@ -416,7 +416,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
               </div>
               {userRoleLabel === "Administrador" && (
                 <div className="flex items-center gap-2">
-                  <form action={triggerVisitReminderAction} method="POST">
+                  <form action={triggerVisitReminderAction}>
                     <Button type="submit" size="sm" className="h-8 text-xs" variant="outline">
                       <Bell className="mr-2 h-3 w-3" />
                       Ejecutar recordatorio

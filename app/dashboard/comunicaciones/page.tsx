@@ -59,6 +59,8 @@ export default function ComunicacionesPage() {
   const [rows, setRows] = useState<Record<string, any>[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [sendingReview, setSendingReview] = useState(false)
+  const [reviewSent, setReviewSent] = useState(false)
   const [selectedId, setSelectedId] = useState<string | number | null>(null)
   const [editDraft, setEditDraft] = useState<Record<string, any>>({})
   const [newDraft, setNewDraft] = useState<Record<string, any>>({})
@@ -197,40 +199,6 @@ export default function ComunicacionesPage() {
     return value.slice(0, Math.min(position, value.length)).split("\n").length
   }
 
-  const getCaretOffsetInHtml = useCallback((el: HTMLDivElement) => {
-    const selection = window.getSelection()
-    if (!selection || selection.rangeCount === 0) return null
-    const range = selection.getRangeAt(0)
-    if (!el.contains(range.endContainer)) return null
-    const preRange = range.cloneRange()
-    preRange.selectNodeContents(el)
-    preRange.setEnd(range.endContainer, range.endOffset)
-    const container = document.createElement("div")
-    container.appendChild(preRange.cloneContents())
-    return container.innerHTML.length
-  }, [])
-
-  const getSelectionOffsetsInHtml = useCallback((el: HTMLDivElement) => {
-    const selection = window.getSelection()
-    if (!selection || selection.rangeCount === 0) return null
-    const range = selection.getRangeAt(0)
-    if (!el.contains(range.commonAncestorContainer)) return null
-    const startRange = range.cloneRange()
-    startRange.selectNodeContents(el)
-    startRange.setEnd(range.startContainer, range.startOffset)
-    const endRange = range.cloneRange()
-    endRange.selectNodeContents(el)
-    endRange.setEnd(range.endContainer, range.endOffset)
-    const startContainer = document.createElement("div")
-    startContainer.appendChild(startRange.cloneContents())
-    const endContainer = document.createElement("div")
-    endContainer.appendChild(endRange.cloneContents())
-    return {
-      start: startContainer.innerHTML.length,
-      end: endContainer.innerHTML.length,
-    }
-  }, [])
-
   const getCaretOffsetInText = useCallback((el: HTMLDivElement) => {
     const selection = window.getSelection()
     if (!selection || selection.rangeCount === 0) return null
@@ -265,45 +233,6 @@ export default function ComunicacionesPage() {
     }
   }, [])
 
-  const setSelectionInContentEditable = useCallback((el: HTMLDivElement, start: number, end: number) => {
-    const selection = window.getSelection()
-    if (!selection) return
-    const range = document.createRange()
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-    let current = 0
-    let node = walker.nextNode() as Text | null
-    let startNode: Text | null = null
-    let endNode: Text | null = null
-    let startOffset = 0
-    let endOffset = 0
-    while (node) {
-      const len = node.textContent?.length ?? 0
-      if (!startNode && current + len >= start) {
-        startNode = node
-        startOffset = Math.max(0, start - current)
-      }
-      if (!endNode && current + len >= end) {
-        endNode = node
-        endOffset = Math.max(0, end - current)
-        break
-      }
-      current += len
-      node = walker.nextNode() as Text | null
-    }
-    if (!startNode) {
-      selection.removeAllRanges()
-      return
-    }
-    if (!endNode) {
-      endNode = startNode
-      endOffset = startOffset
-    }
-    range.setStart(startNode, Math.min(startOffset, startNode.textContent?.length ?? 0))
-    range.setEnd(endNode, Math.min(endOffset, endNode.textContent?.length ?? 0))
-    selection.removeAllRanges()
-    selection.addRange(range)
-  }, [])
-
   const scrollOtherPanelToLine = useCallback(
     (panel: "html" | "preview", line: number) => {
       if (line <= 0) return
@@ -334,33 +263,14 @@ export default function ComunicacionesPage() {
       if (!htmlEl) return
       const value = htmlEl.value
       const index = text ? value.indexOf(text) : -1
-      if (index >= 0) {
-        isSyncingSelectionRef.current = true
-        htmlEl.setSelectionRange(index, index + text.length)
-        htmlEl.focus()
-        const lineStart = getLineFromPosition(value, index)
-        const lineEnd = getLineFromPosition(value, index + text.length)
-        setActiveLine(lineStart)
-        setActiveRange({ start: Math.min(lineStart, lineEnd), end: Math.max(lineStart, lineEnd) })
-        scrollOtherPanelToLine("preview", lineStart)
-        requestAnimationFrame(() => {
-          isSyncingSelectionRef.current = false
-        })
-        return
-      }
-      if (fallbackRatio !== null) {
-        const approxPos = Math.round(fallbackRatio * value.length)
-        isSyncingSelectionRef.current = true
-        htmlEl.setSelectionRange(approxPos, approxPos)
-        htmlEl.focus()
-        const lineStart = getLineFromPosition(value, approxPos)
-        setActiveLine(lineStart)
-        setActiveRange({ start: lineStart, end: lineStart })
-        scrollOtherPanelToLine("preview", lineStart)
-        requestAnimationFrame(() => {
-          isSyncingSelectionRef.current = false
-        })
-      }
+      const hasMatch = index >= 0
+      const position = hasMatch ? index : fallbackRatio !== null ? Math.round(fallbackRatio * value.length) : null
+      if (position === null) return
+      const lineStart = getLineFromPosition(value, position)
+      const lineEnd = hasMatch ? getLineFromPosition(value, position + text.length) : lineStart
+      setActiveLine(lineStart)
+      setActiveRange({ start: Math.min(lineStart, lineEnd), end: Math.max(lineStart, lineEnd) })
+      scrollOtherPanelToLine("preview", lineStart)
     },
     [scrollOtherPanelToLine]
   )
@@ -371,35 +281,16 @@ export default function ComunicacionesPage() {
       if (!previewEl) return
       const content = previewEl.textContent || ""
       const index = text ? content.indexOf(text) : -1
-      if (index >= 0) {
-        isSyncingSelectionRef.current = true
-        setSelectionInContentEditable(previewEl, index, index + text.length)
-        previewEl.focus()
-        const lineStart = getLineFromPosition(content, index)
-        const lineEnd = getLineFromPosition(content, index + text.length)
-        setActiveLine(lineStart)
-        setActiveRange({ start: Math.min(lineStart, lineEnd), end: Math.max(lineStart, lineEnd) })
-        scrollOtherPanelToLine("html", lineStart)
-        requestAnimationFrame(() => {
-          isSyncingSelectionRef.current = false
-        })
-        return
-      }
-      if (fallbackRatio !== null) {
-        const approxPos = Math.round(fallbackRatio * content.length)
-        isSyncingSelectionRef.current = true
-        setSelectionInContentEditable(previewEl, approxPos, approxPos)
-        previewEl.focus()
-        const lineStart = getLineFromPosition(content, approxPos)
-        setActiveLine(lineStart)
-        setActiveRange({ start: lineStart, end: lineStart })
-        scrollOtherPanelToLine("html", lineStart)
-        requestAnimationFrame(() => {
-          isSyncingSelectionRef.current = false
-        })
-      }
+      const hasMatch = index >= 0
+      const position = hasMatch ? index : fallbackRatio !== null ? Math.round(fallbackRatio * content.length) : null
+      if (position === null) return
+      const lineStart = getLineFromPosition(content, position)
+      const lineEnd = hasMatch ? getLineFromPosition(content, position + text.length) : lineStart
+      setActiveLine(lineStart)
+      setActiveRange({ start: Math.min(lineStart, lineEnd), end: Math.max(lineStart, lineEnd) })
+      scrollOtherPanelToLine("html", lineStart)
     },
-    [scrollOtherPanelToLine, setSelectionInContentEditable]
+    [scrollOtherPanelToLine]
   )
 
   useEffect(() => {
@@ -449,9 +340,7 @@ export default function ComunicacionesPage() {
       document.removeEventListener("selectionchange", handleSelectionChange)
     }
   }, [
-    getCaretOffsetInHtml,
     getCaretOffsetInText,
-    getSelectionOffsetsInHtml,
     getSelectionOffsetsInText,
     scrollOtherPanelToLine,
     syncHtmlByText,
@@ -476,6 +365,20 @@ export default function ComunicacionesPage() {
     if (hasSelected) return
     handleSelect(filteredRows[0])
   }, [filteredRows, handleSelect, isCreatingNew, listKeyField, loading, selectedId])
+
+  useEffect(() => {
+    setReviewSent(false)
+  }, [
+    selectedId,
+    isEditOpen,
+    isCreateOpen,
+    editDraft.titulo_comunicacion,
+    editDraft.subject,
+    editDraft.texto_html,
+    newDraft.titulo_comunicacion,
+    newDraft.subject,
+    newDraft.texto_html,
+  ])
 
   const handleUpdate = async () => {
     if (!selectedId) return
@@ -510,6 +413,38 @@ export default function ComunicacionesPage() {
       setSaving(false)
     }
   }
+
+  const handleSendReview = useCallback(async () => {
+    if (sendingReview) return
+    setSendingReview(true)
+    const draft = selectedId ? editDraft : newDraft
+    const selectedRow =
+      selectedId != null
+        ? rows.find((r) => String(r[getKeyField(r, columns)]) === String(selectedId))
+        : null
+    const inmobiliaria = String((selectedRow?.inmobiliaria ?? draft.inmobiliaria) || "")
+    const titulo = String(draft.titulo_comunicacion || "")
+    const subject = String(draft.subject || "")
+    const html = String(draft.texto_html || "")
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000)
+    try {
+      const res = await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/revision_comunicacion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inmobiliaria, titulo, subject, html }),
+        signal: controller.signal,
+      })
+      if (!res.ok) throw new Error("Webhook no respondió correctamente")
+      setReviewSent(true)
+      toast({ title: "Enviado", description: "Se envió a revisión" })
+    } catch (err: any) {
+      toast({ title: "Error", description: "No se pudo enviar a revisión", variant: "destructive" })
+    } finally {
+      window.clearTimeout(timeoutId)
+      setSendingReview(false)
+    }
+  }, [columns, editDraft, newDraft, rows, selectedId, sendingReview, toast])
 
   const handleCancelEdit = useCallback(() => {
     if (!selectedId) {
@@ -546,6 +481,8 @@ export default function ComunicacionesPage() {
       />
     )
   }
+
+  const reviewButtonLabel = reviewSent ? "Mandado a revisión" : "Enviar a revisión"
 
   return (
     <div className="p-6 space-y-6">
@@ -905,6 +842,9 @@ export default function ComunicacionesPage() {
                   <Save className="h-4 w-4 mr-2" />
                   Guardar cambios
                 </Button>
+                <Button variant="outline" onClick={handleSendReview} disabled={saving || sendingReview}>
+                  {reviewButtonLabel}
+                </Button>
                 <Button variant="outline" onClick={handleCancelEdit} disabled={saving}>
                   Cancelar
                 </Button>
@@ -914,6 +854,9 @@ export default function ComunicacionesPage() {
                 <Button onClick={handleCreate} disabled={saving || (!newDraft.titulo_comunicacion && !newDraft.subject)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Crear
+                </Button>
+                <Button variant="outline" onClick={handleSendReview} disabled={saving || sendingReview}>
+                  {reviewButtonLabel}
                 </Button>
                 <Button variant="outline" onClick={handleCancelCreate} disabled={saving}>
                   Cancelar
@@ -961,6 +904,9 @@ export default function ComunicacionesPage() {
             <Button variant="outline" onClick={handleCancelEdit} disabled={saving}>
               Cancelar
             </Button>
+            <Button variant="outline" onClick={handleSendReview} disabled={saving || sendingReview}>
+              {reviewButtonLabel}
+            </Button>
             <Button onClick={handleUpdate} disabled={saving || !selectedId}>
               <Save className="h-4 w-4 mr-2" />
               Guardar cambios
@@ -1004,6 +950,9 @@ export default function ComunicacionesPage() {
           <DialogFooter>
             <Button variant="outline" onClick={handleCancelCreate} disabled={saving}>
               Cancelar
+            </Button>
+            <Button variant="outline" onClick={handleSendReview} disabled={saving || sendingReview}>
+              {reviewButtonLabel}
             </Button>
             <Button onClick={handleCreate} disabled={saving || (modalFieldColumns.length === 0 && fallbackModalColumns.length === 0)}>
               <Plus className="h-4 w-4 mr-2" />
