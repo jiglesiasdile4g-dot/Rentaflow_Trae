@@ -35,7 +35,7 @@ export async function createAnuncioAction(anuncioData: any) {
     // We use maybeSingle to handle missing profiles without error
     let { data: profile, error: profileError } = await supabaseAdmin
       .from("Perfiles")
-      .select("role, inmobiliaria")
+      .select("role, inmobiliaria, is_admin")
       .eq("usuario", user.email)
       .maybeSingle()
 
@@ -43,13 +43,16 @@ export async function createAnuncioAction(anuncioData: any) {
     if (!profile) {
        const { data: profileById } = await supabaseAdmin
           .from("Perfiles")
-          .select("role, inmobiliaria")
+          .select("role, inmobiliaria, is_admin")
           .eq("user_id", user.id)
           .maybeSingle()
        if (profileById) profile = profileById
     }
 
-    if (profile?.role === "agente") {
+    const roleStr = String(profile?.role || "").toLowerCase()
+    const isAdmin = profile?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
+
+    if (roleStr === "agente") {
       return { error: "No tienes permisos para crear anuncios" }
     }
 
@@ -58,7 +61,9 @@ export async function createAnuncioAction(anuncioData: any) {
     
     let isAuthorized = false;
     
-    if (profile && String(profile.inmobiliaria) === String(targetInmobiliariaId)) {
+    if (isAdmin) {
+        isAuthorized = true;
+    } else if (profile && String(profile.inmobiliaria) === String(targetInmobiliariaId)) {
         isAuthorized = true;
     } else if (user.user_metadata?.inmobiliaria_id && String(user.user_metadata.inmobiliaria_id) === String(targetInmobiliariaId)) {
         isAuthorized = true;
@@ -76,7 +81,24 @@ export async function createAnuncioAction(anuncioData: any) {
     }
 
     // 3. Insert anuncio using Admin Client to bypass RLS
-    const { data, error } = await supabaseAdmin.from("Anuncios").insert([anuncioData]).select()
+    let { data, error } = await supabaseAdmin.from("Anuncios").insert([anuncioData]).select()
+
+    if (error) {
+      const msg = String(error?.message || "")
+      if (msg.toLowerCase().includes("nombre") || msg.toLowerCase().includes("column") || error.code === "PGRST204") {
+        const altData: any = { ...anuncioData }
+        if ("Nombre" in altData) {
+          altData.nombre = altData.Nombre
+          delete altData.Nombre
+        } else if ("nombre" in altData) {
+          altData.Nombre = altData.nombre
+          delete altData.nombre
+        }
+        const retry = await supabaseAdmin.from("Anuncios").insert([altData]).select()
+        data = retry.data
+        error = retry.error
+      }
+    }
 
     if (error) {
       console.error("Error creating anuncio:", error)
@@ -93,4 +115,124 @@ export async function createAnuncioAction(anuncioData: any) {
 
 export async function duplicateAnuncioAction(anuncioData: any) {
     return createAnuncioAction(anuncioData);
+}
+
+export async function updateAnuncioAdjuntosAction(payload: { referencia?: string; usuario: number | string; adjuntos: string[]; ida?: number | string }) {
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return { error: "No autenticado" }
+    }
+
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error("SUPABASE_SERVICE_ROLE_KEY is missing")
+      return { error: "Configuration error: Missing Service Role Key" }
+    }
+
+    const supabaseAdmin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    let { data: profile } = await supabaseAdmin
+      .from("Perfiles")
+      .select("role, inmobiliaria, is_admin")
+      .eq("usuario", user.email)
+      .maybeSingle()
+
+    if (!profile) {
+      const { data: profileById } = await supabaseAdmin
+        .from("Perfiles")
+        .select("role, inmobiliaria, is_admin")
+        .eq("user_id", user.id)
+        .maybeSingle()
+      if (profileById) profile = profileById
+    }
+
+    const roleStr = String(profile?.role || "").toLowerCase()
+    const isAdmin = profile?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
+
+    if (roleStr === "agente") {
+      return { error: "No tienes permisos para editar anuncios" }
+    }
+
+    const targetInmobiliariaId = payload.usuario
+    let isAuthorized = false
+
+    if (isAdmin) {
+      isAuthorized = true
+    } else if (profile && String(profile.inmobiliaria) === String(targetInmobiliariaId)) {
+      isAuthorized = true
+    } else if (user.user_metadata?.inmobiliaria_id && String(user.user_metadata.inmobiliaria_id) === String(targetInmobiliariaId)) {
+      isAuthorized = true
+    }
+
+    if (!isAuthorized) {
+      return { error: "No tienes autorización para esta inmobiliaria" }
+    }
+
+    let query = supabaseAdmin.from("Anuncios").update({ Adjuntos: payload.adjuntos || [] }).eq("usuario", payload.usuario)
+    if (payload.ida != null) {
+      query = query.eq("ida", payload.ida)
+    } else if (payload.referencia) {
+      query = query.eq("Referencia", payload.referencia)
+    }
+    let { error } = await query
+    if (error) {
+      const msg = String(error?.message || "")
+      if (msg.toLowerCase().includes("adjuntos") || msg.toLowerCase().includes("column") || error.code === "PGRST204") {
+        let retryQuery = supabaseAdmin.from("Anuncios").update({ adjuntos: payload.adjuntos || [] } as any).eq("usuario", payload.usuario)
+        if (payload.ida != null) {
+          retryQuery = retryQuery.eq("ida", payload.ida)
+        } else if (payload.referencia) {
+          retryQuery = retryQuery.eq("Referencia", payload.referencia)
+        }
+        const retry = await retryQuery
+        error = retry.error
+      }
+    }
+
+    if (error) {
+      console.error("Error updating anuncio adjuntos:", error)
+      return { error: error.message }
+    }
+
+    revalidatePath("/dashboard/anuncios")
+    return { error: null }
+  } catch (err: any) {
+    console.error("Unexpected error in updateAnuncioAdjuntosAction:", err)
+    return { error: err.message || "Error inesperado en el servidor" }
+  }
+}
+
+export async function listPortalesAction() {
+  try {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error("SUPABASE_SERVICE_ROLE_KEY is missing")
+      return { error: "Configuration error: Missing Service Role Key", data: [] }
+    }
+    const supabaseAdmin = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+    let { data, error } = await supabaseAdmin.from("Portales").select("*")
+    if (error) {
+      const retry = await supabaseAdmin.from("portales").select("*")
+      data = retry.data
+      error = retry.error
+    }
+    if (error) {
+      console.error("Error fetching portales:", error)
+      return { error: error.message, data: [] }
+    }
+    return { data: data || [] }
+  } catch (err: any) {
+    console.error("Unexpected error in listPortalesAction:", err)
+    return { error: err.message || "Error inesperado en el servidor", data: [] }
+  }
 }

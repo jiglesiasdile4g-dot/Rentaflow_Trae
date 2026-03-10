@@ -7,6 +7,7 @@ import { Suspense } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { ChangePassword } from "./change-password-client"
 import { Switch } from "@/components/ui/switch"
@@ -14,7 +15,6 @@ import { Separator } from "@/components/ui/separator"
 import { User, Bell, Palette, Shield, Building2, UserPlus, MoreVertical, Trash2, Mail, ShieldCheck, UserCheck, UserX, Power, PowerOff } from "lucide-react"
 import { AppearanceSettings } from "./appearance-client"
 import { ActiveSessions } from "./sessions-client"
-import { NotificationSettings } from "./notification-settings-client"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu"
@@ -28,7 +28,8 @@ import {
   toggleAgentFunctionsAction, 
   resendUserConfirmationAction,
   updateUserDetailsAction,
-  triggerVisitReminderAction
+  triggerVisitReminderAction,
+  createInmobiliariaAction
 } from "./actions"
 import { LogoUpload } from "./logo-upload"
 import { UserActions } from "./user-actions"
@@ -48,18 +49,21 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
   }
 
   // First get the user's profile to find their inmobiliaria ID and role
-  let inmobiliariaData = null
+  let inmobiliariaData: any = null
   let userRoleLabel = "Usuario"
   let agentCount = 0
   let planIdNum = 0
-  let usersList: Array<{ id?: any; usuario: string; nombre?: string; telefono?: string; is_admin: boolean; role?: string; activo?: boolean | null; has_agent_record?: boolean }> = []
+  let usersList: Array<{ id?: any; usuario: string; nombre?: string; telefono?: string; is_admin: boolean; role?: string; activo?: boolean | null; has_agent_record?: boolean; inmobiliariaId?: number | null; inmobiliariaNombre?: string | null }> = []
   let currentIdi: number | null = null
+  let isAllInmobiliarias = false
   let debugItems: Array<{ label: string; value: string }> = []
   const addDebug = (label: string, value: any) => {
     debugItems.push({ label, value: String(value) })
   }
   const reminderStatus = typeof searchParams?.reminder === "string" ? searchParams.reminder : null
   const reminderMsg = typeof searchParams?.rmsg === "string" ? searchParams.rmsg : null
+  const inmoStatus = typeof searchParams?.inmo === "string" ? searchParams.inmo : null
+  const inmoMsg = typeof searchParams?.imsg === "string" ? searchParams.imsg : null
   async function fetchPerfilesByIdi(client: any, idi: number, log?: (label: string, value: any) => void) {
     // Standard fetch (numeric idi)
     try {
@@ -74,6 +78,19 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
       if (error && log) log("err_fetch", error.message)
     } catch (e: any) {
       if (log) log("exc_fetch", e.message)
+    }
+    return []
+  }
+  async function fetchPerfilesAll(client: any, log?: (label: string, value: any) => void) {
+    try {
+      const { data, error } = await client.from("Perfiles").select("idp, created_at, usuario, inmobiliaria, is_admin, role, es_agente, nombre, telefono")
+      if (!error && data) {
+        if (log) log("fetch_result_all", `found ${data.length}`)
+        return data
+      }
+      if (error && log) log("err_fetch_all", error.message)
+    } catch (e: any) {
+      if (log) log("exc_fetch_all", e.message)
     }
     return []
   }
@@ -99,6 +116,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
       const isAdmin = perfil.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
       userRoleLabel = isAdmin ? "Administrador" : "Usuario"
       let reqIdi: number | null = null
+      let isAllRequested = false
       try {
         const spIdiRaw =
           searchParams && typeof searchParams.idi === "string"
@@ -108,45 +126,48 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
             : undefined
         if (spIdiRaw) {
           if (spIdiRaw === "all") {
-            reqIdi = null
+            isAllRequested = true
           } else {
             const n = Number(spIdiRaw)
             reqIdi = Number.isFinite(n) ? n : null
           }
         }
       } catch {}
-      currentIdi = reqIdi !== null ? reqIdi : Number(perfil.inmobiliaria)
+      isAllInmobiliarias = isAdmin && isAllRequested
+      currentIdi = isAllInmobiliarias ? null : reqIdi !== null ? reqIdi : Number(perfil.inmobiliaria)
       addDebug("role", userRoleLabel)
       addDebug("current_idi", currentIdi)
-      // Now fetch the inmobiliaria details using the ID
-      const { data: inmobiliaria, error: inmobiliariaError } = await supabase
-        .from("Inmobiliarias")
-        .select("*, pagina_web") // Explicit request for pagina_web
-        .eq("idi", currentIdi as any)
-        .limit(1)
-        .maybeSingle()
+      if (!isAllInmobiliarias && currentIdi) {
+        const { data: inmobiliaria, error: inmobiliariaError } = await supabase
+          .from("Inmobiliarias")
+          .select("*, pagina_web")
+          .eq("idi", currentIdi as any)
+          .limit(1)
+          .maybeSingle()
 
-      if (!inmobiliariaError && inmobiliaria) {
-        inmobiliariaData = inmobiliaria
-        const idi = Number((inmobiliaria as any).idi)
-        currentIdi = idi
-        planIdNum = Number((inmobiliaria as any).Plan) || 0
+        if (!inmobiliariaError && inmobiliaria) {
+          inmobiliariaData = inmobiliaria
+          const idi = Number((inmobiliaria as any).idi)
+          currentIdi = idi
+          planIdNum = Number((inmobiliaria as any).Plan) || 0
+        }
       }
       let perfilesData: any[] = []
       if (userRoleLabel === "Administrador") {
         const admin = createAdminClient()
         addDebug("list_source", "admin")
-        perfilesData = await fetchPerfilesByIdi(admin, Number(currentIdi), addDebug)
+        perfilesData = isAllInmobiliarias ? await fetchPerfilesAll(admin, addDebug) : await fetchPerfilesByIdi(admin, Number(currentIdi), addDebug)
       } else {
         addDebug("list_source", "user")
         perfilesData = await fetchPerfilesByIdi(supabase, Number(currentIdi), addDebug)
       }
 
       // Fetch active agents map
-      const { data: activeAgents, error: activeAgentsError } = await supabase
-        .from("Agentes")
-        .select("Email, Nombre, Telefono")
-        .eq("idi", currentIdi as any)
+      const agentsClient = isAllInmobiliarias ? admin : supabase
+      const agentsQuery = agentsClient.from("Agentes").select("Email, Nombre, Telefono" + (isAllInmobiliarias ? ", idi" : ""))
+      const { data: activeAgents, error: activeAgentsError } = isAllInmobiliarias
+        ? await agentsQuery
+        : await agentsQuery.eq("idi", currentIdi as any)
       
       if (activeAgentsError) {
           console.error("[v0] Error fetching active agents:", activeAgentsError)
@@ -245,6 +266,25 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
       });
       const uniquePerfiles = Array.from(uniquePerfilesMap.values());
 
+      const inmoIds = isAllInmobiliarias
+        ? Array.from(
+            new Set(
+              (uniquePerfiles || [])
+                .map((p: any) => Number(p?.inmobiliaria ?? p?.Inmobiliaria))
+                .filter((id: number) => Number.isFinite(id))
+            )
+          )
+        : []
+      const inmoById = new Map<string, any>()
+      if (isAllInmobiliarias && inmoIds.length > 0) {
+        const { data: inmos } = await admin.from("Inmobiliarias").select("idi, Nombre").in("idi", inmoIds)
+        if (inmos) {
+          for (const inmo of inmos) {
+            inmoById.set(String(inmo.idi), inmo)
+          }
+        }
+      }
+
       usersList = uniquePerfiles.map((p: any) => {
         const uEmail = String(p?.usuario || p?.Usuario || "").toLowerCase()
         const agentData = activeAgentEmails.get(uEmail)
@@ -261,6 +301,12 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
             telefono = String(agentData.telefono)
         }
 
+        const inmoIdRaw = p?.inmobiliaria ?? p?.Inmobiliaria
+        const inmoId = Number.isFinite(Number(inmoIdRaw)) ? Number(inmoIdRaw) : currentIdi
+        const inmoKey = String(inmoId ?? "")
+        const inmoName = isAllInmobiliarias
+          ? inmoById.get(inmoKey)?.Nombre || (inmoKey ? `IDI ${inmoKey}` : null)
+          : inmobiliariaData?.Nombre || (currentIdi ? `IDI ${currentIdi}` : null)
         return {
             id: p?.idp || p?.id, // Get ID
             usuario: String(p?.usuario || p?.Usuario || ""),
@@ -271,7 +317,9 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
             activo: typeof p?.activo === "boolean" ? !!p?.activo : 
                     (typeof p?.Activo === "boolean" ? !!p?.Activo : 
                     (typeof p?.es_agente === "boolean" ? !!p?.es_agente : null)),
-            has_agent_record: hasRecord
+            has_agent_record: hasRecord,
+            inmobiliariaId: inmoId ?? null,
+            inmobiliariaNombre: inmoName ?? null
         }
       })
       agentCount = Number((perfilesData || []).length)
@@ -307,11 +355,41 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
   const manageMsgRaw = typeof sp?.mmsg === "string" ? sp?.mmsg : undefined
   const createUserMsg = createUserMsgRaw && createUserMsgRaw !== "NEXT_REDIRECT" ? createUserMsgRaw : undefined
   const manageMsg = manageMsgRaw && manageMsgRaw !== "NEXT_REDIRECT" ? manageMsgRaw : undefined
-  const planData = planIdNum ? getPlanData(planIdNum) : null
+  const planData = !isAllInmobiliarias && planIdNum ? getPlanData(planIdNum) : null
   const limitUsers = Number(planData?.Usuarios || 0)
-  const unlimited = limitUsers >= 1000000
+  const unlimited = !isAllInmobiliarias && limitUsers >= 1000000
   const canCreateAgents = !!inmobiliariaData && (unlimited || agentCount < limitUsers)
-  const remainingUsers = unlimited ? 1000000 : Math.max(limitUsers - agentCount, 0)
+  const remainingUsers = !isAllInmobiliarias && unlimited ? 1000000 : Math.max(limitUsers - agentCount, 0)
+  const userSearchRaw = typeof sp?.q === "string" ? sp.q : ""
+  const userOrder = typeof sp?.orden === "string" ? sp.orden : "inmobiliaria"
+  const userSearch = userSearchRaw.trim().toLowerCase()
+  let visibleUsers = usersList
+  if (userSearch) {
+    visibleUsers = usersList.filter((u) => {
+      const name = String(u.nombre || "").toLowerCase()
+      const email = String(u.usuario || "").toLowerCase()
+      const inmo = String(u.inmobiliariaNombre || "").toLowerCase()
+      return name.includes(userSearch) || email.includes(userSearch) || inmo.includes(userSearch)
+    })
+  }
+  const collator = new Intl.Collator("es", { sensitivity: "base" })
+  visibleUsers = [...visibleUsers].sort((a, b) => {
+    if (userOrder === "nombre") {
+      const byName = collator.compare(String(a.nombre || ""), String(b.nombre || ""))
+      if (byName !== 0) return byName
+      return collator.compare(String(a.usuario || ""), String(b.usuario || ""))
+    }
+    if (userOrder === "correo") {
+      const byEmail = collator.compare(String(a.usuario || ""), String(b.usuario || ""))
+      if (byEmail !== 0) return byEmail
+      return collator.compare(String(a.nombre || ""), String(b.nombre || ""))
+    }
+    const byInmo = collator.compare(String(a.inmobiliariaNombre || ""), String(b.inmobiliariaNombre || ""))
+    if (byInmo !== 0) return byInmo
+    const byName = collator.compare(String(a.nombre || ""), String(b.nombre || ""))
+    if (byName !== 0) return byName
+    return collator.compare(String(a.usuario || ""), String(b.usuario || ""))
+  })
   return (
     <div className="p-8">
       <div className="space-y-8 max-w-4xl">
@@ -365,13 +443,123 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
         {inmobiliariaData && (
           <Card>
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <Building2 className="h-5 w-5 text-muted-foreground" />
-                <CardTitle>Información de Inmobiliaria</CardTitle>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-muted-foreground" />
+                  <CardTitle>Información de Inmobiliaria</CardTitle>
+                </div>
+                {userRoleLabel === "Administrador" && (
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button size="sm" className="h-8 text-xs" variant="outline">
+                        <Building2 className="mr-2 h-3 w-3" />
+                        Crear inmobiliaria
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Crear inmobiliaria</DialogTitle>
+                        <DialogDescription>Alta de una nueva inmobiliaria en el sistema</DialogDescription>
+                      </DialogHeader>
+                      <form action={createInmobiliariaAction} className="space-y-4 py-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-nombre">Nombre</Label>
+                            <Input id="inmo-nombre" name="Nombre" required />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-direccion">Dirección</Label>
+                            <Input id="inmo-direccion" name="Direccion" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-telefono">Teléfono</Label>
+                            <Input id="inmo-telefono" name="Telefono" type="tel" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-mail-contacto">Mail contacto</Label>
+                            <Input id="inmo-mail-contacto" name="Mail contacto" type="email" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-mail-sistema">Mail sistema</Label>
+                            <Input id="inmo-mail-sistema" name="Mail sistema" type="email" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-whatsapp">Whatsapp empresa</Label>
+                            <Input id="inmo-whatsapp" name="Whatsapp_empresa" type="tel" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-persona-contacto">Persona de contacto</Label>
+                            <Input id="inmo-persona-contacto" name="Persona de Contacto" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-plan">Plan</Label>
+                            <Input id="inmo-plan" name="Plan" type="number" step="1" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-plan-reset">Plan reset at</Label>
+                            <Input id="inmo-plan-reset" name="PlanResetAt" type="datetime-local" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-plan-next">Plan next</Label>
+                            <Input id="inmo-plan-next" name="PlanNext" type="number" step="1" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-plan-next-at">Plan next effective at</Label>
+                            <Input id="inmo-plan-next-at" name="PlanNextEffectiveAt" type="datetime-local" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-whatsapp-activo">Whatsapp activo</Label>
+                            <div className="flex items-center gap-2">
+                              <Input id="inmo-whatsapp-activo" name="whatsapp_activo" type="checkbox" className="h-4 w-4" />
+                              <span className="text-sm text-muted-foreground">Activo</span>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-act">Inmobiliaria act</Label>
+                            <Input id="inmo-act" name="inmobiliaria_act" />
+                          </div>
+                          <div className="space-y-2 md:col-span-2">
+                            <Label htmlFor="inmo-firma">Firma HTML</Label>
+                            <Textarea id="inmo-firma" name="firma_html" className="min-h-[120px]" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-web">Página web</Label>
+                            <Input id="inmo-web" name="pagina_web" type="url" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-logo">Logo URL</Label>
+                            <Input id="inmo-logo" name="logo_url" type="url" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-color-primario">Color primario</Label>
+                            <Input id="inmo-color-primario" name="color_primario" type="color" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-color-secundario">Color secundario</Label>
+                            <Input id="inmo-color-secundario" name="color_secundario" type="color" />
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button type="submit">Crear inmobiliaria</Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                )}
               </div>
               <CardDescription>Datos de tu empresa inmobiliaria</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {inmoStatus === "success" && inmoMsg && (
+                <Alert className="py-2">
+                  <AlertDescription className="text-xs">{inmoMsg}</AlertDescription>
+                </Alert>
+              )}
+              {inmoStatus === "error" && inmoMsg && (
+                <Alert variant="destructive" className="py-2">
+                  <AlertDescription className="text-xs">{inmoMsg}</AlertDescription>
+                </Alert>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="inmobiliaria-nombre">Nombre de la Inmobiliaria</Label>
                 <Input id="inmobiliaria-nombre" value={inmobiliariaData.Nombre || ""} disabled className="bg-muted" />
@@ -503,7 +691,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                 </AlertDescription>
               </Alert>
             )}
-            {userRoleLabel === "Administrador" && (
+            {userRoleLabel === "Administrador" && !isAllInmobiliarias && (
               <div className="flex flex-wrap gap-4 text-xs text-muted-foreground border-b pb-4">
                 <div className="flex items-center gap-1">
                   <span className="font-medium">Plan:</span> {(planData as any)?.Nombre || String(planIdNum)}
@@ -535,12 +723,47 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
             )}
             
             {userRoleLabel === "Administrador" && (
+              <form className="flex flex-wrap items-center gap-2 border-b pb-4" method="get">
+                {isAllInmobiliarias ? (
+                  <input type="hidden" name="idi" value="all" />
+                ) : currentIdi ? (
+                  <input type="hidden" name="idi" value={String(currentIdi)} />
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="user-search" className="text-xs">Buscar</Label>
+                  <Input
+                    id="user-search"
+                    name="q"
+                    defaultValue={userSearchRaw}
+                    placeholder="Nombre o correo"
+                    className="h-8 text-xs w-[220px]"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="user-order" className="text-xs">Ordenar por</Label>
+                  <select
+                    id="user-order"
+                    name="orden"
+                    defaultValue={userOrder}
+                    className="h-8 text-xs border rounded-md px-2 bg-background"
+                  >
+                    <option value="inmobiliaria">Inmobiliaria</option>
+                    <option value="nombre">Nombre</option>
+                    <option value="correo">Correo</option>
+                  </select>
+                </div>
+                <Button type="submit" size="sm" variant="outline" className="h-8 text-xs">Aplicar</Button>
+              </form>
+            )}
+
+            {userRoleLabel === "Administrador" && (
               <div className="rounded-md border overflow-hidden">
                 <div className="max-h-[300px] overflow-y-auto">
                   <table className="w-full text-xs">
                     <thead className="bg-muted/50 sticky top-0 z-10">
                       <tr className="border-b">
                         <th className="h-8 px-3 text-left align-middle font-medium text-muted-foreground">Nombre</th>
+                        <th className="h-8 px-3 text-left align-middle font-medium text-muted-foreground">Inmobiliaria</th>
                         <th className="h-8 px-3 text-left align-middle font-medium text-muted-foreground">Correo</th>
                         <th className="h-8 px-3 text-left align-middle font-medium text-muted-foreground">Teléfono</th>
                         <th className="h-8 px-3 text-left align-middle font-medium text-muted-foreground w-[100px]">Rol</th>
@@ -549,17 +772,20 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                       </tr>
                     </thead>
                     <tbody>
-                      {usersList.length === 0 ? (
+                      {visibleUsers.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="p-3 text-center text-muted-foreground">
+                          <td colSpan={7} className="p-3 text-center text-muted-foreground">
                             No hay usuarios
                           </td>
                         </tr>
                       ) : (
-                        usersList.map((u) => (
+                        visibleUsers.map((u) => (
                           <tr key={u.usuario} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                             <td className="p-2 px-3 align-middle font-medium max-w-[150px] truncate" title={u.nombre}>
                                 {u.nombre || "-"}
+                            </td>
+                            <td className="p-2 px-3 align-middle font-medium max-w-[160px] truncate" title={u.inmobiliariaNombre || ""}>
+                              {u.inmobiliariaNombre || "-"}
                             </td>
                             <td className="p-2 px-3 align-middle font-medium max-w-[150px]" title={u.usuario}>
                               <div className="flex flex-col gap-1">
@@ -600,7 +826,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                             <td className="p-2 px-3 align-middle text-right">
                               <UserActions
                                 user={u}
-                                idi={Number(currentIdi)}
+                                idi={Number(u.inmobiliariaId ?? currentIdi ?? 0)}
                                 toggleRoleAction={toggleRoleAction}
                                 toggleActiveAction={toggleActiveAction}
                                 deleteAgentAction={deleteAgentAction}
@@ -617,20 +843,6 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                 </div>
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Notification Settings */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Bell className="h-5 w-5 text-muted-foreground" />
-              <CardTitle>Notificaciones</CardTitle>
-            </div>
-            <CardDescription>Configura cómo quieres recibir notificaciones</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <NotificationSettings />
           </CardContent>
         </Card>
 

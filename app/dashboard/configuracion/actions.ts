@@ -217,6 +217,85 @@ export async function triggerVisitReminderAction() {
     )
 }
 
+export async function createInmobiliariaAction(formData: FormData) {
+    const supabase = await createClient()
+    const admin = createAdminClient()
+    const {
+        data: { user },
+    } = await supabase.auth.getUser()
+    if (!user?.email) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("Usuario no autenticado")}`)
+    }
+    const { data: perfil } = await admin
+        .from("Perfiles")
+        .select("is_admin, role")
+        .ilike("usuario", user.email)
+        .limit(1)
+        .maybeSingle()
+    const roleStr = String(perfil?.role || "").toLowerCase()
+    const isAdmin = perfil?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
+    if (!isAdmin) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("Sin permisos para crear inmobiliarias")}`)
+    }
+    const nombre = String(formData.get("Nombre") || "").trim()
+    const direccion = String(formData.get("Direccion") || "").trim()
+    const telefono = String(formData.get("Telefono") || "").trim()
+    const mailContacto = String(formData.get("Mail contacto") || "").trim()
+    const mailSistema = String(formData.get("Mail sistema") || "").trim()
+    const whatsappEmpresa = String(formData.get("Whatsapp_empresa") || "").trim()
+    const personaContacto = String(formData.get("Persona de Contacto") || "").trim()
+    const planRaw = String(formData.get("Plan") || "").trim()
+    const planResetRaw = String(formData.get("PlanResetAt") || "").trim()
+    const planNextRaw = String(formData.get("PlanNext") || "").trim()
+    const planNextAtRaw = String(formData.get("PlanNextEffectiveAt") || "").trim()
+    const whatsappActivo = formData.get("whatsapp_activo") != null
+    const inmobiliariaAct = String(formData.get("inmobiliaria_act") || "").trim()
+    const firmaHtml = String(formData.get("firma_html") || "").trim()
+    const paginaWeb = String(formData.get("pagina_web") || "").trim()
+    const logoUrl = String(formData.get("logo_url") || "").trim()
+    const colorPrimario = String(formData.get("color_primario") || "").trim()
+    const colorSecundario = String(formData.get("color_secundario") || "").trim()
+    if (!nombre) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("Falta el nombre")}`)
+    }
+    const payload: Record<string, any> = { Nombre: nombre }
+    if (direccion) payload.Direccion = direccion
+    if (telefono) payload.Telefono = telefono
+    if (mailContacto) payload["Mail contacto"] = mailContacto
+    if (mailSistema) payload["Mail sistema"] = mailSistema
+    if (whatsappEmpresa) payload.Whatsapp_empresa = whatsappEmpresa
+    if (personaContacto) payload["Persona de Contacto"] = personaContacto
+    if (paginaWeb) payload.pagina_web = paginaWeb
+    if (logoUrl) payload.logo_url = logoUrl
+    if (colorPrimario) payload.color_primario = colorPrimario
+    if (colorSecundario) payload.color_secundario = colorSecundario
+    if (firmaHtml) payload.firma_html = firmaHtml
+    if (inmobiliariaAct) payload.inmobiliaria_act = inmobiliariaAct
+    payload.whatsapp_activo = whatsappActivo
+    if (planRaw) {
+        const planNum = Number(planRaw)
+        if (Number.isFinite(planNum)) payload.Plan = planNum
+    }
+    if (planNextRaw) {
+        const planNextNum = Number(planNextRaw)
+        if (Number.isFinite(planNextNum)) payload.PlanNext = planNextNum
+    }
+    if (planResetRaw) {
+        const date = new Date(planResetRaw)
+        if (!Number.isNaN(date.getTime())) payload.PlanResetAt = date.toISOString()
+    }
+    if (planNextAtRaw) {
+        const date = new Date(planNextAtRaw)
+        if (!Number.isNaN(date.getTime())) payload.PlanNextEffectiveAt = date.toISOString()
+    }
+    const { error } = await admin.from("Inmobiliarias").insert(payload)
+    if (error) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent(error.message || "Error creando inmobiliaria")}`)
+    }
+    revalidatePath("/dashboard/configuracion")
+    redirect(`/dashboard/configuracion?inmo=success&imsg=${encodeURIComponent("Inmobiliaria creada")}`)
+}
+
 async function ensureAgentRecord(admin: any, email: string, idi: number, role: string, shouldCreate: boolean) {
     // Check if agent record exists
     const { data: existing, error } = await admin

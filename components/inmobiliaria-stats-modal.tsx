@@ -568,6 +568,33 @@ export function InmobiliariaStatsModal({ idi }: { idi?: number | null }) {
    }
  
   const planLimitLabel = planLimit != null ? formatPlanValue(planLimit) : "N/D"
+  const periodLabel = (() => {
+    const now = new Date()
+    if (statsPeriod === "periodoActual") {
+      const cycle = getCurrentBillingCycle(planResetAt)
+      return `${formatDate(cycle.start)} - ${formatDate(cycle.displayEnd)}`
+    }
+    if (statsPeriod === "custom" && customDateRange?.from) {
+      return customDateRange.to
+        ? `${format(customDateRange.from, "dd MMM", { locale: es })} - ${format(customDateRange.to, "dd MMM", { locale: es })}`
+        : format(customDateRange.from, "dd MMM", { locale: es })
+    }
+    if (statsPeriod === "hoy") {
+      return formatDate(now)
+    }
+    if (statsPeriod === "esteMes") {
+      const start = startOfMonth(now)
+      const end = endOfMonth(now)
+      return `${formatDate(start)} - ${formatDate(end)}`
+    }
+    if (statsPeriod === "ultimoMes") {
+      const prev = addMonths(now, -1)
+      const start = startOfMonth(prev)
+      const end = endOfMonth(prev)
+      return `${formatDate(start)} - ${formatDate(end)}`
+    }
+    return now.toLocaleDateString("es-ES")
+  })()
 
   return (
     <div className="mt-8">
@@ -578,13 +605,7 @@ export function InmobiliariaStatsModal({ idi }: { idi?: number | null }) {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-foreground/80 tabular-nums">
-            {statsPeriod === "periodoActual"
-              ? `${formatDate(getCurrentBillingCycle(planResetAt).start)} - ${formatDate(getCurrentBillingCycle(planResetAt).displayEnd)}`
-              : statsPeriod === "custom" && customDateRange?.from
-              ? customDateRange.to
-                ? `${format(customDateRange.from, "dd MMM", { locale: es })} - ${format(customDateRange.to, "dd MMM", { locale: es })}`
-                : format(customDateRange.from, "dd MMM", { locale: es })
-              : new Date().toLocaleDateString("es-ES")}
+            {periodLabel}
           </span>
           <div className="flex items-center bg-muted/50 rounded-md p-0.5">
             {([

@@ -1,6 +1,6 @@
 "use client"
 
-import { createAnuncioAction } from "@/app/actions/anuncios"
+import { createAnuncioAction, listPortalesAction, updateAnuncioAdjuntosAction } from "@/app/actions/anuncios"
 import { createClient } from "@/lib/supabase/client"
 import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { useRouter, usePathname } from 'next/navigation'
@@ -55,6 +55,7 @@ interface AnuncioCard {
   id: string
   codPortal: string // From Anuncios.CodPortal
   referencia: string // From Anuncios.Referencia
+  nombre?: string
   direccion: string // From Anuncios.Direccion
   precio: number // From Anuncios.Precio
   portal: string // From Anuncios.Portal
@@ -116,6 +117,7 @@ interface CreationStep {
   step: number
   data: {
     codPortal: string
+    nombre: string
     referencia: string
     direccion: string
     portal: string
@@ -127,6 +129,7 @@ interface CreationStep {
 
 interface EditFormData {
   codPortal: string
+  nombre: string
   referencia: string
   direccion: string
   descripcion: string
@@ -157,6 +160,7 @@ export default function AnunciosPage() {
   const [editingAnuncio, setEditingAnuncio] = useState<AnuncioCard | null>(null)
   const [editFormData, setEditFormData] = useState<EditFormData>({
     codPortal: "",
+    nombre: "",
     referencia: "",
     direccion: "",
     descripcion: "",
@@ -184,6 +188,8 @@ export default function AnunciosPage() {
   const [expandedCard, setExpandedCard] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [showCreationModal, setShowCreationModal] = useState(false)
+  const [portalesList, setPortalesList] = useState<Array<{ id?: any; nombre: string }>>([])
+  const [portalesLoading, setPortalesLoading] = useState(false)
   const [showScheduleDialog, setShowScheduleDialog] = useState(false)
   const [schedulingAnuncioId, setSchedulingAnuncioId] = useState<string | null>(null)
   const [scheduledDate, setScheduledDate] = useState<string>("")
@@ -191,6 +197,7 @@ export default function AnunciosPage() {
     step: 1,
     data: {
       codPortal: "",
+      nombre: "",
       referencia: "",
       direccion: "",
       portal: "",
@@ -813,14 +820,51 @@ export default function AnunciosPage() {
           if (j && typeof j.error === "string") errMsg = j.error
         } catch {}
         setNextcloudDialog((prev) => ({ ...prev, loading: false, error: errMsg }))
-        return
+        return []
       }
       const json = await res.json()
       setNextcloudDialog((prev) => ({ ...prev, folder: json.folder, files: json.files || [], recent: json.recent || [], loading: false, error: null }))
+      return json.files || []
     } catch {
       setNextcloudDialog((prev) => ({ ...prev, loading: false }))
+      return []
     }
   }
+
+  const buildAdjuntosFromFiles = (files: any[]) =>
+    (files || [])
+      .map((file) => {
+        const raw = String(file?.name || file?.path || file?.href || file?.url || "")
+        const name = raw.split("?")[0].split("/").pop() || ""
+        return name.trim()
+      })
+      .filter((value) => value.length > 0)
+
+  const fetchNextcloudFiles = useCallback(async (referenciaTarget: string) => {
+    if (!referenciaTarget) return []
+    const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
+    if (!inmo) return []
+    const params = new URLSearchParams({ referencia: referenciaTarget, inmobiliaria: inmo })
+    const res = await fetch(`/api/nextcloud/list?${params.toString()}`)
+    if (!res.ok) return []
+    const j = await res.json()
+    return j.files || []
+  }, [inmobiliariaNombre, inmobiliariaId])
+
+  const syncAdjuntosForReferencia = useCallback(async (referenciaTarget: string, filesList?: any[], anuncioId?: number | string) => {
+    if (!referenciaTarget || inmobiliariaId == null) return
+    const effectiveFiles = filesList && filesList.length > 0 ? filesList : await fetchNextcloudFiles(referenciaTarget)
+    const adjuntos = buildAdjuntosFromFiles(effectiveFiles)
+    const result = await updateAnuncioAdjuntosAction({
+      referencia: referenciaTarget,
+      usuario: inmobiliariaId,
+      adjuntos,
+      ida: anuncioId,
+    })
+    if (result?.error) {
+      console.log("[v0] Error updating adjuntos:", result.error)
+    }
+  }, [fetchNextcloudFiles, inmobiliariaId])
 
   const uploadFilesForAnuncio = async (files: FileList | null, referenciaTarget: string, mode?: "creation" | "edit") => {
     if (!files || files.length === 0 || !referenciaTarget) return
@@ -849,8 +893,14 @@ export default function AnunciosPage() {
         toast({ title: "Error", description: errMsg, variant: "destructive" })
       } else {
         toast({ title: "Éxito", description: "Archivos subidos correctamente. La IA ha sido entrenada" })
+        const filesList = await fetchNextcloudFiles(referenciaTarget)
         if (mode === "creation") {
-          await loadCreationFiles()
+          setCreationFilesList(filesList)
+          await syncAdjuntosForReferencia(referenciaTarget, filesList)
+        }
+        if (mode === "edit") {
+          setEditFilesList(filesList)
+          await syncAdjuntosForReferencia(referenciaTarget, filesList)
         }
       }
     } catch {
@@ -863,19 +913,15 @@ export default function AnunciosPage() {
 
   const loadEditFiles = useCallback(async () => {
     if (!editFormData.referencia) return
-    const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
     setEditFilesLoading(true)
     try {
-      const params = new URLSearchParams({ referencia: editFormData.referencia, inmobiliaria: inmo })
-      const res = await fetch(`/api/nextcloud/list?${params.toString()}`)
-      if (res.ok) {
-        const j = await res.json()
-        setEditFilesList(j.files || [])
-      }
+      const filesList = await fetchNextcloudFiles(editFormData.referencia)
+      setEditFilesList(filesList)
+      await syncAdjuntosForReferencia(editFormData.referencia, filesList)
     } finally {
       setEditFilesLoading(false)
     }
-  }, [editFormData.referencia, inmobiliariaNombre, inmobiliariaId])
+  }, [editFormData.referencia, fetchNextcloudFiles, syncAdjuntosForReferencia])
 
   useEffect(() => {
     if (editingAnuncio && editFormData.referencia) {
@@ -887,15 +933,10 @@ export default function AnunciosPage() {
 
   const loadCreationFiles = async () => {
     if (!creationStep.data.referencia) return
-    const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
     setCreationFilesLoading(true)
     try {
-      const params = new URLSearchParams({ referencia: creationStep.data.referencia, inmobiliaria: inmo })
-      const res = await fetch(`/api/nextcloud/list?${params.toString()}`)
-      if (res.ok) {
-        const j = await res.json()
-        setCreationFilesList(j.files || [])
-      }
+      const filesList = await fetchNextcloudFiles(creationStep.data.referencia)
+      setCreationFilesList(filesList)
     } finally {
       setCreationFilesLoading(false)
     }
@@ -919,7 +960,10 @@ export default function AnunciosPage() {
     try {
       const params = new URLSearchParams({ path })
       await fetch(`/api/nextcloud/file?${params.toString()}`, { method: "DELETE" })
-      await refreshNextcloudDialog()
+      const filesList = await refreshNextcloudDialog()
+      if (nextcloudDialog.referencia) {
+        await syncAdjuntosForReferencia(nextcloudDialog.referencia, filesList)
+      }
       toast({ title: "Archivo eliminado", description: "Archivo eliminado correctamente" })
     } catch {
       toast({ title: "Error", description: "No se pudo eliminar", variant: "destructive" })
@@ -953,7 +997,8 @@ export default function AnunciosPage() {
         } catch {}
         toast({ title: "Error", description: errMsg, variant: "destructive" })
       } else {
-        await refreshNextcloudDialog()
+        const filesList = await refreshNextcloudDialog()
+        await syncAdjuntosForReferencia(nextcloudDialog.referencia, filesList)
         toast({ title: "Éxito", description: "Archivos subidos correctamente. La IA ha sido entrenada" })
       }
     } catch {
@@ -1824,6 +1869,49 @@ export default function AnunciosPage() {
     }
   }, [supabase, inmobiliariaId, planResetAt])
 
+  const fetchPortales = useCallback(async (signal?: AbortSignal) => {
+    try {
+      setPortalesLoading(true)
+      const result = await listPortalesAction()
+      if (signal?.aborted) return
+      if (result?.error) {
+        console.log("[v0] Error fetching portales:", result.error)
+        setPortalesList([])
+        return
+      }
+      const data = result?.data || []
+      const normalizeName = (row: any) =>
+        String(
+          row?.nombre ??
+            row?.Nombre ??
+            row?.portal ??
+            row?.Portal ??
+            row?.name ??
+            row?.Name ??
+            row?.titulo ??
+            row?.Titulo ??
+            "",
+        ).trim()
+      const normalizeId = (row: any) =>
+        row?.id ?? row?.ID ?? row?.idp ?? row?.Id ?? row?.codigo ?? row?.Codigo ?? row?.cod ?? row?.Cod ?? row?.portal_id ?? row?.Portal_id
+      const normalized = (data || [])
+        .map((row: any) => {
+          const nombre = normalizeName(row)
+          return nombre ? { id: normalizeId(row), nombre } : null
+        })
+        .filter(Boolean) as Array<{ id?: any; nombre: string }>
+      const collator = new Intl.Collator("es", { sensitivity: "base" })
+      normalized.sort((a, b) => collator.compare(a.nombre, b.nombre))
+      setPortalesList(normalized)
+    } catch (err: any) {
+      if (signal?.aborted || err?.name === "AbortError" || err?.message?.includes("Abort")) return
+      console.log("[v0] Error in fetchPortales:", err)
+      setPortalesList([])
+    } finally {
+      if (!signal?.aborted) setPortalesLoading(false)
+    }
+  }, [])
+
   const checkUser = useCallback(async () => {
     const {
       data: { user },
@@ -1875,7 +1963,7 @@ export default function AnunciosPage() {
 
       let query = supabase
         .from("Anuncios")
-        .select("ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion, duracion_visita, tiempo_entre_visitas, whatsapp_activo")
+        .select("ida, Referencia, Nombre, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion, duracion_visita, tiempo_entre_visitas, whatsapp_activo")
         .order("created_at", { ascending: false })
         .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
         .range(offset, offset + itemsPerPage - 1) // Límite de 20 anuncios por página
@@ -2283,6 +2371,7 @@ export default function AnunciosPage() {
           id: anuncio.ida, // Use "ida" instead of "id"
           ida: anuncio.ida, // For agenda-utils compatibility
           codPortal: anuncio.CodPortal || "",
+          nombre: String(anuncio.Nombre ?? (anuncio as any).nombre ?? "").trim(),
           referencia,
           direccion: anuncio.Direccion || "",
           precio: anuncio.Precio || 0,
@@ -2428,6 +2517,8 @@ export default function AnunciosPage() {
         await fetchAnuncios(controller.signal)
         if (controller.signal.aborted) return
         await fetchAgentes(inmobiliariaId, controller.signal)
+        if (controller.signal.aborted) return
+        await fetchPortales(controller.signal)
       }
       run()
       return () => {
@@ -2437,7 +2528,7 @@ export default function AnunciosPage() {
     } else {
       console.log("[DEBUG] Skipping fetch calls - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
     }
-  }, [inmobiliariaId, inmobiliariaLoading, checkUser, fetchPlanLimit, fetchAvailablePlans, fetchAnuncios])
+  }, [inmobiliariaId, inmobiliariaLoading, checkUser, fetchPlanLimit, fetchAvailablePlans, fetchAnuncios, fetchPortales])
 
   useEffect(() => {
     if (selectedAnuncioForStats && showStatsModal) {
@@ -2857,6 +2948,7 @@ export default function AnunciosPage() {
       setEditingAnuncio(anuncio)
       setEditFormData({
         codPortal: anuncioData.CodPortal || "",
+        nombre: anuncioData.Nombre || "",
         referencia: anuncioData.Referencia || "",
         direccion: anuncioData.Direccion || "",
         descripcion: anuncioData.Descripcion || "",
@@ -2887,6 +2979,7 @@ export default function AnunciosPage() {
     try {
       const updateData = {
         CodPortal: editFormData.codPortal,
+        Nombre: editFormData.nombre,
         Referencia: editFormData.referencia,
         Direccion: editFormData.direccion,
         Descripcion: editFormData.descripcion,
@@ -2897,17 +2990,34 @@ export default function AnunciosPage() {
         tiempo_entre_visitas: Number.parseInt(editFormData.tiempo_entre_visitas || "5") || 5,
       }
 
-      const { error } = await supabase.from("Anuncios").update(updateData).eq("ida", editingAnuncio.id)
+      let { error } = await supabase.from("Anuncios").update(updateData).eq("ida", editingAnuncio.id)
+
+      if (error) {
+        const msg = String(error?.message || "")
+        if (msg.toLowerCase().includes("nombre") || msg.toLowerCase().includes("column") || error.code === "PGRST204") {
+          const retryData: any = { ...updateData }
+          delete retryData.Nombre
+          retryData.nombre = editFormData.nombre
+          const retry = await supabase.from("Anuncios").update(retryData).eq("ida", editingAnuncio.id)
+          error = retry.error
+        }
+      }
 
       if (error) {
         console.log("[v0] Error saving changes:", error)
-        const fallbackUpdate = {
+        let fallbackUpdate: any = {
           Referencia: updateData.Referencia,
+          Nombre: updateData.Nombre,
           Direccion: updateData.Direccion,
           Descripcion: updateData.Descripcion,
           Precio: updateData.Precio,
           Portal: updateData.Portal,
           Activacion: updateData.Activacion,
+        }
+        const fallbackMsg = String(error?.message || "")
+        if (fallbackMsg.toLowerCase().includes("nombre") || fallbackMsg.toLowerCase().includes("column") || error.code === "PGRST204") {
+          delete fallbackUpdate.Nombre
+          fallbackUpdate.nombre = editFormData.nombre
         }
         const { error: fallbackError } = await supabase
           .from("Anuncios")
@@ -2957,6 +3067,7 @@ export default function AnunciosPage() {
         step: 1,
         data: {
           codPortal: "",
+          nombre: base.Nombre || "",
           referencia: "",
           direccion: base.Direccion || anuncio.direccion || "",
           portal: base.Portal || anuncio.portal || "",
@@ -3294,12 +3405,14 @@ export default function AnunciosPage() {
     try {
       const newAnuncio = {
         Referencia: creationStep.data.referencia,
+        Nombre: creationStep.data.nombre,
         Direccion: creationStep.data.direccion,
         Portal: creationStep.data.portal,
         CodPortal: creationStep.data.codPortal,
         Descripcion: creationStep.data.descripcion,
         Precio: Number.parseFloat(creationStep.data.precio) || 0,
         Activacion: creationStep.data.activacion,
+        Adjuntos: buildAdjuntosFromFiles(creationFilesList),
         
         usuario: inmobiliariaId, // Assigns the logged-in agency's IDI to this anuncio
         Foto_Url: "", // Empty for now
@@ -3353,12 +3466,16 @@ export default function AnunciosPage() {
         description: `${creationStep.data.referencia} se ha creado correctamente`,
       })
 
+      const createdId = Array.isArray(data) && data.length > 0 ? (data[0] as any)?.ida : undefined
+      await syncAdjuntosForReferencia(creationStep.data.referencia, undefined, createdId)
+
       // Reset form and close modal
       setShowCreationModal(false)
       setCreationStep({
         step: 1,
         data: {
           codPortal: "",
+          nombre: "",
           referencia: "",
           direccion: "",
           portal: "",
@@ -4555,6 +4672,8 @@ export default function AnunciosPage() {
               )}
               {anunciosCalculados.map((anuncio) => {
                 const isExpanded = expandedCard === anuncio.id
+                const displayName = anuncio.nombre || anuncio.referencia || anuncio.codPortal || "ninguno"
+                const displayReferencia = anuncio.nombre ? anuncio.referencia || anuncio.codPortal || "ninguno" : ""
 
                 return (
                   <div key={anuncio.id} className="space-y-2">
@@ -4564,8 +4683,9 @@ export default function AnunciosPage() {
                           {/* Title row */}
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="font-semibold text-base truncate">{anuncio.referencia}</h3>
+                              <div className="space-y-0.5">
+                                {displayReferencia && <p className="text-[11px] text-muted-foreground truncate">{displayReferencia}</p>}
+                                <h3 className="font-semibold text-base truncate">{displayName}</h3>
                                 <UITooltip>
                                   <TooltipTrigger asChild>
                                     <div className="flex items-center gap-2">
@@ -5107,6 +5227,32 @@ export default function AnunciosPage() {
                       </div>
                     </div>
                     <div>
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="nombre">Nombre</Label>
+                        <UITooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center text-muted-foreground">
+                              <Info className="h-4 w-4" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Nombre descriptivo del anuncio.</p>
+                          </TooltipContent>
+                        </UITooltip>
+                      </div>
+                      <Input
+                        id="nombre"
+                        value={creationStep.data.nombre}
+                        onChange={(e) =>
+                          setCreationStep((prev) => ({
+                            ...prev,
+                            data: { ...prev.data, nombre: e.target.value },
+                          }))
+                        }
+                        placeholder="Nombre descriptivo"
+                      />
+                    </div>
+                    <div>
                       <Label htmlFor="direccion">Dirección</Label>
                       <Input
                         id="direccion"
@@ -5135,10 +5281,17 @@ export default function AnunciosPage() {
                           <SelectValue placeholder="Seleccionar portal" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Idealista">Idealista</SelectItem>
-                          <SelectItem value="Fotocasa">Fotocasa</SelectItem>
-                          <SelectItem value="Habitaclia">Habitaclia</SelectItem>
-                          <SelectItem value="Pisos.com">Pisos.com</SelectItem>
+                          {portalesList.length === 0 ? (
+                            <SelectItem value="__no_portales__" disabled>
+                              {portalesLoading ? "Cargando..." : "Sin portales"}
+                            </SelectItem>
+                          ) : (
+                            portalesList.map((portal) => (
+                              <SelectItem key={String(portal.id ?? portal.nombre)} value={portal.nombre}>
+                                {portal.nombre}
+                              </SelectItem>
+                            ))
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
@@ -5434,6 +5587,32 @@ export default function AnunciosPage() {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 items-start gap-4">
+                <div className="text-right pt-2">
+                  <div className="inline-flex items-center gap-2">
+                    <Label htmlFor="nombre">Nombre</Label>
+                    <UITooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex items-center text-muted-foreground">
+                          <Info className="h-4 w-4" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Nombre descriptivo del anuncio.</p>
+                      </TooltipContent>
+                    </UITooltip>
+                  </div>
+                </div>
+                <div className="col-span-3">
+                  <Input
+                    id="nombre"
+                    value={editFormData.nombre}
+                    onChange={(e) => setEditFormData((prev) => ({ ...prev, nombre: e.target.value }))}
+                    placeholder="Nombre descriptivo"
+                  />
                 </div>
               </div>
 

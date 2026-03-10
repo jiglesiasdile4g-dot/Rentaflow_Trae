@@ -424,6 +424,8 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
       const resetAt = inmobiliariaInfo?.PlanResetAt ? new Date(inmobiliariaInfo.PlanResetAt) : null
       const validReset = resetAt && !isNaN(resetAt.getTime()) ? resetAt : null
+      const nextAt = inmobiliariaInfo?.PlanNextEffectiveAt ? new Date(inmobiliariaInfo.PlanNextEffectiveAt) : null
+      const validNext = nextAt && !isNaN(nextAt.getTime()) ? nextAt : null
       const base = validReset ? validReset : monthStart
       const msPerDay = 24 * 60 * 60 * 1000
       const msPerPeriod = 30 * msPerDay
@@ -431,15 +433,14 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
       const periodsPassed = diff > 0 ? Math.floor(diff / msPerPeriod) : 0
       const start = new Date(base.getTime() + periodsPassed * msPerPeriod)
       periodStart = start
-      const effectiveEnd = new Date(start.getTime() + msPerPeriod)
-      const displayEnd = new Date(effectiveEnd.getTime() - msPerDay)
-      periodEnd = displayEnd
+      const computedEnd = new Date(start.getTime() + msPerPeriod)
+      periodEnd = validNext && validNext.getTime() > start.getTime() ? validNext : computedEnd
       const { data: whatsPeriodo } = await supabase
         .from("Whatsapp")
         .select("id, created_at, IDI")
         .eq("IDI", inmobiliariaInfo?.idi)
         .gte("created_at", start.toISOString())
-        .lt("created_at", effectiveEnd.toISOString())
+        .lt("created_at", periodEnd.toISOString())
         .eq("Tipo", "Enviado")
 
       whatsappPeriodoCount = (whatsPeriodo || []).length
@@ -553,11 +554,11 @@ export default async function InformacionPage({ searchParams }: { searchParams?:
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm font-medium">Periodo activo desde:</p>
-                        <p className="text-xs font-bold text-foreground">{formatDate(periodStart || new Date())}</p>
+                        <p className="text-xs font-bold text-foreground">{periodStart ? formatDate(periodStart) : "N/A"}</p>
                       </div>
                       <div>
                         <p className="text-sm font-medium">Vence el periodo:</p>
-                        <p className="text-xs font-bold text-foreground">{formatDate(periodEnd || computeNextRenewal(new Date()))}</p>
+                        <p className="text-xs font-bold text-foreground">{periodEnd ? formatDate(periodEnd) : "N/A"}</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
