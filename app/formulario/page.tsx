@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -302,7 +302,7 @@ const countries = [
   "Zimbabue",
 ]
 
-export default function FormularioPage() {
+function FormularioInner() {
   const searchParams = useSearchParams()
   const [inmueble, setInmueble] = useState("")
   const [idc, setIdc] = useState("")
@@ -820,5 +820,13 @@ export default function FormularioPage() {
         </Card>
       </div>
     </div>
+  )
+}
+
+export default function FormularioPage() {
+  return (
+    <Suspense>
+      <FormularioInner />
+    </Suspense>
   )
 }
