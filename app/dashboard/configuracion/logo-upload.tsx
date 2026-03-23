@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -23,6 +23,13 @@ export function LogoUpload({ inmobiliariaId, currentLogoUrl }: LogoUploadProps) 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const router = useRouter()
+
+  useEffect(() => {
+    setPreview(currentLogoUrl || null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }, [currentLogoUrl, inmobiliariaId])
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]

@@ -1,7 +1,7 @@
 "use client"
 import Link from "next/link"
 import Image from "next/image"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Home, Megaphone, Users, Info, User, Building2, Settings, Calendar, ChevronsLeft, Menu } from "lucide-react"
 import LogoutButton from "@/components/logout-button"
@@ -60,6 +60,7 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
   const supabase = createClient()
   const [inmos, setInmos] = useState<{ idi: number; Nombre: string }[]>([])
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [logoVersion, setLogoVersion] = useState<number>(0)
   const [logoError, setLogoError] = useState(false)
 
@@ -90,6 +91,13 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
       active = false
     }
   }, [isAdmin, supabase])
+
+  const navQuery = useMemo(() => {
+    if (!isAdmin) return ""
+    if (inmobiliariaId) return `?idi=${inmobiliariaId}`
+    const hasAll = searchParams?.get("idi") === "all" || inmobiliariaNombre === "Todas"
+    return hasAll ? "?idi=all" : ""
+  }, [isAdmin, inmobiliariaId, inmobiliariaNombre, searchParams])
 
   return (
     <div className={cn("bg-background border-r border-border flex flex-col h-full transition-all duration-300 overflow-y-auto overflow-x-hidden", collapsed ? "w-[70px] items-center" : "w-64")}>
@@ -189,11 +197,12 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
           {menuItems.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href
+            const href = navQuery ? `${item.href}${navQuery}` : item.href
 
             return (
               <li key={item.href}>
                 <Link
-                  href={item.href}
+                  href={href}
                   prefetch={false}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",

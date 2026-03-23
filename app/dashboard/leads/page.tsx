@@ -3776,6 +3776,7 @@ export default function LeadsPage() {
                         <DropdownMenuCheckboxItem
                           key={status}
                           checked={statusFilter.includes(status)}
+                          className="pl-2 [&>span]:hidden"
                           onCheckedChange={(checked) => {
                             if (checked) {
                               setStatusFilter([...statusFilter, status])
@@ -3784,6 +3785,7 @@ export default function LeadsPage() {
                             }
                           }}
                         >
+                          <Checkbox checked={statusFilter.includes(status)} className="pointer-events-none mr-2" />
                           {status === "Pedir Aval" ? "Aval Pedido" : status === "Visita Propuesta" ? "Visita Propuesta" : status === "Aceptado" ? "Aprobado" : status}
                         </DropdownMenuCheckboxItem>
                       ))
@@ -7046,67 +7048,65 @@ export default function LeadsPage() {
             {selectedLead && avalCalculation && (
               <div className="space-y-4 py-4">
                 {/* Lead Information */}
-                <div className="p-4 bg-gray-50 dark:bg-muted/50 rounded-lg border space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium text-muted-foreground">Nombre:</span>
-                    <span className="text-sm font-semibold">{selectedLead.Nombre}</span>
+                <div className="p-4 bg-gray-50 dark:bg-muted/50 rounded-lg border space-y-2 w-full overflow-hidden">
+                  <div className="flex justify-between gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-muted-foreground min-w-0">Nombre:</span>
+                    <span className="text-sm font-semibold text-right whitespace-normal break-words">{selectedLead.Nombre}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm font-medium text-muted-foreground">Email:</span>
-                    <span className="text-sm">{selectedLead.Correo}</span>
+                  <div className="flex justify-between gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-muted-foreground min-w-0">Email:</span>
+                    <span className="text-sm text-right whitespace-normal break-words">{selectedLead.Correo}</span>
                   </div>
 
                   <div className="pt-2 border-t space-y-1.5">
                     <div className="text-xs font-semibold text-muted-foreground mb-1">Ingresos por Persona:</div>
                     {avalCalculation.persona1Income > 0 && (
-                      <div className="flex justify-between pl-2">
-                        <span className="text-xs text-muted-foreground">{selectedLead.Nombre || "Persona 1"}:</span>
-                        <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                      <div className="flex justify-between gap-2 flex-wrap pl-2">
+                        <span className="text-xs text-muted-foreground min-w-0">{selectedLead.Nombre || "Persona 1"}:</span>
+                        <span className="text-xs font-medium text-green-600 dark:text-green-400 text-right whitespace-normal break-words">
                           {formatCurrency(avalCalculation.persona1Income)}
                         </span>
                       </div>
                     )}
                     {avalCalculation.persona2Income > 0 && (
-                      <div className="flex justify-between pl-2">
-                        <span className="text-xs text-muted-foreground">{selectedLead.Persona_2 || "Persona 2"}:</span>
-                        <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                      <div className="flex justify-between gap-2 flex-wrap pl-2">
+                        <span className="text-xs text-muted-foreground min-w-0">{selectedLead.Persona_2 || "Persona 2"}:</span>
+                        <span className="text-xs font-medium text-green-600 dark:text-green-400 text-right whitespace-normal break-words">
                           {formatCurrency(avalCalculation.persona2Income)}
                         </span>
                       </div>
                     )}
                     {avalCalculation.persona3Income > 0 && (
-                      <div className="flex justify-between pl-2">
-                        <span className="text-xs text-muted-foreground">{selectedLead.Persona_3 || "Persona 3"}:</span>
-                        <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                      <div className="flex justify-between gap-2 flex-wrap pl-2">
+                        <span className="text-xs text-muted-foreground min-w-0">{selectedLead.Persona_3 || "Persona 3"}:</span>
+                        <span className="text-xs font-medium text-green-600 dark:text-green-400 text-right whitespace-normal break-words">
                           {formatCurrency(avalCalculation.persona3Income)}
                         </span>
                       </div>
                     )}
                     {avalCalculation.persona4Income > 0 && (
-                      <div className="flex justify-between pl-2">
-                        <span className="text-xs text-muted-foreground">{selectedLead.Persona_4 || "Avalista"}:</span>
-                        <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                      <div className="flex justify-between gap-2 flex-wrap pl-2">
+                        <span className="text-xs text-muted-foreground min-w-0">{selectedLead.Persona_4 || "Avalista"}:</span>
+                        <span className="text-xs font-medium text-green-600 dark:text-green-400 text-right whitespace-normal break-words">
                           {formatCurrency(avalCalculation.persona4Income)}
                         </span>
                       </div>
                     )}
-                    <div className="flex justify-between pt-1.5 border-t">
-                      <span className="text-sm font-medium text-muted-foreground">Total Ingresos:</span>
-                      <span className="text-sm font-bold text-green-600 dark:text-green-400">{formatCurrency(avalCalculation.income)}</span>
+                    <div className="flex justify-between gap-2 flex-wrap pt-1.5 border-t">
+                      <span className="text-sm font-medium text-muted-foreground min-w-0">Total Ingresos:</span>
+                      <span className="text-sm font-bold text-green-600 dark:text-green-400 text-right whitespace-normal break-words">{formatCurrency(avalCalculation.income)}</span>
                     </div>
                   </div>
 
                   {avalCalculation.actualRent && (
-                    <div className="flex justify-between pt-2 border-t">
-                      <span className="text-sm font-medium text-muted-foreground">Precio alquiler:</span>
-                      <span className="text-sm font-semibold">{formatCurrency(avalCalculation.actualRent)}</span>
+                    <div className="flex justify-between gap-2 flex-wrap pt-2 border-t">
+                      <span className="text-sm font-medium text-muted-foreground min-w-0">Precio alquiler:</span>
+                      <span className="text-sm font-semibold text-right whitespace-normal break-words">{formatCurrency(avalCalculation.actualRent)}</span>
                     </div>
                   )}
                 </div>
 
-                <div
-                  className="p-4 rounded-lg border space-y-4 bg-[#F8FBF8] dark:bg-zinc-600 border-gray-200 dark:border-gray-500"
-                >
+                <div className="p-4 rounded-lg border space-y-4 bg-[#F8FBF8] dark:bg-zinc-600 border-gray-200 dark:border-gray-500 w-full overflow-hidden">
                   <h3
                     className="text-base font-bold text-gray-900 dark:text-gray-100"
                   >
@@ -7149,19 +7149,19 @@ export default function LeadsPage() {
                       )}
 
                       <div className="space-y-3 text-sm">
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-700 dark:text-gray-300 font-medium">Ingresos mínimos requeridos:</span>
-                          <span className="font-bold text-gray-900 dark:text-white text-base">{formatCurrency(avalCalculation.minRequiredIncome!)}</span>
+                        <div className="flex justify-between gap-2 flex-wrap items-center">
+                          <span className="text-gray-700 dark:text-gray-300 font-medium min-w-0">Ingresos mínimos requeridos:</span>
+                          <span className="font-bold text-gray-900 dark:text-white text-base text-right whitespace-normal break-words">{formatCurrency(avalCalculation.minRequiredIncome!)}</span>
                         </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-700 dark:text-gray-300 font-medium">Ingresos ideales:</span>
-                          <span className="font-bold text-gray-900 dark:text-white text-base">{formatCurrency(avalCalculation.idealIncome!)}</span>
+                        <div className="flex justify-between gap-2 flex-wrap items-center">
+                          <span className="text-gray-700 dark:text-gray-300 font-medium min-w-0">Ingresos ideales:</span>
+                          <span className="font-bold text-gray-900 dark:text-white text-base text-right whitespace-normal break-words">{formatCurrency(avalCalculation.idealIncome!)}</span>
                         </div>
                         {avalCalculation.incomeRatio && avalCalculation.income > 0 && (
-                          <div className="flex justify-between items-center pt-3 border-t border-gray-200 dark:border-gray-700">
-                            <span className="text-gray-700 dark:text-gray-300 font-medium">Tasa de esfuerzo:</span>
+                          <div className="flex justify-between gap-2 flex-wrap items-center pt-3 border-t border-gray-200 dark:border-gray-700">
+                            <span className="text-gray-700 dark:text-gray-300 font-medium min-w-0">Tasa de esfuerzo:</span>
                             <span
-                              className={`font-bold text-base ${avalCalculation.incomeRatio <= 40 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                              className={`font-bold text-base text-right whitespace-normal break-words ${avalCalculation.incomeRatio <= 40 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
                             >
                               {avalCalculation.incomeRatio.toFixed(1)}%
                             </span>

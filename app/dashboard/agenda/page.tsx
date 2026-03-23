@@ -262,6 +262,16 @@ export default function AgendaPage() {
   }, [])
 
   useEffect(() => {
+    if (!inmobiliariaId) return
+    setAgentsList([])
+    setAgentId(null)
+    setCanManageOthers(false)
+    try {
+      sessionStorage.removeItem("rf_agenda_view_state")
+    } catch {}
+  }, [inmobiliariaId])
+
+  useEffect(() => {
     if (!isStateRestored) return
 
     // Save state when relevant filters change
@@ -600,7 +610,10 @@ export default function AgendaPage() {
                     setAgentsList(mappedAgents)
                     
                     // Only set default if we don't have one yet (e.g. not restored from state)
-                    if (!activeAgentId) {
+                    const inList = activeAgentId
+                      ? mappedAgents.some((a: any) => Number(a.idag) === Number(activeAgentId))
+                      : false
+                    if (!activeAgentId || !inList) {
                         const self = mappedAgents.find((a: any) => a.Email.toLowerCase() === user.email?.toLowerCase())
                         activeAgentId = self ? self.idag : mappedAgents[0].idag
                         setAgentId(activeAgentId)
