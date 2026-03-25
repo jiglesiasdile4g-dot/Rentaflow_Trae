@@ -2035,7 +2035,7 @@ export default function AnunciosPage() {
       const now = new Date()
       const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) // Límite de 30 días para optimizar
+      const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
       let cutoffDate = planResetAt ? planResetAt : monthStart
       if (inmobiliariaId) {
@@ -2081,7 +2081,7 @@ export default function AnunciosPage() {
               "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos, Inmueble",
             )
             .eq("usuario", inmobiliariaId)
-            .gte("created_at", thirtyDaysAgo.toISOString()) // Solo últimos 30 días
+            .gte("created_at", oneYearAgo.toISOString())
         : null
       
       if (qIdi && signal) qIdi = qIdi.abortSignal(signal)
@@ -2095,7 +2095,7 @@ export default function AnunciosPage() {
               "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos, Inmueble",
             )
             .in("Inmueble", propertyIdentifiers)
-            .gte("created_at", thirtyDaysAgo.toISOString()) // Solo últimos 30 días
+            .gte("created_at", oneYearAgo.toISOString())
         : null
       
       if (qProp && signal) qProp = qProp.abortSignal(signal)
@@ -2132,7 +2132,7 @@ export default function AnunciosPage() {
         }
         for (const chunk of chunks) {
           if (signal?.aborted) break
-          let q = supabase.from("Correos").select("id, created_at, to, Tipo").in("to", chunk).gte("created_at", thirtyDaysAgo.toISOString()) // Solo últimos 30 días
+          let q = supabase.from("Correos").select("id, created_at, to, Tipo").in("to", chunk).gte("created_at", oneYearAgo.toISOString())
           if (signal) q = q.abortSignal(signal)
           const { data, error } = await q
           if (error) {
@@ -2157,7 +2157,7 @@ export default function AnunciosPage() {
         }
         for (const chunk of chunks) {
           if (signal?.aborted) break
-          let q = supabase.from("Whatsapp").select("id, created_at, IDC, Tipo").in("IDC", chunk).gte("created_at", thirtyDaysAgo.toISOString()) // Solo últimos 30 días
+          let q = supabase.from("Whatsapp").select("id, created_at, IDC, Tipo").in("IDC", chunk).gte("created_at", oneYearAgo.toISOString())
           if (signal) q = q.abortSignal(signal)
           const { data, error } = await q
           if (error) {
@@ -2197,7 +2197,10 @@ export default function AnunciosPage() {
         const rawLeads = allLeadsRaw.filter((l) => {
           if (!l.Inmueble) return false
           const inmueble = normalize(l.Inmueble)
-          return inmueble && (inmueble === refNorm || (dirNorm && inmueble === dirNorm))
+          if (!inmueble) return false
+          const refMatch = refNorm && (inmueble === refNorm || inmueble.includes(refNorm) || refNorm.includes(inmueble))
+          const dirMatch = dirNorm && (inmueble === dirNorm || inmueble.includes(dirNorm) || dirNorm.includes(inmueble))
+          return refMatch || dirMatch
         })
 
         let allLeads = rawLeads || []
@@ -3162,7 +3165,10 @@ export default function AnunciosPage() {
         leads = rawDataRef.current.leads.filter((l) => {
           if (!l.Inmueble) return false
           const inmueble = normalize(l.Inmueble)
-          return inmueble && (inmueble === refNorm || (dirNorm && inmueble === dirNorm))
+          if (!inmueble) return false
+          const refMatch = refNorm && (inmueble === refNorm || inmueble.includes(refNorm) || refNorm.includes(inmueble))
+          const dirMatch = dirNorm && (inmueble === dirNorm || inmueble.includes(dirNorm) || dirNorm.includes(inmueble))
+          return refMatch || dirMatch
         })
       } else {
         console.log("[v0] Fetching leads from DB")

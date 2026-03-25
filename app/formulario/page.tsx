@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -317,10 +318,18 @@ function FormularioInner() {
     createPerson(),
     createPerson(),
   ])
+  const [anuncios, setAnuncios] = useState<any[]>([])
+  const [rgpdAccepted, setRgpdAccepted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [currentStep, setCurrentStep] = useState(0)
   const totalSteps = 1 + personCount
+  const requiredLabel = (text: string) => (
+    <span className="inline-flex items-center gap-1">
+      <span>{text}</span>
+      <span className="text-red-600">*</span>
+    </span>
+  )
 
   useEffect(() => {
     const inmoParam = searchParams.get("inmueble") || searchParams.get("Inmueble") || ""
@@ -345,6 +354,7 @@ function FormularioInner() {
         const lead = json?.lead
         if (!json?.ok) return
         setInmobiliariaData(json?.inmobiliaria || null)
+        setAnuncios(Array.isArray(json?.anuncios) ? json.anuncios : [])
         if (!lead) return
 
         setInmueble((prev) => prev || toStringValue(pickValue(lead, ["Inmueble", "inmueble"])))
@@ -448,6 +458,19 @@ function FormularioInner() {
     setSubmitting(true)
     setResult(null)
 
+    const inmoParam = searchParams.get("idi") || searchParams.get("inmobiliaria") || ""
+    const inmoId = inmobiliariaData?.idi ?? toNumberOrNull(inmoParam)
+    if (!inmoId) {
+      setResult({ ok: false, message: "No se pudo determinar la inmobiliaria" })
+      setSubmitting(false)
+      return
+    }
+    if (!inmueble.trim()) {
+      setResult({ ok: false, message: "Selecciona un inmueble" })
+      setSubmitting(false)
+      return
+    }
+
     const [p1, p2, p3, p4] = personas
     const visiblePersons = personas.slice(0, personCount)
     const requiredErrorIndex = visiblePersons.findIndex((p, idx) => {
@@ -462,7 +485,6 @@ function FormularioInner() {
       ) {
         return true
       }
-      if (idx === 0 && !p.whatsapp.trim()) return true
       if (idx > 0 && !p.tipo.trim()) return true
       return false
     })
@@ -507,13 +529,17 @@ function FormularioInner() {
       setSubmitting(false)
       return
     }
+    if (!rgpdAccepted) {
+      setResult({ ok: false, message: "Debes aceptar la RGPD para continuar" })
+      setSubmitting(false)
+      return
+    }
 
-    const inmoParam = searchParams.get("idi") || searchParams.get("inmobiliaria") || ""
-    const inmoId = inmobiliariaData?.idi ?? toNumberOrNull(inmoParam)
     const payload: Record<string, any> = {
       Inmobiliaria_Id: inmoId ?? null,
       usuario: inmoId ?? null,
       Inmobiliaria: inmobiliariaData?.Nombre ?? null,
+      RGPD_Aceptado: rgpdAccepted,
       Inmueble: inmueble,
       IDC: toNumberOrNull(idc),
       Nombre: p1.nombre,
@@ -602,10 +628,16 @@ function FormularioInner() {
               </div>
             )}
             <CardTitle>Datos personales</CardTitle>
-            <CardDescription>Cmpleta los datos para continuar con el proceso</CardDescription>
+            <CardDescription>
+              Cmpleta los datos para continuar con el proceso de selección
+              <span className="block text-xs text-muted-foreground">Los campos con * son obligatorios</span>
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
+              {!inmobiliariaData?.idi && !(searchParams.get("idi") || searchParams.get("inmobiliaria")) && (
+                <div className="text-sm text-red-600">Falta la inmobiliaria en el enlace. No se puede completar el formulario.</div>
+              )}
               {currentStep === 0 && (
                 <Card>
                   <CardHeader className="pb-2">
@@ -613,10 +645,32 @@ function FormularioInner() {
                   </CardHeader>
                   <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <Label>Inmueble</Label>
-                      <div className="h-9 rounded-md border bg-muted/30 px-3 py-2 text-sm text-foreground flex items-center">
-                        {inmueble || "-"}
-                      </div>
+                      <Label>{requiredLabel("Inmueble")}</Label>
+                      {inmueble ? (
+                        <div className="h-9 rounded-md border bg-muted/30 px-3 py-2 text-sm text-foreground flex items-center">
+                          {inmueble || "-"}
+                        </div>
+                      ) : anuncios.length > 0 ? (
+                        <Select value={inmueble} onValueChange={(value) => setInmueble(value)}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecciona un inmueble" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {anuncios.map((ad) => {
+                              const label = String(ad?.Referencia || ad?.Direccion || ad?.ida || "")
+                              const value = String(ad?.Referencia || ad?.Direccion || ad?.ida || "")
+                              if (!value) return null
+                              return (
+                                <SelectItem key={`${ad?.ida || value}`} value={value}>
+                                  {label}
+                                </SelectItem>
+                              )
+                            })}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">No hay inmuebles activos para esta inmobiliaria</div>
+                      )}
                     </div>
                     <div className="space-y-1">
                       <Label>Número de personas (inquilinos/avalistas)</Label>
@@ -682,23 +736,24 @@ function FormularioInner() {
                         </CardHeader>
                         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-1">
-                            <Label>Nombre</Label>
+                            <Label>{requiredLabel("Nombre")}</Label>
                             <Input value={p.nombre} onChange={(e) => updatePerson(personIndex, "nombre", e.target.value)} required />
                           </div>
                           <div className="space-y-1">
-                            <Label>Correo</Label>
+                            <Label>{requiredLabel("Correo")}</Label>
                             <Input type="email" value={p.correo} onChange={(e) => updatePerson(personIndex, "correo", e.target.value)} required />
                           </div>
                           <div className="space-y-1">
-                            <Label>Teléfono</Label>
+                            <Label>{requiredLabel("Teléfono")}</Label>
                             <Input
                               value={p.telefono}
                               onChange={(e) => {
                                 const value = e.target.value
+                                const prevPhone = personas[0]?.telefono || ""
                                 updatePerson(personIndex, "telefono", value)
                                 if (personIndex === 0) {
                                   const current = personas[0].whatsapp.trim()
-                                  if (!current || current === personas[0].telefono.trim()) {
+                                  if (!current || current === prevPhone.trim()) {
                                     updatePerson(0, "whatsapp", value)
                                   }
                                 }
@@ -709,7 +764,7 @@ function FormularioInner() {
                           {personIndex === 0 && (
                             <div className="space-y-1">
                               <Label>Número de WhatsApp</Label>
-                              <Input value={p.whatsapp} onChange={(e) => updatePerson(personIndex, "whatsapp", e.target.value)} required />
+                              <Input value={p.whatsapp} onChange={(e) => updatePerson(personIndex, "whatsapp", e.target.value)} />
                             </div>
                           )}
                           <div className="space-y-1">
@@ -717,11 +772,11 @@ function FormularioInner() {
                             <Input value={p.codigoPostal} onChange={(e) => updatePerson(personIndex, "codigoPostal", e.target.value)} />
                           </div>
                           <div className="space-y-1">
-                            <Label>Ingresos</Label>
+                            <Label>{requiredLabel("Ingresos")}</Label>
                             <Input type="number" value={p.ingresos} onChange={(e) => updatePerson(personIndex, "ingresos", e.target.value)} required />
                           </div>
                           <div className="space-y-1">
-                            <Label>Tipo de Documento</Label>
+                            <Label>{requiredLabel("Tipo de Documento")}</Label>
                             <Select value={p.tipoDocumento} onValueChange={(v) => updatePerson(personIndex, "tipoDocumento", v)}>
                               <SelectTrigger>
                                 <SelectValue placeholder="Selecciona una opción" />
@@ -734,11 +789,11 @@ function FormularioInner() {
                             </Select>
                           </div>
                           <div className="space-y-1">
-                            <Label>Documento</Label>
+                            <Label>{requiredLabel("Documento")}</Label>
                             <Input value={p.documento} onChange={(e) => updatePerson(personIndex, "documento", e.target.value)} required />
                           </div>
                           <div className="space-y-1">
-                            <Label>País</Label>
+                            <Label>{requiredLabel("País")}</Label>
                             <Select
                               value={p.pais}
                               onValueChange={(value) => updatePerson(personIndex, "pais", value)}
@@ -771,7 +826,7 @@ function FormularioInner() {
                           </div>
                           {personIndex > 0 && (
                             <div className="space-y-1">
-                              <Label>Tipo</Label>
+                              <Label>{requiredLabel("Tipo")}</Label>
                               <Select value={p.tipo} onValueChange={(value) => updatePerson(personIndex, "tipo", value)}>
                                 <SelectTrigger>
                                   <SelectValue placeholder="Selecciona una opción" />
@@ -796,6 +851,19 @@ function FormularioInner() {
                 </>
               )}
 
+              {currentStep === totalSteps - 1 && (
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    checked={rgpdAccepted}
+                    onCheckedChange={(checked) => setRgpdAccepted(checked === true)}
+                    className="mt-1"
+                  />
+                  <div className="space-y-1">
+                    <Label className="cursor-pointer select-none">{requiredLabel("Acepto el tratamiento de datos según RGPD")}</Label>
+                    <div className="text-xs text-muted-foreground">Necesario para continuar con el proceso</div>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-between gap-3">
                 <Button
                   type="button"
@@ -815,6 +883,7 @@ function FormularioInner() {
                   </Button>
                 )}
               </div>
+              <div className="pt-2 text-center text-xs text-muted-foreground">Powered by RentAflow!</div>
             </form>
           </CardContent>
         </Card>

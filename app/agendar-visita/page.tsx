@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
-import { getBookingData, confirmVisit, cancelVisit, proposeVisit } from "@/app/actions/booking"
+import { getBookingData, confirmVisit, cancelVisit } from "@/app/actions/booking"
 import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -470,10 +470,6 @@ function AgendarVisitaContent() {
         const mm = String(Math.abs(off) % 60).padStart(2, "0")
         const offset = `${sign}${hh}:${mm}`
         const valueWithOffset = `${dateTimeStr}${offset}`
-
-        // Update DB via Server Action
-        const result = await proposeVisit(lead.id, valueWithOffset)
-        if (result.error) throw new Error(result.error)
 
         // Trigger Webhook
         try {

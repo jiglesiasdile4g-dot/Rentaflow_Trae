@@ -68,7 +68,8 @@ interface ScheduledVisit {
   fecha_de_visita: string
   Telefono: string | null
   Ingresos?: number
-  visita_completada?: boolean
+  visita_completada?: boolean | string
+  Estado?: string | null
   resumen_visita?: string
 }
 
@@ -96,8 +97,10 @@ export default function AgendaPage() {
   const [selectedDateStr, setSelectedDateStr] = useState<string>("")
   const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([])
   const [scheduledVisits, setScheduledVisits] = useState<ScheduledVisit[]>([])
+  const [suggestedVisits, setSuggestedVisits] = useState<ScheduledVisit[]>([])
   const [currentSlots, setCurrentSlots] = useState<TimeSlot[]>([])
   const [dayVisits, setDayVisits] = useState<ScheduledVisit[]>([])
+  const [daySuggestions, setDaySuggestions] = useState<ScheduledVisit[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isStateRestored, setIsStateRestored] = useState(false)
   const calendarTouchStartX = useRef<number | null>(null)
@@ -565,8 +568,21 @@ export default function AgendaPage() {
       })
       
       setDayVisits(visits)
+
+      const suggestions = suggestedVisits.filter(visit => {
+        const visitDate = safeDate(visit.fecha_de_visita)
+        if (!visitDate) return false
+        const visitDateStr = format(visitDate, "yyyy-MM-dd")
+        return visitDateStr === selectedDateStr
+      }).sort((a, b) => {
+        const dateA = safeDate(a.fecha_de_visita)
+        const dateB = safeDate(b.fecha_de_visita)
+        return (dateA?.getTime() || 0) - (dateB?.getTime() || 0)
+      })
+
+      setDaySuggestions(suggestions)
     }
-  }, [selectedDateStr, agendaItems, agentId, scheduledVisits])
+  }, [selectedDateStr, agendaItems, agentId, scheduledVisits, suggestedVisits])
 
   const handleOpenLeadDetail = (visit: ScheduledVisit) => {
     setSelectedLeadId(visit.id)
@@ -690,6 +706,8 @@ export default function AgendaPage() {
         .gte("fecha_de_visita", startDateStr)
         .lte("fecha_de_visita", endDateStr + "T23:59:59")
         .eq("idag", activeAgentId)
+        .not("visita_completada", "ilike", "%visita propuesta%")
+        .not("Estado", "ilike", "%Visita Propuesta%")
 
       const { data: visitsData, error: visitsError } = await visitsQuery
 
@@ -697,6 +715,23 @@ export default function AgendaPage() {
         console.error("Error fetching visits:", visitsError)
       } else {
         setScheduledVisits(visitsData || [])
+      }
+
+      let suggestionsQuery = supabase
+        .from("Clientes")
+        .select("*")
+        .not("fecha_de_visita", "is", null)
+        .gte("fecha_de_visita", startDateStr)
+        .lte("fecha_de_visita", endDateStr + "T23:59:59")
+        .eq("idag", activeAgentId)
+        .or("visita_completada.ilike.%visita propuesta%,Estado.ilike.%Visita Propuesta%")
+
+      const { data: suggestionsData, error: suggestionsError } = await suggestionsQuery
+
+      if (suggestionsError) {
+        console.error("Error fetching suggested visits:", suggestionsError)
+      } else {
+        setSuggestedVisits(suggestionsData || [])
       }
 
     } catch (err) {
@@ -1819,6 +1854,62 @@ export default function AgendaPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="pb-4">
+                {daySuggestions.length > 0 && (
+                  <div className="mb-4 space-y-2">
+                    <div className="text-xs font-semibold text-muted-foreground">Sugerencias de visita</div>
+                    {daySuggestions.map((visit) => (
+                      <div
+                        key={`suggestion-${visit.id}`}
+                        className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-3 border border-blue-200 rounded-lg bg-blue-50/40 shadow-sm"
+                      >
+                        <div className="flex items-center gap-3 w-full">
+                          <div className="flex flex-col items-center justify-center w-12 h-12 rounded-md shrink-0 bg-blue-100 text-blue-700">
+                            <span className="text-sm font-bold">
+                              {format(new Date(visit.fecha_de_visita), "HH:mm")}
+                            </span>
+                          </div>
+                          <div
+                            className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 w-full cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => handleOpenLeadDetail(visit)}
+                            title="Ver detalles del lead"
+                          >
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              <h4 className="font-bold text-lg">
+                                {visit.Nombre} {visit.Apellidos}
+                              </h4>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Building className="h-4 w-4 shrink-0" />
+                              <span className="font-medium text-foreground/80">{visit.Inmueble}</span>
+                            </div>
+                            {visit.Telefono && (
+                              <a
+                                href={`tel:${visit.Telefono}`}
+                                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group"
+                                title="Llamar"
+                              >
+                                <Phone className="h-4 w-4 shrink-0 group-hover:text-primary" />
+                                <span className="font-medium underline decoration-dotted underline-offset-4 group-hover:text-primary">{visit.Telefono}</span>
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                        <div className="sm:ml-2 w-full sm:w-auto shrink-0 flex flex-wrap gap-2 sm:justify-end">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9 transition-all shadow-sm text-muted-foreground border-muted-foreground/30"
+                            onClick={() => handleOpenReschedule(visit)}
+                            title="Reprogramar"
+                          >
+                            <CalendarDays className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {timelineItems.length === 0 ? (
                   <div className="text-center py-6 bg-muted/20 rounded-lg">
                     <p className="text-muted-foreground text-xs">No hay citas ni franjas disponibles para este día.</p>
