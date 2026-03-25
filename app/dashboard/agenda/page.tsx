@@ -698,7 +698,7 @@ export default function AgendaPage() {
           setAgendaItems(agendaData || [])
         }
 
-      // Fetch scheduled visits from Clientes
+      // Fetch visits from Clientes
       let visitsQuery = supabase
         .from("Clientes")
         .select("*")
@@ -706,32 +706,20 @@ export default function AgendaPage() {
         .gte("fecha_de_visita", startDateStr)
         .lte("fecha_de_visita", endDateStr + "T23:59:59")
         .eq("idag", activeAgentId)
-        .not("visita_completada", "ilike", "%visita propuesta%")
-        .not("Estado", "ilike", "%Visita Propuesta%")
 
       const { data: visitsData, error: visitsError } = await visitsQuery
 
       if (visitsError) {
         console.error("Error fetching visits:", visitsError)
       } else {
-        setScheduledVisits(visitsData || [])
-      }
-
-      let suggestionsQuery = supabase
-        .from("Clientes")
-        .select("*")
-        .not("fecha_de_visita", "is", null)
-        .gte("fecha_de_visita", startDateStr)
-        .lte("fecha_de_visita", endDateStr + "T23:59:59")
-        .eq("idag", activeAgentId)
-        .or("visita_completada.ilike.%visita propuesta%,Estado.ilike.%Visita Propuesta%")
-
-      const { data: suggestionsData, error: suggestionsError } = await suggestionsQuery
-
-      if (suggestionsError) {
-        console.error("Error fetching suggested visits:", suggestionsError)
-      } else {
-        setSuggestedVisits(suggestionsData || [])
+        const allVisits = visitsData || []
+        const isSuggestion = (visit: ScheduledVisit) => {
+          const status = typeof visit.visita_completada === "string" ? visit.visita_completada.toLowerCase() : ""
+          const estado = visit.Estado ? String(visit.Estado).toLowerCase() : ""
+          return status.includes("visita propuesta") || estado.includes("visita propuesta")
+        }
+        setSuggestedVisits(allVisits.filter(isSuggestion))
+        setScheduledVisits(allVisits.filter((v) => !isSuggestion(v)))
       }
 
     } catch (err) {
@@ -829,14 +817,23 @@ export default function AgendaPage() {
 
   // Helper to check completion status handling various DB types (boolean/string)
   const isVisitCompleted = (status: any) => {
+    if (status === 1) return true
     if (status === true) return true
+    if (status === 0) return false
+    if (typeof status === "number") return status === 1
     if (typeof status === 'string') {
       const s = status.toLowerCase().trim()
       // "visita propuesta" is NOT completed. "cancelada" is NOT completed.
       // Only explicit "true" or similar affirmative values are completed.
-      return s === 'true' || s === 'completada' || s === 'realizada' || s === 'si'
+      return s === 'true' || s === '1' || s === 'completada' || s === 'completado' || s === 'realizada' || s === 'realizado' || s === 'si' || s === 'sí' || s === 'finalizada' || s === 'finalizado'
     }
     return false
+  }
+
+  const isSuggestedVisit = (visit: ScheduledVisit) => {
+    const status = typeof visit.visita_completada === "string" ? visit.visita_completada.toLowerCase() : ""
+    const estado = visit.Estado ? String(visit.Estado).toLowerCase() : ""
+    return status.includes("visita propuesta") || estado.includes("visita propuesta")
   }
 
   const handleToggleCompletion = async (visit: ScheduledVisit) => {
@@ -848,14 +845,35 @@ export default function AgendaPage() {
 
     // 1. Optimistic Update (Immediate UI change)
     const updateLocalState = (status: boolean) => {
-      // Update the global list
-      setScheduledVisits(prev => prev.map(v => 
-        v.id === visit.id ? { ...v, visita_completada: status } : v
-      ))
-      // Update the daily list (redundant but ensures speed)
-      setDayVisits(prev => prev.map(v => 
-        v.id === visit.id ? { ...v, visita_completada: status } : v
-      ))
+      const updateVisit = (v: ScheduledVisit) => (v.id === visit.id ? { ...v, visita_completada: status } : v)
+      const allVisits = [
+        ...scheduledVisits.map(updateVisit),
+        ...suggestedVisits.map(updateVisit),
+      ]
+      const nextSuggested = allVisits.filter(isSuggestedVisit)
+      const nextScheduled = allVisits.filter((v) => !isSuggestedVisit(v))
+      setSuggestedVisits(nextSuggested)
+      setScheduledVisits(nextScheduled)
+      const nextDayVisits = nextScheduled.filter(v => {
+        const visitDate = safeDate(v.fecha_de_visita)
+        if (!visitDate) return false
+        return format(visitDate, "yyyy-MM-dd") === selectedDateStr
+      }).sort((a, b) => {
+        const dateA = safeDate(a.fecha_de_visita)
+        const dateB = safeDate(b.fecha_de_visita)
+        return (dateA?.getTime() || 0) - (dateB?.getTime() || 0)
+      })
+      const nextDaySuggestions = nextSuggested.filter(v => {
+        const visitDate = safeDate(v.fecha_de_visita)
+        if (!visitDate) return false
+        return format(visitDate, "yyyy-MM-dd") === selectedDateStr
+      }).sort((a, b) => {
+        const dateA = safeDate(a.fecha_de_visita)
+        const dateB = safeDate(b.fecha_de_visita)
+        return (dateA?.getTime() || 0) - (dateB?.getTime() || 0)
+      })
+      setDayVisits(nextDayVisits)
+      setDaySuggestions(nextDaySuggestions)
     }
 
     updateLocalState(newStatus)
@@ -1485,7 +1503,7 @@ export default function AgendaPage() {
                         <TabsList className="h-auto bg-transparent p-0 gap-2 flex-nowrap overflow-x-auto w-full">
                           {visibleCalendarDays.map((day) => {
                             const hasSlots = agendaItems.some(item => item.fecha === day.id)
-                            const visitCount = scheduledVisits.filter(v => {
+                            const visitCount = [...scheduledVisits, ...suggestedVisits].filter(v => {
                               const d = safeDate(v.fecha_de_visita)
                               return d && format(d, "yyyy-MM-dd") === day.id
                             }).length
@@ -1530,7 +1548,7 @@ export default function AgendaPage() {
                         <TabsList className="h-auto bg-transparent p-0 gap-1.5 sm:gap-2 grid grid-cols-7 w-full">
                           {visibleCalendarDays.slice(0, 7).map((day) => {
                             const hasSlots = agendaItems.some(item => item.fecha === day.id)
-                            const visitCount = scheduledVisits.filter(v => {
+                            const visitCount = [...scheduledVisits, ...suggestedVisits].filter(v => {
                               const d = safeDate(v.fecha_de_visita)
                               return d && format(d, "yyyy-MM-dd") === day.id
                             }).length
@@ -1566,7 +1584,7 @@ export default function AgendaPage() {
                         <TabsList className="h-auto bg-transparent p-0 gap-1.5 sm:gap-2 grid grid-cols-7 w-full">
                           {visibleCalendarDays.slice(7, 14).map((day) => {
                             const hasSlots = agendaItems.some(item => item.fecha === day.id)
-                            const visitCount = scheduledVisits.filter(v => {
+                            const visitCount = [...scheduledVisits, ...suggestedVisits].filter(v => {
                               const d = safeDate(v.fecha_de_visita)
                               return d && format(d, "yyyy-MM-dd") === day.id
                             }).length
@@ -1857,13 +1875,21 @@ export default function AgendaPage() {
                 {daySuggestions.length > 0 && (
                   <div className="mb-4 space-y-2">
                     <div className="text-xs font-semibold text-muted-foreground">Sugerencias de visita</div>
-                    {daySuggestions.map((visit) => (
-                      <div
-                        key={`suggestion-${visit.id}`}
-                        className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-3 border border-blue-200 rounded-lg bg-blue-50/40 shadow-sm"
-                      >
+                    {daySuggestions.map((visit) => {
+                      const completed = isVisitCompleted(visit.visita_completada)
+                      return (
+                        <div
+                          key={`suggestion-${visit.id}`}
+                          className={cn(
+                            "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-3 border rounded-lg shadow-sm hover:shadow-md transition-all",
+                            completed ? "border-green-500/30 bg-green-100" : "border-blue-200 bg-blue-50/40",
+                          )}
+                        >
                         <div className="flex items-center gap-3 w-full">
-                          <div className="flex flex-col items-center justify-center w-12 h-12 rounded-md shrink-0 bg-blue-100 text-blue-700">
+                          <div className={cn(
+                            "flex flex-col items-center justify-center w-12 h-12 rounded-md shrink-0",
+                            completed ? "bg-green-200 text-green-800" : "bg-blue-100 text-blue-700",
+                          )}>
                             <span className="text-sm font-bold">
                               {format(new Date(visit.fecha_de_visita), "HH:mm")}
                             </span>
@@ -1899,15 +1925,51 @@ export default function AgendaPage() {
                           <Button
                             variant="outline"
                             size="icon"
+                            className={cn(
+                              "h-9 w-9 transition-all shadow-sm rounded-full",
+                              isVisitCompleted(visit.visita_completada)
+                                ? "bg-green-500 hover:bg-green-600 text-black border-green-500"
+                                : "bg-[#F8FBF8] hover:bg-green-50 text-muted-foreground border-muted-foreground/30 hover:border-green-500 hover:text-green-600",
+                            )}
+                            onClick={() => handleToggleCompletion(visit)}
+                            title={isVisitCompleted(visit.visita_completada) ? "Marcar como pendiente" : "Marcar como realizada"}
+                          >
+                            <Check className={cn("h-6 w-6 stroke-[3]", isVisitCompleted(visit.visita_completada) ? "opacity-100" : "opacity-50")} />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
                             className="h-9 w-9 transition-all shadow-sm text-muted-foreground border-muted-foreground/30"
                             onClick={() => handleOpenReschedule(visit)}
                             title="Reprogramar"
                           >
                             <CalendarDays className="h-4 w-4" />
                           </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className={cn(
+                              "h-9 w-9 transition-all shadow-sm",
+                              visit.resumen_visita ? "text-blue-600 border-blue-200 bg-blue-50" : "text-muted-foreground border-muted-foreground/30",
+                            )}
+                            onClick={() => handleOpenFeedbackDialog(visit)}
+                            title="Añadir feedback / resumen"
+                          >
+                            <FileText className={cn("h-4 w-4", visit.resumen_visita && "fill-current")} />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9 transition-all shadow-sm text-muted-foreground border-muted-foreground/30 hover:border-red-500 hover:text-red-600 hover:bg-red-50"
+                            onClick={() => handleOpenCancelDialog(visit)}
+                            title="Cancelar visita"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
-                      </div>
-                    ))}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
                 {timelineItems.length === 0 ? (
