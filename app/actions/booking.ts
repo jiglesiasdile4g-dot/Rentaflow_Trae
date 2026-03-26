@@ -147,7 +147,7 @@ export async function confirmVisit(leadId: string, visitDate: string) {
       .from("Clientes")
       .update({
         fecha_de_visita: visitDate,
-        visita_completada: "pendiente",
+        visita_completada: "visita confirmada", // Changed from "pendiente" to "visita confirmada"
         Estado: "Visita Confirmada"
       })
       .eq("id", leadId)
@@ -205,17 +205,36 @@ export async function rescheduleVisit(leadId: string, newDate: string) {
     }
 }
 
-export async function proposeVisit(leadId: string, proposedDate: string) {
-  console.log("[Booking Action] proposeVisit called", { leadId, proposedDate })
+export async function proposeVisit(
+  leadId: string,
+  proposedDate: string,
+  preferredShift?: string,
+  agentId?: number | null,
+  proposalMeta?: {
+    inmobiliariaId?: number | null
+    inmuebleRef?: string | null
+    inmuebleDireccion?: string | null
+    inmuebleId?: string | number | null
+    message?: string | null
+  }
+) {
+  console.log("[Booking Action] proposeVisit called", { leadId, proposedDate, preferredShift, agentId, proposalMeta })
   const supabase = createAdminClient()
   
   try {
+    const shiftLabel = preferredShift ? preferredShift.toLowerCase() : ""
+    const proposedStatus = shiftLabel ? `visita propuesta ${shiftLabel}` : "visita propuesta"
+    const updatePayload: Record<string, any> = {
+      fecha_de_visita: proposedDate,
+      visita_completada: proposedStatus,
+      Estado: "Visita Propuesta",
+    }
+    if (agentId) {
+      updatePayload.idag = agentId
+    }
     const { data, error } = await supabase
       .from("Clientes")
-      .update({
-        fecha_de_visita: proposedDate,
-        visita_completada: "visita propuesta"
-      })
+      .update(updatePayload)
       .eq("id", leadId)
       .select()
 
@@ -226,6 +245,36 @@ export async function proposeVisit(leadId: string, proposedDate: string) {
 
     if (!data || data.length === 0) {
         return { error: "No se encontró el cliente para actualizar." }
+    }
+
+    try {
+      const leadIdNumber = Number(leadId)
+      const inmuebleIdValue = proposalMeta?.inmuebleId ? Number(proposalMeta.inmuebleId) : null
+      const fechaValue = proposedDate.includes("T") ? proposedDate.split("T")[0] : proposedDate
+      if (!Number.isNaN(leadIdNumber)) {
+        const { data: proposalData, error: proposalError } = await supabase
+          .from("propuesta_cliente")
+          .insert({
+            fecha: fechaValue,
+            turno: preferredShift ?? null,
+            inmobiliaria_idi: proposalMeta?.inmobiliariaId ?? null,
+            lead_id: leadIdNumber,
+            anuncio_id: inmuebleIdValue,
+            agente_id: agentId ?? null,
+            mensaje: proposalMeta?.message ?? null
+          })
+          .select()
+          .single()
+        if (proposalError) {
+          throw proposalError
+        }
+        if (!proposalData) {
+          return { error: "No se pudo guardar la propuesta del cliente." }
+        }
+      }
+    } catch (proposalErr) {
+      console.error("Error creating proposal record:", proposalErr)
+      return { error: "No se pudo guardar la propuesta del cliente." }
     }
 
     return { success: true }
@@ -280,4 +329,35 @@ export async function cancelVisit(leadId: string) {
       console.error("Error canceling visit:", err)
       return { error: "No se pudo cancelar la visita." }
     }
+}
+
+export async function cancelVisitByAgent(leadId: string | number) {
+  console.log("[Booking Action] cancelVisitByAgent called", { leadId })
+  const supabase = createAdminClient()
+  
+  try {
+    const { data, error } = await supabase
+      .from("Clientes")
+      .update({
+        visita_completada: "cancelada",
+        fecha_de_visita: null,
+        Estado: "Aceptado"
+      })
+      .eq("id", leadId)
+      .select()
+
+    if (error) {
+      console.error("[Booking Action] Agent cancel failed:", error)
+      throw error
+    }
+
+    if (!data || data.length === 0) {
+      return { error: "No se encontró el cliente para cancelar." }
+    }
+
+    return { success: true }
+  } catch (err: any) {
+    console.error("Error canceling visit by agent:", err)
+    return { error: "No se pudo cancelar la visita." }
+  }
 }

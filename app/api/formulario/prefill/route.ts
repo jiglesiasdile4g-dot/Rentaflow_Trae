@@ -170,17 +170,17 @@ export async function GET(req: Request) {
         inmobiliaria = inmoData || null
       }
 
-      const adsQuery = async (selectValue: string, withActive: boolean) => {
+      const adsQuery = async (selectValue: string, withActive: boolean) => {    
         let query = supabase.from("Anuncios").select(selectValue).eq("usuario", inmoId)
         if (withActive) {
           query = query.eq("Activacion", "Activo")
         }
         return await query
       }
-      const { data: adsData, error: adsErr } = await adsQuery("ida, Referencia, Direccion, Activacion, usuario", true)
+      const { data: adsData, error: adsErr } = await adsQuery("ida, Referencia, Direccion, Precio, Activacion, usuario", true)
       if (adsErr) {
         if (isMissingColumnError(adsErr.message)) {
-          const retry = await adsQuery("ida, Referencia, Direccion, usuario", false)
+          const retry = await adsQuery("ida, Referencia, Direccion, Precio, usuario", false)
           if (retry.error) {
             return NextResponse.json({ ok: false, error: retry.error.message }, { status: 400 })
           }

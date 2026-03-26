@@ -30,6 +30,8 @@ import { cn, formatWebhookDate } from "@/lib/utils"
 import { fixUserPermissionsAction } from "@/app/actions/user-config"
 import { LeadDetailModal } from "@/components/lead-detail-modal"
 import { generateSlotCandidates, isOverlapping, AgendaSlot, AdData } from "@/lib/agenda-utils"
+import { cancelVisitByAgent } from "@/app/actions/booking"
+import { getAgendaProposals, confirmAgendaProposal, rejectAgendaProposal } from "@/app/actions/proposals"
 
 interface TimeSlot {
   id?: number
@@ -71,6 +73,9 @@ interface ScheduledVisit {
   visita_completada?: boolean | string
   Estado?: string | null
   resumen_visita?: string
+  idag?: number | null
+  proposalLeadId?: number | null
+  proposalId?: number | null
 }
 
 interface DayTab {
@@ -121,6 +126,12 @@ export default function AgendaPage() {
   // Cancel state
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [visitToCancel, setVisitToCancel] = useState<ScheduledVisit | null>(null)
+  const [cancelMode, setCancelMode] = useState<"cancel" | "reject">("cancel")
+
+  // Confirm proposal state
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+  const [visitToConfirm, setVisitToConfirm] = useState<ScheduledVisit | null>(null)
+  const [confirmTime, setConfirmTime] = useState("")
 
   // Lead Detail Modal state
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null)
@@ -708,14 +719,141 @@ export default function AgendaPage() {
         .eq("idag", activeAgentId)
 
       const { data: visitsData, error: visitsError } = await visitsQuery
+      let allVisits: ScheduledVisit[] = visitsData || []
+
+      try {
+        const { data: proposalsData, error: proposalsError } = await getAgendaProposals({
+          startDate: startDateStr,
+          endDate: endDateStr,
+          inmobiliariaId,
+        })
+
+        if (!proposalsError && proposalsData && proposalsData.length > 0) {
+          const filteredProposals = proposalsData.filter((p) => {
+            if (inmobiliariaId && p.inmobiliaria_idi) {
+              return Number(p.inmobiliaria_idi) === Number(inmobiliariaId)
+            }
+            return true
+          })
+          const leadIds = filteredProposals
+            .map(p => p.lead_id)
+            .filter(Boolean) as number[]
+
+          const leadMap = new Map<number, any>()
+          if (leadIds.length > 0) {
+            const { data: proposalLeads, error: proposalLeadsError } = await supabase
+              .from("Clientes")
+              .select("*")
+              .in("id", leadIds)
+
+            if (!proposalLeadsError && proposalLeads) {
+              proposalLeads.forEach((l) => {
+                leadMap.set(l.id, l)
+              })
+            }
+          }
+          if (filteredProposals.length > 0) {
+              const existingKeys = new Set(allVisits.map(v => `${v.id}-${v.fecha_de_visita}`))
+              const existingLeadIds = new Set(allVisits.map(v => v.id))
+              const proposalVisits = filteredProposals
+                .filter(p => p.lead_id)
+                .map(p => {
+                  const lead = leadMap.get(p.lead_id)
+                  if (!lead) return null
+                  if (existingLeadIds.has(lead.id)) return null
+                  if (lead.idag && Number(lead.idag) !== Number(activeAgentId)) return null
+                  const leadEstado = lead.Estado ? String(lead.Estado).toLowerCase() : ""
+                  const leadStatus = typeof lead.visita_completada === "string" ? lead.visita_completada.toLowerCase() : ""
+                  if (!leadEstado.includes("visita propuesta") && !leadStatus.includes("visita propuesta") && lead.fecha_de_visita) {
+                    return null
+                  }
+                  if (!p.fecha) return null
+                  const turnoValue = typeof p.turno === "string" ? p.turno.toLowerCase() : ""
+                  let timeValue = "12:00:00"
+                  if (turnoValue.includes("mañana") || turnoValue.includes("manana")) {
+                    timeValue = "10:00:00"
+                  } else if (turnoValue.includes("tarde")) {
+                    timeValue = "16:00:00"
+                  } else if (turnoValue.includes("noche")) {
+                    timeValue = "20:00:00"
+                  }
+                  const fechaVisitaValue = `${p.fecha}T${timeValue}`
+                  const key = `${lead.id}-${fechaVisitaValue}`
+                  if (existingKeys.has(key)) return null
+                  let statusValue = typeof lead.visita_completada === "string" ? lead.visita_completada : ""
+                  if (!statusValue.toLowerCase().includes("visita propuesta")) {
+                    statusValue = turnoValue ? `visita propuesta ${turnoValue}` : "visita propuesta"
+                  }
+                  const estadoValue = lead.Estado ? String(lead.Estado) : "Visita Propuesta"
+                  return {
+                    ...lead,
+                    fecha_de_visita: fechaVisitaValue,
+                    visita_completada: statusValue,
+                    Estado: estadoValue,
+                    proposalLeadId: p.lead_id ? Number(p.lead_id) : null,
+                    proposalId: typeof p.id === "number" ? p.id : null
+                  } as ScheduledVisit
+                })
+                .filter(Boolean) as ScheduledVisit[]
+
+              if (proposalVisits.length > 0) {
+                allVisits = [...allVisits, ...proposalVisits]
+              }
+              const fallbackVisits = filteredProposals
+                .filter(p => {
+                  if (!p.fecha) return false
+                  if (p.lead_id && leadMap.has(p.lead_id)) return false
+                  return true
+                })
+                .map((p, idx) => {
+                  const fallbackId = p.lead_id ? Number(p.lead_id) : -(1000000 + idx)
+                  const turnoValue = typeof p.turno === "string" ? p.turno.toLowerCase() : ""
+                  let timeValue = "12:00:00"
+                  if (turnoValue.includes("mañana") || turnoValue.includes("manana")) {
+                    timeValue = "10:00:00"
+                  } else if (turnoValue.includes("tarde")) {
+                    timeValue = "16:00:00"
+                  } else if (turnoValue.includes("noche")) {
+                    timeValue = "20:00:00"
+                  }
+                  const fechaVisitaValue = `${p.fecha}T${timeValue}`
+                  const key = `${fallbackId}-${fechaVisitaValue}`
+                  if (existingKeys.has(key)) return null
+                  const inmuebleValue = p.anuncio_id ? `Anuncio ${p.anuncio_id}` : "Inmueble sin referencia"
+                  return {
+                    id: fallbackId,
+                    Nombre: "Propuesta de visita",
+                    Apellidos: p.lead_id ? `#${p.lead_id}` : "",
+                    Inmueble: inmuebleValue,
+                    fecha_de_visita: fechaVisitaValue,
+                    Telefono: null,
+                    visita_completada: turnoValue ? `visita propuesta ${turnoValue}` : "visita propuesta",
+                    Estado: "Visita Propuesta",
+                    proposalLeadId: p.lead_id ? Number(p.lead_id) : null,
+                    proposalId: typeof p.id === "number" ? p.id : null
+                  } as ScheduledVisit
+                })
+                .filter(Boolean) as ScheduledVisit[]
+              if (fallbackVisits.length > 0) {
+                allVisits = [...allVisits, ...fallbackVisits]
+              }
+            }
+          }
+      } catch (proposalErr) {
+        console.error("Error fetching proposals:", proposalErr)
+      }
 
       if (visitsError) {
         console.error("Error fetching visits:", visitsError)
       } else {
-        const allVisits = visitsData || []
         const isSuggestion = (visit: ScheduledVisit) => {
-          const status = typeof visit.visita_completada === "string" ? visit.visita_completada.toLowerCase() : ""
+          // If the visit has been successfully confirmed but state hasn't updated fully,
+          // we should NOT treat it as a suggestion if its status is 'Visita Confirmada'
           const estado = visit.Estado ? String(visit.Estado).toLowerCase() : ""
+          const status = typeof visit.visita_completada === "string" ? visit.visita_completada.toLowerCase() : ""
+          
+          if (estado === "visita confirmada" || status === "visita confirmada" || status === "reprogramada") return false;
+          
           return status.includes("visita propuesta") || estado.includes("visita propuesta")
         }
         setSuggestedVisits(allVisits.filter(isSuggestion))
@@ -732,7 +870,7 @@ export default function AgendaPage() {
     } finally {
       if (showLoader) setLoading(false)
     }
-  }, [agentId, inmobiliariaId, nextWeekDaysCount, prevWeekDaysCount, supabase, toast, agentsList])
+  }, [agentId, inmobiliariaId, nextWeekDaysCount, prevWeekDaysCount, supabase, toast, agentsList, canManageOthers])
 
   useEffect(() => {
     if (isStateRestored) {
@@ -833,7 +971,217 @@ export default function AgendaPage() {
   const isSuggestedVisit = (visit: ScheduledVisit) => {
     const status = typeof visit.visita_completada === "string" ? visit.visita_completada.toLowerCase() : ""
     const estado = visit.Estado ? String(visit.Estado).toLowerCase() : ""
+    
+    if (estado === "visita confirmada" || status === "visita confirmada" || status === "reprogramada") return false;
+    
     return status.includes("visita propuesta") || estado.includes("visita propuesta")
+  }
+
+  const getSuggestionTimeLabel = (visit: ScheduledVisit) => {
+    const status = typeof visit.visita_completada === "string" ? visit.visita_completada.toLowerCase() : ""
+    if (status.includes("mañana") || status.includes("manana")) return "Mañana"
+    if (status.includes("tarde")) return "Tarde"
+    const d = safeDate(visit.fecha_de_visita)
+    return d ? format(d, "HH:mm") : "--:--"
+  }
+
+  const handleConfirmProposal = (visit: ScheduledVisit) => {
+    if (!visit.fecha_de_visita) {
+      toast({
+        title: "Error",
+        description: "La propuesta no tiene una fecha válida.",
+        variant: "destructive",
+      })
+      return
+    }
+    const d = safeDate(visit.fecha_de_visita)
+    const timeValue = d ? format(d, "HH:mm") : ""
+    setConfirmTime(timeValue)
+    setVisitToConfirm(visit)
+    setConfirmDialogOpen(true)
+  }
+
+  const handleSaveConfirm = async () => {
+    if (!visitToConfirm || !confirmTime) return
+    const baseDate = safeDate(visitToConfirm.fecha_de_visita)
+    if (!baseDate) {
+      toast({
+        title: "Error",
+        description: "La propuesta no tiene una fecha válida.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      setSaving(true)
+      const [hours, minutes] = confirmTime.split(":").map(Number)
+      const localDate = new Date(baseDate)
+      localDate.setHours(hours, minutes, 0, 0)
+      const dateStr = format(localDate, "yyyy-MM-dd")
+      const timeStr = format(localDate, "HH:mm")
+      const dateTimeStr = `${dateStr}T${timeStr}:00`
+      const d = new Date(dateTimeStr)
+      const off = d.getTimezoneOffset()
+      const sign = off <= 0 ? "+" : "-"
+      const hh = String(Math.floor(Math.abs(off) / 60)).padStart(2, "0")
+      const mm = String(Math.abs(off) % 60).padStart(2, "0")
+      const offset = `${sign}${hh}:${mm}`
+      const newDateTimeIso = `${dateTimeStr}${offset}`
+
+      const proposalDate = format(baseDate, "yyyy-MM-dd")
+      const actualLeadId = typeof visitToConfirm.proposalLeadId === "number" ? visitToConfirm.proposalLeadId : visitToConfirm.id
+      const actualProposalId = typeof visitToConfirm.proposalId === "number" ? visitToConfirm.proposalId : null
+      const resolvedAgentId = typeof visitToConfirm.idag === "number" ? visitToConfirm.idag : agentId
+      if (!actualLeadId || Number.isNaN(actualLeadId) || actualLeadId <= 0) {
+        toast({
+          title: "Error",
+          description: "No se pudo identificar el lead para confirmar la visita.",
+          variant: "destructive",
+        })
+        return
+      }
+      let confirmResult: any = { error: null }
+      try {
+        confirmResult = await confirmAgendaProposal({
+          leadId: actualLeadId,
+          fechaHora: newDateTimeIso,
+          agentId: typeof resolvedAgentId === "number" ? resolvedAgentId : null,
+          proposalId: actualProposalId ?? undefined,
+        })
+      } catch (serverActionErr: any) {
+        console.warn("Server action confirmAgendaProposal failed, relying on client fallback:", serverActionErr)
+        confirmResult = { error: serverActionErr.message || "Server action failed" }
+      }
+      
+      // Let's do client-side update regardless to ensure the local state is updated immediately
+      // and ensure we don't have issues if the server action partially failed or we didn't get success.
+      const { error: clientUpdateError } = await supabase
+        .from("Clientes")
+        .update({
+          fecha_de_visita: newDateTimeIso,
+          visita_completada: "visita confirmada", // Changed from "pendiente" to "visita confirmada"
+          Estado: "Visita Confirmada",
+          visita_propuesta: false, // Ensure this is false so the trigger doesn't revert it
+          ...(typeof resolvedAgentId === "number" ? { idag: resolvedAgentId } : {})
+        })
+        .eq("id", actualLeadId)
+        
+      if (clientUpdateError) {
+        console.error("Error updating lead directly:", clientUpdateError)
+      }
+
+      // Also ensure proposal is deleted
+      const { error: clientDeleteError } = await supabase
+        .from("propuesta_cliente")
+        .delete()
+        .eq("lead_id", actualLeadId)
+
+      if (clientDeleteError) {
+        console.error("Error deleting proposal with client:", clientDeleteError)
+      }
+
+      if (confirmResult?.error && clientUpdateError) {
+         throw new Error(confirmResult.error || clientUpdateError.message)
+      }
+
+      const updatedVisit: ScheduledVisit = {
+        ...visitToConfirm,
+        id: actualLeadId,
+        fecha_de_visita: newDateTimeIso,
+        visita_completada: "visita confirmada",
+        Estado: "Visita Confirmada",
+        proposalLeadId: actualLeadId,
+        proposalId: actualProposalId
+      }
+      setSuggestedVisits(prev => prev.filter(v => {
+        if (v.id !== visitToConfirm.id && v.proposalLeadId !== actualLeadId) return true
+        return false
+      }))
+      setScheduledVisits(prev => {
+        const next = prev.filter(v => v.id !== actualLeadId)
+        next.push(updatedVisit)
+        return next
+      })
+
+      try {
+        const { data: fullLead } = await supabase
+          .from("Clientes")
+          .select("*")
+          .eq("id", actualLeadId)
+          .single()
+
+        let inmobiliariaData = null
+        const targetInmoId = inmobiliariaId || (fullLead as any)?.idi || (fullLead as any)?.usuario
+        if (targetInmoId) {
+          const { data } = await supabase.from("Inmobiliarias").select("*").eq("idi", targetInmoId).single()
+          inmobiliariaData = data
+        }
+
+        let agentData = null
+        if (fullLead?.idag) {
+          const { data } = await supabase.from("Agentes").select("*").eq("idag", fullLead.idag).single()
+          agentData = data
+        }
+
+        const currentAd = availableAnuncios.find(a => 
+          (a.Referencia && visitToConfirm.Inmueble && a.Referencia.trim() === visitToConfirm.Inmueble.trim()) || 
+          (a.Direccion && visitToConfirm.Inmueble && a.Direccion.trim() === visitToConfirm.Inmueble.trim()) ||
+          (visitToConfirm.Inmueble && a.Direccion && visitToConfirm.Inmueble.includes(a.Direccion))
+        )
+
+        const { date: formattedDate, time: formattedTime } = formatWebhookDate(newDateTimeIso)
+        const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${actualLeadId}`
+        const leadData = { ...(fullLead || { ...visitToConfirm, id: actualLeadId }) }
+        delete (leadData as any).status_history
+
+        const payload = {
+          "Link de Agendamiento": bookingLink,
+          "Nombre de lead": `${fullLead?.Nombre || visitToConfirm.Nombre} ${fullLead?.Apellidos || visitToConfirm.Apellidos || ''}`.trim(),
+          "Inmueble/Anuncio": currentAd 
+            ? { ...currentAd, Direccion: currentAd.Direccion || "Pregunta a tu agente" } 
+            : { Referencia: visitToConfirm.Inmueble, Direccion: "Pregunta a tu agente" },
+          "Direccion": currentAd?.Direccion || "Pregunta a tu agente",
+          "Direccion del Anuncio": currentAd?.Direccion || "Pregunta a tu agente",
+          "Nombre Inmobiliaria": inmobiliariaNombre || (inmobiliariaData as any)?.nombre_inmobiliaria || "Sin nombre",
+          "Inmobiliaria": inmobiliariaData || null,
+          "Firma": (inmobiliariaData as any)?.firma_html || "",
+          "Agente Asignado": agentData,
+          "Agente Email": agentData?.Email,
+          "Fecha Visita": formattedDate,
+          "Hora Visita": formattedTime,
+          "Fecha Completa": newDateTimeIso,
+          "Motivo": "Confirmado por agente",
+          ...leadData,
+          fecha_de_visita: newDateTimeIso
+        }
+
+        await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/confirmacion_visita", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+      } catch (webhookError) {
+        console.error("Error calling confirm webhook:", webhookError)
+      }
+
+      toast({
+        title: "Cita confirmada",
+        description: "La propuesta se movió a citas programadas."
+      })
+
+      setConfirmDialogOpen(false)
+      fetchAgentAndSchedule()
+    } catch (err) {
+      console.error("Error confirming proposal:", err)
+      toast({
+        title: "Error",
+        description: "No se pudo confirmar la propuesta.",
+        variant: "destructive",
+      })
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleToggleCompletion = async (visit: ScheduledVisit) => {
@@ -1138,8 +1486,9 @@ export default function AgendaPage() {
     }
   }
 
-  const handleOpenCancelDialog = (visit: ScheduledVisit) => {
+  const handleOpenCancelDialog = (visit: ScheduledVisit, mode: "cancel" | "reject" = "cancel") => {
     setVisitToCancel(visit)
+    setCancelMode(mode)
     setCancelDialogOpen(true)
   }
 
@@ -1148,88 +1497,101 @@ export default function AgendaPage() {
 
     try {
       setSaving(true)
-      const { error } = await supabase
-        .from("Clientes")
-        .update({
-          visita_completada: "cancelada",
-          fecha_de_visita: null,
-          Estado: "Aceptado"
+      if (cancelMode === "reject") {
+        const cancelDate = safeDate(visitToCancel.fecha_de_visita)
+        const proposalDate = cancelDate ? format(cancelDate, "yyyy-MM-dd") : ""
+        const actualLeadId = typeof visitToCancel.proposalLeadId === "number" ? visitToCancel.proposalLeadId : visitToCancel.id
+        const actualProposalId = typeof visitToCancel.proposalId === "number" ? visitToCancel.proposalId : null
+        const rejectResult = await rejectAgendaProposal({
+          leadId: actualLeadId,
+          proposalId: actualProposalId ?? undefined,
         })
-        .eq("id", visitToCancel.id)
+        if (rejectResult?.error) throw new Error(rejectResult.error)
 
-      if (error) throw error
-
-      // Call webhook
-      try {
-        console.log("Preparing cancellation webhook payload...")
-        
-        // Fetch full lead data to ensure we have email etc.
-        const { data: fullLead } = await supabase.from("Clientes").select("*").eq("id", visitToCancel.id).single()
-
-        // Fetch additional data
-        let inmobiliariaData = null
-        const targetInmoId = inmobiliariaId || (fullLead as any)?.idi || (fullLead as any)?.usuario;
-
-        if (targetInmoId) {
-             const { data } = await supabase.from("Inmobiliarias").select("*").eq("idi", targetInmoId).single()
-             inmobiliariaData = data
+        if (proposalDate) {
+          setSuggestedVisits(prev => prev.filter(v => {
+            if (v.id !== visitToCancel.id && v.proposalLeadId !== actualLeadId) return true
+            return false
+          }))
+        } else {
+          setSuggestedVisits(prev => prev.filter(v => v.id !== visitToCancel.id && v.proposalLeadId !== actualLeadId))
         }
+      } else {
+        const result = await cancelVisitByAgent(visitToCancel.id)
+        if (result?.error) throw new Error(result.error)
+      }
 
-        const currentAd = availableAnuncios.find(a => 
-            (a.Referencia && visitToCancel.Inmueble && a.Referencia.trim() === visitToCancel.Inmueble.trim()) || 
-            (a.Direccion && visitToCancel.Inmueble && a.Direccion.trim() === visitToCancel.Inmueble.trim()) ||
-            (visitToCancel.Inmueble && a.Direccion && visitToCancel.Inmueble.includes(a.Direccion))
-        )
-        
-        // Fetch Agent Data
-        let agentData = null
-        if (fullLead?.idag) {
-            const { data } = await supabase.from("Agentes").select("*").eq("idag", fullLead.idag).single()
-            agentData = data
+      if (cancelMode === "cancel") {
+        try {
+          console.log("Preparing cancellation webhook payload...")
+          
+          const { data: fullLead } = await supabase.from("Clientes").select("*").eq("id", visitToCancel.id).single()
+
+          let inmobiliariaData = null
+          const targetInmoId = inmobiliariaId || (fullLead as any)?.idi || (fullLead as any)?.usuario
+
+          if (targetInmoId) {
+               const { data } = await supabase.from("Inmobiliarias").select("*").eq("idi", targetInmoId).single()
+               inmobiliariaData = data
+          }
+
+          const currentAd = availableAnuncios.find(a => 
+              (a.Referencia && visitToCancel.Inmueble && a.Referencia.trim() === visitToCancel.Inmueble.trim()) || 
+              (a.Direccion && visitToCancel.Inmueble && a.Direccion.trim() === visitToCancel.Inmueble.trim()) ||
+              (visitToCancel.Inmueble && a.Direccion && visitToCancel.Inmueble.includes(a.Direccion))
+          )
+          
+          let agentData = null
+          if (fullLead?.idag) {
+              const { data } = await supabase.from("Agentes").select("*").eq("idag", fullLead.idag).single()
+              agentData = data
+          }
+
+          const { date: formattedDate, time: formattedTime } = formatWebhookDate(visitToCancel.fecha_de_visita)
+          const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${visitToCancel.id}`
+          const cancelPayload = {
+              "Link de Agendamiento": bookingLink,
+              "Nombre de lead": `${fullLead?.Nombre || visitToCancel.Nombre} ${fullLead?.Apellidos || visitToCancel.Apellidos || ''}`.trim(),
+              "Inmueble/Anuncio": currentAd 
+                ? { ...currentAd, Direccion: currentAd.Direccion || "Pregunta a tu agente" } 
+                : { Referencia: visitToCancel.Inmueble, Direccion: "Pregunta a tu agente" },
+              "Direccion": currentAd?.Direccion || "Pregunta a tu agente",
+              "Direccion del Anuncio": currentAd?.Direccion || "Pregunta a tu agente",
+              "Nombre Inmobiliaria": inmobiliariaNombre || (inmobiliariaData as any)?.nombre_inmobiliaria || "Sin nombre",
+              "Inmobiliaria": inmobiliariaData || null,
+              "Firma": (inmobiliariaData as any)?.firma_html || "",
+              "Agente Asignado": agentData,
+              "Agente Email": agentData?.Email,
+              "Fecha Visita": formattedDate,
+              "Hora Visita": formattedTime,
+              "Fecha Completa": visitToCancel.fecha_de_visita,
+              "Motivo": "Cancelado por agente",
+              ...fullLead,
+              ...visitToCancel, 
+              visita_completada: "cancelada",
+              fecha_de_visita: null,
+              Estado: "Aceptado"
+          }
+
+          const { status_history, ...webhookPayload } = cancelPayload as any
+
+          await fetch("/api/cancelar-visita-agente", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(webhookPayload),
+          })
+        } catch (webhookError) {
+          console.error("Error calling cancel webhook:", webhookError)
         }
-
-        const { date: formattedDate, time: formattedTime } = formatWebhookDate(visitToCancel.fecha_de_visita)
-        const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${visitToCancel.id}`
-        const cancelPayload = {
-            "Link de Agendamiento": bookingLink,
-            "Nombre de lead": `${fullLead?.Nombre || visitToCancel.Nombre} ${fullLead?.Apellidos || visitToCancel.Apellidos || ''}`.trim(),
-            "Inmueble/Anuncio": currentAd 
-              ? { ...currentAd, Direccion: currentAd.Direccion || "Pregunta a tu agente" } 
-              : { Referencia: visitToCancel.Inmueble, Direccion: "Pregunta a tu agente" },
-            "Direccion": currentAd?.Direccion || "Pregunta a tu agente",
-            "Direccion del Anuncio": currentAd?.Direccion || "Pregunta a tu agente",
-            "Nombre Inmobiliaria": inmobiliariaNombre || (inmobiliariaData as any)?.nombre_inmobiliaria || "Sin nombre",
-            "Inmobiliaria": inmobiliariaData || null,
-            "Firma": (inmobiliariaData as any)?.firma_html || "",
-            "Agente Asignado": agentData,
-            "Agente Email": agentData?.Email,
-            "Fecha Visita": formattedDate,
-            "Hora Visita": formattedTime,
-            "Fecha Completa": visitToCancel.fecha_de_visita,
-            "Motivo": "Cancelado por agente",
-            ...fullLead,
-            ...visitToCancel, 
-            visita_completada: "cancelada",
-            fecha_de_visita: null,
-            Estado: "Aceptado"
-        }
-
-        const { status_history, ...webhookPayload } = cancelPayload as any
-
-        await fetch("/api/cancelar-visita-agente", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(webhookPayload),
-        })
-      } catch (webhookError) {
-        console.error("Error calling cancel webhook:", webhookError)
       }
 
       toast({
-        title: "Visita cancelada",
-        description: "La visita se ha cancelado correctamente.",
+        title: cancelMode === "reject" ? "Propuesta rechazada" : "Visita cancelada",
+        description: cancelMode === "reject"
+          ? "La propuesta fue descartada."
+          : "La visita se ha cancelado correctamente.",
       })
 
       setCancelDialogOpen(false)
@@ -1471,8 +1833,8 @@ export default function AgendaPage() {
                 </div>
               </SelectTrigger>
               <SelectContent>
-                {agentsList.map(agent => (
-                  <SelectItem key={agent.idag} value={agent.idag.toString()}>
+                {agentsList.map((agent, idx) => (
+                  <SelectItem key={`${agent.idag}-${idx}`} value={agent.idag.toString()}>
                     <div className="flex flex-col items-start gap-0.5 py-0.5">
                       <span className="font-medium text-sm leading-none">{agent.Nombre || agent.nombre}</span>
                       <span className="text-xs text-muted-foreground">{agent.Email}</span>
@@ -1791,8 +2153,8 @@ export default function AgendaPage() {
                                           {availableAnuncios.length > 0 ? (
                                             availableAnuncios
                                               .filter(ad => !ad.Activacion || ad.Activacion === 'Activo')
-                                              .map(ad => (
-                                              <SelectItem key={ad.ida} value={String(ad.ida)}>
+                                              .map((ad, adIdx) => (
+                                              <SelectItem key={`${ad.ida}-${adIdx}`} value={String(ad.ida)}>
                                                 {ad.Referencia} - {ad.Direccion}
                                               </SelectItem>
                                             ))
@@ -1868,30 +2230,33 @@ export default function AgendaPage() {
               <CardHeader className="py-4">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <CalendarDays className="h-4 w-4" />
-                  Citas Programadas
+                  Sugerencias de visita
                 </CardTitle>
               </CardHeader>
               <CardContent className="pb-4">
-                {daySuggestions.length > 0 && (
-                  <div className="mb-4 space-y-2">
-                    <div className="text-xs font-semibold text-muted-foreground">Sugerencias de visita</div>
-                    {daySuggestions.map((visit) => {
+                {daySuggestions.length === 0 ? (
+                  <div className="text-center py-6 bg-muted/20 rounded-lg">
+                    <p className="text-muted-foreground text-xs">No hay sugerencias de visita para este día.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {daySuggestions.map((visit, visitIndex) => {
                       const completed = isVisitCompleted(visit.visita_completada)
                       return (
                         <div
-                          key={`suggestion-${visit.id}`}
+                          key={`suggestion-${visit.id}-${visit.fecha_de_visita}-${visitIndex}`}
                           className={cn(
                             "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-3 border rounded-lg shadow-sm hover:shadow-md transition-all",
-                            completed ? "border-green-500/30 bg-green-100" : "border-blue-200 bg-blue-50/40",
+                            completed ? "border-green-500/30 bg-green-100" : "border-amber-300 bg-amber-50/60",
                           )}
                         >
                         <div className="flex items-center gap-3 w-full">
                           <div className={cn(
                             "flex flex-col items-center justify-center w-12 h-12 rounded-md shrink-0",
-                            completed ? "bg-green-200 text-green-800" : "bg-blue-100 text-blue-700",
+                            completed ? "bg-green-200 text-green-800" : "bg-amber-200 text-amber-800",
                           )}>
                             <span className="text-sm font-bold">
-                              {format(new Date(visit.fecha_de_visita), "HH:mm")}
+                              {getSuggestionTimeLabel(visit)}
                             </span>
                           </div>
                           <div
@@ -1927,14 +2292,12 @@ export default function AgendaPage() {
                             size="icon"
                             className={cn(
                               "h-9 w-9 transition-all shadow-sm rounded-full",
-                              isVisitCompleted(visit.visita_completada)
-                                ? "bg-green-500 hover:bg-green-600 text-black border-green-500"
-                                : "bg-[#F8FBF8] hover:bg-green-50 text-muted-foreground border-muted-foreground/30 hover:border-green-500 hover:text-green-600",
+                              "bg-[#F8FBF8] hover:bg-green-50 text-muted-foreground border-muted-foreground/30 hover:border-green-500 hover:text-green-600",
                             )}
-                            onClick={() => handleToggleCompletion(visit)}
-                            title={isVisitCompleted(visit.visita_completada) ? "Marcar como pendiente" : "Marcar como realizada"}
+                            onClick={() => handleConfirmProposal(visit)}
+                            title="Confirmar cita"
                           >
-                            <Check className={cn("h-6 w-6 stroke-[3]", isVisitCompleted(visit.visita_completada) ? "opacity-100" : "opacity-50")} />
+                            <CheckCircle className="h-5 w-5" />
                           </Button>
                           <Button
                             variant="outline"
@@ -1948,21 +2311,9 @@ export default function AgendaPage() {
                           <Button
                             variant="outline"
                             size="icon"
-                            className={cn(
-                              "h-9 w-9 transition-all shadow-sm",
-                              visit.resumen_visita ? "text-blue-600 border-blue-200 bg-blue-50" : "text-muted-foreground border-muted-foreground/30",
-                            )}
-                            onClick={() => handleOpenFeedbackDialog(visit)}
-                            title="Añadir feedback / resumen"
-                          >
-                            <FileText className={cn("h-4 w-4", visit.resumen_visita && "fill-current")} />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="icon"
                             className="h-9 w-9 transition-all shadow-sm text-muted-foreground border-muted-foreground/30 hover:border-red-500 hover:text-red-600 hover:bg-red-50"
-                            onClick={() => handleOpenCancelDialog(visit)}
-                            title="Cancelar visita"
+                            onClick={() => handleOpenCancelDialog(visit, "reject")}
+                            title="Rechazar propuesta"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -1972,6 +2323,19 @@ export default function AgendaPage() {
                     })}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="mt-4">
+            <Card>
+              <CardHeader className="py-4">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <CalendarDays className="h-4 w-4" />
+                  Citas Programadas
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pb-4">
                 {timelineItems.length === 0 ? (
                   <div className="text-center py-6 bg-muted/20 rounded-lg">
                     <p className="text-muted-foreground text-xs">No hay citas ni franjas disponibles para este día.</p>
@@ -1983,7 +2347,7 @@ export default function AgendaPage() {
                         const visit = item.visit
                         const completed = isVisitCompleted(visit.visita_completada)
                         return (
-                          <div key={visit.id} className={cn(
+                          <div key={`visit-${visit.id}-${visit.fecha_de_visita}-${index}`} className={cn(
                             "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-3 border rounded-lg shadow-sm hover:shadow-md transition-all",
                             completed 
                               ? "border-green-500/30 bg-green-100" 
@@ -2148,6 +2512,47 @@ export default function AgendaPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Confirmar cita</DialogTitle>
+            <DialogDescription>
+              Indica la hora exacta para la visita con {visitToConfirm?.Nombre}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="flex flex-col gap-2">
+              <Label>Fecha</Label>
+              <div className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm text-muted-foreground">
+                {visitToConfirm?.fecha_de_visita ? format(new Date(visitToConfirm.fecha_de_visita), "PPP", { locale: es }) : "--"}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="confirm-time">Hora</Label>
+              <Select value={confirmTime} onValueChange={setConfirmTime}>
+                <SelectTrigger id="confirm-time">
+                  <SelectValue placeholder="Seleccionar hora" />
+                </SelectTrigger>
+                <SelectContent className="z-[70002]">
+                  {timeOptions.map(time => (
+                    <SelectItem key={time} value={time}>
+                      {time}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSaveConfirm} disabled={saving || !confirmTime}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Confirmar cita
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={rescheduleDialogOpen} onOpenChange={setRescheduleDialogOpen}>
         <DialogContent className="sm:max-w-[425px] z-[70000]">
           <DialogHeader>
@@ -2221,16 +2626,20 @@ export default function AgendaPage() {
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Cancelar Visita</DialogTitle>
+            <DialogTitle>{cancelMode === "reject" ? "Rechazar propuesta" : "Cancelar visita"}</DialogTitle>
             <DialogDescription>
-              ¿Estás seguro de que deseas cancelar la visita con {visitToCancel?.Nombre}? Esta acción eliminará la fecha programada.
+              {cancelMode === "reject"
+                ? `¿Estás seguro de que deseas rechazar la propuesta de ${visitToCancel?.Nombre}?`
+                : `¿Estás seguro de que deseas cancelar la visita con ${visitToCancel?.Nombre}? Esta acción eliminará la fecha programada.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelDialogOpen(false)}>No cancelar</Button>
+            <Button variant="outline" onClick={() => setCancelDialogOpen(false)}>
+              {cancelMode === "reject" ? "No rechazar" : "No cancelar"}
+            </Button>
             <Button variant="destructive" onClick={handleCancelVisit} disabled={saving}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sí, cancelar visita
+              {cancelMode === "reject" ? "Sí, rechazar propuesta" : "Sí, cancelar visita"}
             </Button>
           </DialogFooter>
         </DialogContent>

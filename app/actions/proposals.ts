@@ -216,6 +216,158 @@ export async function getVisitProposal(id: string) {
   }
 }
 
+export async function getAgendaProposals(params: {
+  startDate: string
+  endDate: string
+  inmobiliariaId?: number | null
+}) {
+  try {
+    const supabase = createAdminClient()
+    const selectFields = "id, fecha, lead_id, turno, inmobiliaria_idi, anuncio_id, agente_id, mensaje"
+    let clientQuery = supabase
+      .from("propuesta_cliente")
+      .select(selectFields)
+      .gte("fecha", params.startDate)
+      .lte("fecha", params.endDate)
+
+    if (params.inmobiliariaId) {
+      clientQuery = clientQuery.eq("inmobiliaria_idi", params.inmobiliariaId)
+    }
+
+    const { data, error } = await clientQuery
+    if (error) {
+      console.error("Error fetching agenda proposals (propuesta_cliente):", error)
+      return { data: [], error: error.message }
+    }
+
+    return { data: data || [] }
+  } catch (err: any) {
+    console.error("Error fetching agenda proposals:", err)
+    return { data: [], error: err?.message || "Error interno" }
+  }
+}
+
+export async function deleteAgendaProposal(params: {
+  leadId: number
+  proposalId?: number
+  fecha?: string
+}) {
+  try {
+    const supabase = createAdminClient()
+    let query = supabase.from("propuesta_cliente").delete()
+
+    if (typeof params.proposalId === "number") {
+      query = query.eq("id", params.proposalId)
+    } else {
+      query = query.eq("lead_id", params.leadId)
+    }
+
+    if (params.fecha) {
+      query = query.eq("fecha", params.fecha)
+    }
+
+    const { error } = await query
+
+    if (error) {
+      console.error("Error deleting agenda proposal:", error)
+      return { error: error.message }
+    }
+    return { success: true }
+  } catch (err: any) {
+    console.error("Error deleting agenda proposal:", err)
+    return { error: err?.message || "Error interno" }
+  }
+}
+
+export async function confirmAgendaProposal(params: {
+  leadId: number
+  fechaHora: string
+  agentId?: number | null
+  proposalId?: number
+}) {
+  try {
+    const supabase = createAdminClient()
+    const updatePayload: Record<string, any> = {
+      fecha_de_visita: params.fechaHora,
+      visita_completada: "visita confirmada", // Changed from "pendiente" to "visita confirmada" so UI knows it's not a proposal
+      Estado: "Visita Confirmada",
+      visita_propuesta: false // Ensure the database trigger doesn't revert it
+    }
+    if (typeof params.agentId === "number") {
+      updatePayload.idag = params.agentId
+    }
+    const { data: updatedRows, error: updateError } = await supabase
+      .from("Clientes")
+      .update(updatePayload)
+      .eq("id", params.leadId)
+      .select("id")
+
+    if (updateError) {
+      console.error("Error confirming agenda proposal:", updateError)
+      return { error: updateError.message }
+    }
+    if (!updatedRows || updatedRows.length === 0) {
+      return { error: "Lead no encontrado para confirmar la visita" }
+    }
+
+    const { error: deleteError } = await supabase
+      .from("propuesta_cliente")
+      .delete()
+      .eq("lead_id", params.leadId)
+
+    if (deleteError) {
+      console.error("Error deleting agenda proposal after confirm:", deleteError)
+      return { error: deleteError.message }
+    }
+
+    return { success: true }
+  } catch (err: any) {
+    console.error("Error confirming agenda proposal:", err)
+    return { error: err?.message || "Error interno" }
+  }
+}
+
+export async function rejectAgendaProposal(params: {
+  leadId: number
+  proposalId?: number
+}) {
+  try {
+    const supabase = createAdminClient()
+    const { data: updatedRows, error: updateError } = await supabase
+      .from("Clientes")
+      .update({
+        Estado: "Descartado",
+        visita_completada: "cancelada",
+        fecha_de_visita: null
+      })
+      .eq("id", params.leadId)
+      .select("id")
+
+    if (updateError) {
+      console.error("Error rejecting agenda proposal:", updateError)
+      return { error: updateError.message }
+    }
+    if (!updatedRows || updatedRows.length === 0) {
+      return { error: "Lead no encontrado para rechazar la propuesta" }
+    }
+
+    const { error: deleteError } = await supabase
+      .from("propuesta_cliente")
+      .delete()
+      .eq("lead_id", params.leadId)
+
+    if (deleteError) {
+      console.error("Error deleting agenda proposal after reject:", deleteError)
+      return { error: deleteError.message }
+    }
+
+    return { success: true }
+  } catch (err: any) {
+    console.error("Error rejecting agenda proposal:", err)
+    return { error: err?.message || "Error interno" }
+  }
+}
+
 export async function bookVisitProposal(proposalId: string, leadPhone: string) {
   // Use admin client to bypass RLS, as the user (lead) is not authenticated
   const supabase = createAdminClient()
@@ -337,7 +489,7 @@ export async function bookVisitProposal(proposalId: string, leadPhone: string) {
     .update({
       fecha_de_visita: visitDate.toISOString(),
       visita_propuesta: false, // Clear flag
-      visita_completada: "pendiente", // Ensure consistency with confirmVisit
+      visita_completada: "visita confirmada", // Changed from "pendiente" to "visita confirmada"
       Estado: "Visita Confirmada", // Correct column name (was status)
       idag: assignedAgentId // Assign to the agent who created the proposal
     })

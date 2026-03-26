@@ -1,0 +1,243 @@
+[dotenv@17.3.1] injecting env (10) from .env.local -- tip: ÔÜÖ´©Å  load multiple .env files with { path: ['.env.local', '.env'] }
+{
+  "id": 2866,
+  "created_at": "2026-03-23T18:25:00.990452+00:00",
+  "Estado": "Visita Propuesta",
+  "Pedir Aval": false,
+  "Nombre": "Juan J Iglesias",
+  "Correo": "asdepicaros@gmail.com",
+  "Telefono": "672501369",
+  "Inmueble": "Felix Pe├▒a",
+  "Fecha_Entrada": null,
+  "Ingresos": 1234,
+  "Documento": "11827553X",
+  "Tipo_Documento": "DNI",
+  "Codigo_Postal": "28026",
+  "Pais": "Espa├▒a",
+  "Persona_2": "",
+  "Tipo_Documento_2": "",
+  "Documento_2": "",
+  "Pais_2": "Espa├▒a",
+  "Ingresos_2": null,
+  "Persona_3": "",
+  "Tipo_Documento_3": "",
+  "Documento_3": "",
+  "Ingresos_3": null,
+  "Obsevaciones": null,
+  "Recordatorio": null,
+  "usuario": 1,
+  "visita_propuesta": false,
+  "aceptado": false,
+  "Documento_4": "",
+  "Ingresos_4": null,
+  "Fecha_Datos_Completos": "2026-03-25T21:09:30.932841+00:00",
+  "Telefono 2": "",
+  "Telefono 3": "",
+  "Telefono 4": "",
+  "Tipo_Documento 4": "}",
+  "Pais 4": "Espa├▒a",
+  "Codigo_Postal 4": "",
+  "Persona_4": "",
+  "Correo 2": "",
+  "Correo 3": "}",
+  "Correo 4": "",
+  "Codigo_Postal 2": "",
+  "Codigo_Postal 3": "",
+  "Pais 3": "Espa├▒a",
+  "tipo2": "",
+  "tipo3": "",
+  "tipo4": "",
+  "fecha_de_visita": "2026-03-29T13:00:00+00:00",
+  "visita_completada": "visita confirmada",
+  "IDC": 2866,
+  "idag": 21,
+  "origen": null,
+  "correo_proxy": "p4tveqptqol5722yqmxmdzv4o1wi981uproxjkucutabvtapvp8@contacts.idealista.com",
+  "url_form": null,
+  "resumen_visita": "",
+  "status_history": [
+    {
+      "status": "Datos Completos",
+      "agent_id": "system",
+      "timestamp": "2026-03-23T18:28:03.530Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Visita Confirmada",
+      "agent_id": "708edcfd-2008-4a81-9e06-67b5bb16f917",
+      "timestamp": "2026-03-24T16:31:06.720Z",
+      "agent_name": "inquilinos"
+    },
+    {
+      "status": "Visita Propuesta",
+      "agent_id": "system",
+      "timestamp": "2026-03-24T16:31:06.468Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Datos Completos",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-24T16:40:30.478Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Visita Confirmada",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-24T16:40:42.310Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Aceptado",
+      "agent_id": "system",
+      "timestamp": "2026-03-25T13:34:08.656Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Visita Confirmada",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T13:40:04.274Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Visita Propuesta",
+      "agent_id": "system",
+      "timestamp": "2026-03-25T13:40:14.847Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Datos Completos",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T13:49:57.109Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Visita Confirmada",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T13:50:16.445Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Datos Completos",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T13:55:18.795Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Visita Confirmada",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T13:56:34.334Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Visita Propuesta",
+      "agent_id": "system",
+      "timestamp": "2026-03-25T13:56:44.897Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Visita Reprogramada",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T14:59:11.292Z",
+      "agent_name": "asdepicaros@gmail.com"
+    },
+    {
+      "status": "Aceptado",
+      "agent_id": "system",
+      "timestamp": "2026-03-25T15:35:40.746Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Visita Propuesta",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T15:39:33.217Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Datos Completos",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T16:22:33.845Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Visita Propuesta",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T16:22:53.485Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Datos Completos",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T16:31:36.911Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Visita Propuesta",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T16:32:11.594Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Descartado",
+      "agent_id": "system",
+      "timestamp": "2026-03-25T20:26:11.406Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Visita Propuesta",
+      "agent_id": "system",
+      "timestamp": "2026-03-25T20:27:20.455Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Descartado",
+      "agent_id": "system",
+      "timestamp": "2026-03-25T20:36:07.676Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Visita Propuesta",
+      "agent_id": "system",
+      "timestamp": "2026-03-25T20:36:24.509Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Descartado",
+      "agent_id": "system",
+      "timestamp": "2026-03-25T20:38:12.822Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Visita Propuesta",
+      "agent_id": "system",
+      "timestamp": "2026-03-25T20:48:21.331Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Descartado",
+      "agent_id": "system",
+      "timestamp": "2026-03-25T21:07:02.762Z",
+      "agent_name": "RaF"
+    },
+    {
+      "status": "Datos Completos",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T21:09:19.449Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Visita Propuesta",
+      "agent_id": "d1b4d70e-92f9-4d60-a97b-82d6092ebc59",
+      "timestamp": "2026-03-25T21:09:34.549Z",
+      "agent_name": "Juanjo"
+    },
+    {
+      "status": "Visita Confirmada",
+      "agent_id": "system",
+      "timestamp": "2026-03-25T23:14:43.245Z",
+      "agent_name": "TestScript"
+    }
+  ],
+  "prev_entrada": "Fecha aproximada",
+  "fecha_prev_entrada": "2026-04-01",
+  "n_whatsapp": null
+}

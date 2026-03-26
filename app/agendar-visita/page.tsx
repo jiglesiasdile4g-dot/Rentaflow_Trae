@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
-import { getBookingData, confirmVisit, cancelVisit } from "@/app/actions/booking"
+import { getBookingData, confirmVisit, cancelVisit, proposeVisit } from "@/app/actions/booking"
 import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -458,9 +458,8 @@ function AgendarVisitaContent() {
     setSubmittingProposal(true)
 
     try {
-        const shiftToTime = proposalShift === "Mañana" ? "10:00" : "17:00"
         const dateStr = format(proposalDate, "yyyy-MM-dd")
-        const dateTimeStr = `${dateStr}T${shiftToTime}:00`
+        const dateTimeStr = `${dateStr}T12:00:00`
         
         // Handle timezone offset
         const d = new Date(dateTimeStr)
@@ -474,7 +473,7 @@ function AgendarVisitaContent() {
         // Trigger Webhook
         try {
             const { status_history, ...leadWithoutStatusHistory } = lead as any
-            const { date: formattedDate, time: formattedTime } = formatWebhookDate(valueWithOffset)
+            const { date: formattedDate } = formatWebhookDate(valueWithOffset)
             
             const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
 
@@ -492,12 +491,14 @@ function AgendarVisitaContent() {
                 "Firma": (inmobiliaria as any)?.firma_html || "",
                 "Link de Agendamiento": bookingLink,
                 "Fecha Visita": formattedDate,
-                "Hora Visita": formattedTime,
+                "Hora Visita": proposalShift,
                 "Turno Preferido": proposalShift,
-                "Fecha Completa": valueWithOffset,
+                "Fecha Completa": dateStr,
                 "Comentario cliente": proposalComment.trim() || null,
                 ...leadWithoutStatusHistory,
-                fecha_de_visita: valueWithOffset
+                fecha_de_visita: valueWithOffset,
+                Estado: "Visita Propuesta",
+                visita_completada: `visita propuesta ${proposalShift.toLowerCase()}`
             }
 
             fetch("/api/sugerir-fecha-visita", {
@@ -510,6 +511,18 @@ function AgendarVisitaContent() {
             console.error("Error preparing proposal webhook:", webhookErr)
         }
 
+        const agentIdToUse = lead.idag ?? agent?.idag ?? null
+        const proposalMeta = {
+            inmobiliariaId: (inmobiliaria as any)?.idi ?? (advertisement as any)?.usuario ?? null,
+            inmuebleRef: (advertisement as any)?.Referencia ?? lead.Inmueble ?? null,
+            inmuebleDireccion: (advertisement as any)?.Direccion ?? lead.Inmueble ?? null,
+            inmuebleId: (advertisement as any)?.ida ?? (advertisement as any)?.id ?? null,
+            message: proposalComment.trim() || null
+        }
+        const proposeResult = await proposeVisit(lead.id, valueWithOffset, proposalShift, agentIdToUse, proposalMeta)
+        if (proposeResult?.error) throw new Error(proposeResult.error)
+
+        setLead({ ...lead, fecha_de_visita: valueWithOffset, Estado: "Visita Propuesta", visita_completada: `visita propuesta ${proposalShift.toLowerCase()}` })
         setProposalSuccess(true)
         toast({
             title: "Propuesta enviada",
@@ -520,7 +533,7 @@ function AgendarVisitaContent() {
         console.error("Error proposing visit:", err)
         toast({
             title: "Error",
-            description: "No se pudo enviar la propuesta. Inténtalo de nuevo.",
+            description: err?.message || "No se pudo enviar la propuesta. Inténtalo de nuevo.",
             variant: "destructive",
         })
     } finally {

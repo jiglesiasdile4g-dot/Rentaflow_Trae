@@ -1,3 +1,21 @@
+## [0.9.19](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.11...v0.9.19) (2026-03-26)
+
+
+### Bug Fixes
+
+* comunicaciones crear y cancelar ([6c9902f](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/6c9902fb648590a7e3ecaf9eba4b201bce9a186f))
+* resolve resendUserConfirmationAction error and improve logic ([e1f7ae8](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/e1f7ae8554d616b91747fd2fee472e3f0709e162))
+* validar documento y estados de lead ([afe0d5f](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/afe0d5f0d738a290069d616506715a08948176b5))
+* wrap formulario search params in suspense ([33552dd](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/33552dd5edd64314c32cef516bd085db417a1031))
+
+
+### Features
+
+* add plan usage alert to ads page and fix starter plan card layout ([524cb4c](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/524cb4c95f392590a2282f342e7f9b4703840742))
+* enviar revisión comunicaciones ([7e49913](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/7e499137fbaff006a29cade882c5a65003650c43))
+
+
+
 ## [0.9.11](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.10...v0.9.11) (2026-02-13)
 
 

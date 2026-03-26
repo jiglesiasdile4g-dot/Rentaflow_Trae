@@ -7,14 +7,15 @@ CREATE OR REPLACE FUNCTION public.fix_visita_confirmada_reversion()
 RETURNS TRIGGER AS $$
 BEGIN
     -- If the status is 'Visita Propuesta' (reverted by culprit)
-    -- BUT 'visita_propuesta' flag is explicitly FALSE (set by our code)
+    -- BUT 'visita_completada' flag is explicitly 'visita confirmada' (set by our code)
     -- AND we have a valid visit date
     -- THEN assume it was meant to be 'Visita Confirmada'.
     IF NEW."Estado" = 'Visita Propuesta' 
-       AND NEW."visita_propuesta" = FALSE 
+       AND NEW."visita_completada" = 'visita confirmada' 
        AND NEW."fecha_de_visita" IS NOT NULL THEN
         
         NEW."Estado" := 'Visita Confirmada';
+        NEW."visita_propuesta" := FALSE;
         
     END IF;
     RETURN NEW;
