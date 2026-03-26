@@ -275,7 +275,7 @@ export default function LeadsPage() {
           const parsed = JSON.parse(savedState)
           
           // Solo restaurar si no hay parámetros explícitos en la URL que deban tener prioridad
-          const hasUrlParams = searchParams.has("q") || searchParams.has("status") || searchParams.has("ad")
+            const hasUrlParams = searchParams.has("q") || searchParams.has("status") || searchParams.has("ad") || searchParams.has("filter") || searchParams.has("leadId")
           
           if (!hasUrlParams) {
             if (parsed.searchTerm !== undefined) setSearchTerm(parsed.searchTerm)

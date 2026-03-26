@@ -66,9 +66,35 @@ export default function ComunicacionesPage() {
   const [newDraft, setNewDraft] = useState<Record<string, any>>({})
   const [error, setError] = useState<string | null>(null)
   const [filterQuery, setFilterQuery] = useState("")
+  const [isStateRestored, setIsStateRestored] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isCreatingNew, setIsCreatingNew] = useState(false)
+
+  // Restaurar estado de filtros
+  useEffect(() => {
+    const restoreState = () => {
+      try {
+        const savedState = sessionStorage.getItem("rf_comunicaciones_view_state")
+        if (savedState) {
+          const parsed = JSON.parse(savedState)
+          if (parsed.filterQuery !== undefined) setFilterQuery(parsed.filterQuery)
+        }
+      } catch (e) {
+        console.error("Error restaurando estado de comunicaciones:", e)
+      } finally {
+        setIsStateRestored(true)
+      }
+    }
+    restoreState()
+  }, [])
+
+  // Guardar estado de filtros
+  useEffect(() => {
+    if (!isStateRestored) return
+    const stateToSave = { filterQuery }
+    sessionStorage.setItem("rf_comunicaciones_view_state", JSON.stringify(stateToSave))
+  }, [filterQuery, isStateRestored])
   const wysiwygRef = useRef<HTMLDivElement | null>(null)
   const htmlEditorRef = useRef<HTMLTextAreaElement | null>(null)
   const editPreviewRef = useRef<HTMLDivElement | null>(null)

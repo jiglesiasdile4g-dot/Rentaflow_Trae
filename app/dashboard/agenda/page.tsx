@@ -275,13 +275,20 @@ export default function AgendaPage() {
     restoreAgentState()
   }, [])
 
+  const prevInmobiliariaIdRef = useRef<number | null>(null)
+
   useEffect(() => {
     if (!inmobiliariaId) return
-    setAgentsList([])
-    setAgentId(null)
-    setCanManageOthers(false)
+    
     try {
-      sessionStorage.removeItem("rf_agenda_view_state")
+      if (prevInmobiliariaIdRef.current && prevInmobiliariaIdRef.current !== inmobiliariaId) {
+        // Only reset state if the inmobiliaria ACTUALLY changed from a previous valid value
+        setAgentsList([])
+        setAgentId(null)
+        setCanManageOthers(false)
+        sessionStorage.removeItem("rf_agenda_view_state")
+      }
+      prevInmobiliariaIdRef.current = inmobiliariaId
     } catch {}
   }, [inmobiliariaId])
 
