@@ -113,14 +113,15 @@ export async function getBookingData(leadId: string) {
     // 5. Fetch Existing Visits (to avoid collision)
     const { data: existingVisits } = await supabase
       .from("Clientes")
-      .select("fecha_de_visita, Inmueble, idag")
+      .select("fecha_de_visita, Inmueble, idag, Estado")
+      .eq("idag", lead.idag)
       .not("fecha_de_visita", "is", null)
       .gte("fecha_de_visita", startDate)
 
     // 6. Fetch All Ads for Duration Logic (Optimization: Only fetch needed fields)
     const { data: allAds } = await supabase
       .from("Anuncios")
-      .select("ida, Referencia, Direccion, Duracion_visita, Gap_visita, duracion_visita, tiempo_entre_visitas, whatsapp_activo")
+      .select("ida, Referencia, Direccion, duracion_visita, tiempo_entre_visitas, whatsapp_activo")
 
     return {
       lead,

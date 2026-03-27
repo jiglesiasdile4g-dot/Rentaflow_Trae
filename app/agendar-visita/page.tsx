@@ -173,8 +173,8 @@ function AgendarVisitaContent() {
     // Map ads for utils
     const mappedAds = allAds?.map((a: any) => ({
         ida: a.ida,
-        duracion_visita: a.Duracion_visita || a.duracion_visita,
-        tiempo_entre_visitas: a.Gap_visita || a.tiempo_entre_visitas
+        duracion_visita: a.duracion_visita,
+        tiempo_entre_visitas: a.tiempo_entre_visitas
     })) || []
 
     for (const date of uniqueDates) {
@@ -185,6 +185,19 @@ function AgendarVisitaContent() {
 
         dayVisits.forEach((v: any) => {
           if (v.fecha_de_visita) {
+            // Filter cancelled visits
+            if (v.Estado === "Cancelado" || v.Estado === "Descartado") return
+
+            // If the visit is for the SAME property, do NOT block the slot! Group visits are allowed.
+            if (currentAd && v.Inmueble) {
+                const isSameProperty = 
+                    v.Inmueble === currentAd.Referencia || 
+                    (currentAd.Direccion && v.Inmueble.includes(currentAd.Direccion)) ||
+                    (currentAd.Direccion && currentAd.Direccion.includes(v.Inmueble));
+                
+                if (isSameProperty) return;
+            }
+
             const visitDate = new Date(v.fecha_de_visita)
             const startMinutes = visitDate.getHours() * 60 + visitDate.getMinutes()
 
@@ -199,8 +212,8 @@ function AgendarVisitaContent() {
                   (v.Inmueble && a.Direccion && v.Inmueble.includes(a.Direccion)),
               )
               if (visitAd) {
-                durMinutes = visitAd.Duracion_visita || visitAd.duracion_visita || 30
-                gapMinutes = visitAd.Gap_visita || visitAd.tiempo_entre_visitas || 0
+                durMinutes = visitAd.duracion_visita || 30
+                gapMinutes = visitAd.tiempo_entre_visitas || 0
               }
             }
 
@@ -220,8 +233,8 @@ function AgendarVisitaContent() {
         })
 
         // Determine defaults from currentAd (or system defaults 20/5)
-        const defaultDur = currentAd ? (currentAd.Duracion_visita || currentAd.duracion_visita || 20) : 20
-        const defaultGap = currentAd ? (currentAd.Gap_visita || currentAd.tiempo_entre_visitas || 5) : 5
+        const defaultDur = currentAd ? (currentAd.duracion_visita || 20) : 20
+        const defaultGap = currentAd ? (currentAd.tiempo_entre_visitas || 5) : 5
 
         // Generate candidates using centralized logic
         const candidates = generateSlotCandidates(relevantSlots, mappedAds, defaultDur, defaultGap)
