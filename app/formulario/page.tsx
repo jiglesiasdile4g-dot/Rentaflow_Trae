@@ -122,6 +122,7 @@ function FormularioInner() {
   // New Design State
   const [intent, setIntent] = useState<string | null>(null)
   const [labor, setLabor] = useState<string | null>(null)
+  const [need, setNeed] = useState<string | null>(null)
   const [titularesCount, setTitularesCount] = useState(1)
   const [avalistasCount, setAvalistasCount] = useState(0)
   const [ingresosUF, setIngresosUF] = useState("")
@@ -431,6 +432,7 @@ function FormularioInner() {
       Situacion_Laboral: labor,
       Entrada: entrada,
       Ingresos_Unidad_Familiar: toNumberOrNull(ingresosUF),
+      Motivo_Alquiler: need,
       
       Nombre: p1.nombre,
       Correo: p1.correo,
@@ -618,6 +620,7 @@ function FormularioInner() {
                         key={opt.id}
                         onClick={() => {
                           setIntent(opt.id)
+                          setNeed(opt.title)
                           if (opt.id === "solo") {
                             setTitularesCount(1)
                           } else if (["pareja", "familia", "compañeros"].includes(opt.id)) {
