@@ -7949,20 +7949,33 @@ export default function LeadsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <ProposeVisitDialog 
-        open={proposeVisitDialogOpen}
-        onOpenChange={setProposeVisitDialogOpen}
-        selectedLeadIds={selectedLeadIds}
-        selectedAdvertisement={
-          selectedAdvertisement 
-            ? advertisements.find(a => a.ida === selectedAdvertisement) 
-            : null
-        }
-        inmobiliariaId={inmobiliariaId || 0}
-        currentAgentId={currentAgentId}
-        isAdminOrSuperuser={isAdmin || role === 'super' || role === 'admin'}
-        agentes={agentes}
-      />
+      {
+        (() => {
+          const firstSelectedLead = leads.find(l => selectedLeadIds.includes(l.id))
+          const inferredAdvertisement = firstSelectedLead?.Inmueble ? advertisements.find(a => 
+            a.Referencia === firstSelectedLead.Inmueble || 
+            (a.Direccion && firstSelectedLead.Inmueble.includes(a.Direccion)) ||
+            (a.Direccion && a.Direccion.includes(firstSelectedLead.Inmueble))
+          ) : null;
+
+          return (
+            <ProposeVisitDialog 
+              open={proposeVisitDialogOpen}
+              onOpenChange={setProposeVisitDialogOpen}
+              selectedLeadIds={selectedLeadIds}
+              selectedAdvertisement={
+                selectedAdvertisement 
+                  ? advertisements.find(a => a.ida === selectedAdvertisement) 
+                  : inferredAdvertisement
+              }
+              inmobiliariaId={inmobiliariaId || 0}
+              currentAgentId={currentAgentId}
+              isAdminOrSuperuser={isAdmin || role === 'super' || role === 'admin'}
+              agentes={agentes}
+            />
+          )
+        })()
+      }
       </>
     )
   }
