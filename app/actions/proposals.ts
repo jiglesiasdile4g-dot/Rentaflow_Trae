@@ -638,7 +638,7 @@ export async function getAvailableSlotsForProposal(
   inmobiliariaId: number, 
   advertisementId?: string
 ) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   if (!agentId) return []
 
@@ -687,17 +687,17 @@ export async function getAvailableSlotsForProposal(
   let currentAdDuration = 20
   let currentAdGap = 5
   
-  const { data: ads } = await supabase
+  const { data: ads, error: adsError } = await supabase
     .from("Anuncios")
-    .select("ida, Referencia, Direccion, Duracion_visita, Gap_visita, duracion_visita, tiempo_entre_visitas")
-    .eq("inmobiliaria_id", inmobiliariaId)
+    .select("ida, Referencia, Direccion, duracion_visita, tiempo_entre_visitas")
+    .eq("usuario", inmobiliariaId)
     
   const allAds = (ads || []).map(a => ({
     ida: a.ida,
     Referencia: a.Referencia,
     Direccion: a.Direccion,
-    duracion_visita: a.Duracion_visita || a.duracion_visita,
-    tiempo_entre_visitas: a.Gap_visita || a.tiempo_entre_visitas
+    duracion_visita: a.duracion_visita,
+    tiempo_entre_visitas: a.tiempo_entre_visitas
   })) as AdData[]
 
   if (advertisementId) {
@@ -733,8 +733,36 @@ export async function getAvailableSlotsForProposal(
       // Filter cancelled visits
       if (visit.Estado === "Cancelado" || visit.Estado === "Descartado") return false
 
+      // If the visit is for the SAME property, do NOT block the slot! Group visits are allowed.
+      let currentAd = null
+      if (advertisementId) {
+        currentAd = allAds.find(a => String(a.ida) === String(advertisementId))
+      }
+  
+      if (currentAd && visit.Inmueble) {
+        const isSameProperty = 
+          visit.Inmueble === currentAd.Referencia || 
+          (currentAd.Direccion && visit.Inmueble.includes(currentAd.Direccion)) ||
+          (currentAd.Direccion && currentAd.Direccion.includes(visit.Inmueble))
+        if (isSameProperty) return false
+      }
+
       const vDate = new Date(visit.fecha_de_visita)
-      const vStartMins = vDate.getHours() * 60 + vDate.getMinutes()
+      
+      // Parse the visit date in Madrid time to match the agenda local time
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Europe/Madrid',
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: false
+      })
+      const timeStr = formatter.format(vDate) // e.g. "24:00" -> "00:00" or "10:30"
+      // Handle "24:00" which Intl sometimes returns
+      const [vHStr, vMStr] = timeStr.split(':')
+      const vH = parseInt(vHStr) === 24 ? 0 : parseInt(vHStr)
+      const vM = parseInt(vMStr)
+      
+      const vStartMins = vH * 60 + vM
       
       // Calculate visit duration
       let vDuration = 20
@@ -754,8 +782,8 @@ export async function getAvailableSlotsForProposal(
       
       const vEndMins = vStartMins + vDuration + vGap
       
-      // Check overlap: StartA < EndB && StartB < EndA
-      return slotStartMins < vEndMins && vStartMins < slotEndMins
+      // Check overlap: Math.max(start1, start2) < Math.min(end1, end2)
+      return Math.max(slotStartMins, vStartMins) < Math.min(slotEndMins, vEndMins)
     })
 
     return !isOccupied
@@ -770,7 +798,7 @@ export async function getAvailableDatesForProposal(
   advertisementId?: string,
   daysToLookAhead: number = 30
 ) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   if (!agentId) return []
 
