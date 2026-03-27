@@ -7952,10 +7952,11 @@ export default function LeadsPage() {
       {
         (() => {
           const firstSelectedLead = leads.find(l => selectedLeadIds.includes(l.id))
-          const inferredAdvertisement = firstSelectedLead?.Inmueble ? advertisements.find(a => 
-            a.Referencia === firstSelectedLead.Inmueble || 
-            (a.Direccion && firstSelectedLead.Inmueble.includes(a.Direccion)) ||
-            (a.Direccion && a.Direccion.includes(firstSelectedLead.Inmueble))
+          const leadInmueble = firstSelectedLead?.Inmueble
+          const inferredAdvertisement = leadInmueble ? advertisements.find(a => 
+            a.Referencia === leadInmueble || 
+            (a.Direccion && leadInmueble.includes(a.Direccion)) ||
+            (a.Direccion && a.Direccion.includes(leadInmueble))
           ) : null;
 
           return (
