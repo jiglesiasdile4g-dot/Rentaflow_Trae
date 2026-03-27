@@ -149,7 +149,7 @@ function FormularioInner() {
   const propBaths = selectedAd?.Banos || selectedAd?.banos ? `${selectedAd?.Banos || selectedAd?.banos} baños` : ""
   const propSize = selectedAd?.Metros || selectedAd?.metros ? `${selectedAd?.Metros || selectedAd?.metros} m²` : ""
   const propRoomsBaths = [propRooms, propBaths].filter(Boolean).join(" · ")
-  
+
   // Tasa de esfuerzo calc
   const ingresosNum = parseFloat(ingresosUF) || 0
   const effortRate = ingresosNum > 0 && propPrice > 0 ? (propPrice / ingresosNum) * 100 : null
@@ -157,6 +157,10 @@ function FormularioInner() {
   const effortClass = effortRate === null ? "" : effortOk ? "bg-green-50 border-green-200 text-green-800" : "bg-yellow-50 border-yellow-400 text-yellow-800"
   const effortBarClass = effortRate === null ? "" : effortOk ? "bg-green-500" : "bg-yellow-500"
   const pct = effortRate !== null ? Math.min(effortRate, 100) : 0
+
+  // Calculation for Step 3 (Resumen)
+  const actualIngresosUF = personas.slice(0, titularesCount).reduce((sum, p) => sum + (parseFloat(p.ingresos) || 0), 0)
+  const finalEffortRate = actualIngresosUF > 0 && propPrice > 0 ? (propPrice / actualIngresosUF) * 100 : null
 
   const requiredLabel = (text: string) => (
     <span className="inline-flex items-center gap-1">
@@ -172,7 +176,7 @@ function FormularioInner() {
     const idiParam = searchParams.get("idi") || searchParams.get("inmobiliaria") || ""
     if (inmoParam) setInmueble(inmoParam)
     if (idcParam) setIdc(idcParam)
-    if (!idcParam && !idParam && !idiParam) return
+    
     const controller = new AbortController()
     const fetchPrefill = async () => {
       try {
@@ -582,7 +586,7 @@ function FormularioInner() {
               
               <div className="p-5 md:p-6 space-y-6">
                 {/* Inmueble Selection (If not prefilled) */}
-                {!searchParams.get("inmueble") && anuncios.length > 0 && (
+                {(!searchParams.get("inmueble") && !searchParams.get("Inmueble")) && anuncios.length > 0 && (
                    <div>
                      <div className="text-[13px] font-semibold text-[#1a1a1a] mb-2">{requiredLabel("Selecciona el inmueble")}</div>
                      <Select value={inmueble} onValueChange={(value) => setInmueble(value)}>
@@ -612,7 +616,17 @@ function FormularioInner() {
                     ].map(opt => (
                       <div 
                         key={opt.id}
-                        onClick={() => setIntent(opt.id)}
+                        onClick={() => {
+                          setIntent(opt.id)
+                          if (opt.id === "solo") {
+                            setTitularesCount(1)
+                          } else if (["pareja", "familia", "compañeros"].includes(opt.id)) {
+                            setTitularesCount(2)
+                            if (avalistasCount > 2) {
+                              setAvalistasCount(2)
+                            }
+                          }
+                        }}
                         className={`p-3 rounded-[10px] border cursor-pointer transition-all ${intent === opt.id ? "bg-[#1a1a1a] border-[#1a1a1a] text-white" : "bg-white border-[#e8e8e3] hover:border-[#1a1a1a] text-[#1a1a1a]"}`}
                       >
                         <div className="text-xl mb-1.5">{opt.icon}</div>
@@ -766,34 +780,14 @@ function FormularioInner() {
                   <span>Tus datos se tratan de forma confidencial y solo se usan para evaluar tu candidatura. <strong>RGPD aplicado.</strong></span>
                 </div>
                 
-                {/* Tabs */}
-                <div className="flex gap-2 overflow-x-auto pb-2 mb-4 snap-x no-scrollbar">
-                  {personas.slice(0, totalPersonCount).map((p, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setCurrentPersonTab(idx)}
-                      className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium border transition-all snap-start ${
-                        currentPersonTab === idx 
-                          ? "bg-[#1a1a1a] text-white border-[#1a1a1a]" 
-                          : "bg-white text-[#71716b] border-[#e8e8e3] hover:border-[#1a1a1a]"
-                      }`}
-                    >
-                      {p.tipo === "Avalista" ? <ShieldCheck className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
-                      {p.nombre ? p.nombre.split(" ")[0] : `Persona ${idx + 1}`}
-                    </button>
-                  ))}
-                </div>
-
                 {/* Person Form */}
-                <div className="space-y-4">
+                <div className="space-y-8">
                   {personas.slice(0, totalPersonCount).map((p, idx) => {
-                    if (idx !== currentPersonTab) return null;
                     return (
-                      <div key={idx} className="animate-in fade-in duration-200">
-                        <div className="flex items-center gap-2 mb-4 pb-2 border-b border-[#e8e8e3]">
-                          <span className="text-[14px] font-semibold text-[#1a1a1a]">
-                            {idx === 0 ? "Titular Principal" : p.tipo}
+                      <div key={idx} className="animate-in fade-in duration-200 bg-white border border-[#e8e8e3] p-5 rounded-[12px] shadow-sm">
+                        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#e8e8e3]">
+                          <span className="text-[15px] font-semibold text-[#1a1a1a]">
+                            {idx === 0 ? "Titular Principal" : p.tipo} {idx + 1}
                           </span>
                         </div>
                         
@@ -966,7 +960,15 @@ function FormularioInner() {
                     <div><span className="text-[#71716b] block text-[11px]">Intención</span><span className="font-medium capitalize">{intent}</span></div>
                     <div><span className="text-[#71716b] block text-[11px]">Laboral</span><span className="font-medium">{labor}</span></div>
                     <div><span className="text-[#71716b] block text-[11px]">Entrada</span><span className="font-medium">{entrada}</span></div>
-                    <div><span className="text-[#71716b] block text-[11px]">Ingresos Conjuntos</span><span className="font-medium">{ingresosUF} €</span></div>
+                    <div><span className="text-[#71716b] block text-[11px]">Ingresos Conjuntos (Titulares)</span><span className="font-medium">{actualIngresosUF} €</span></div>
+                    {finalEffortRate !== null && (
+                      <div>
+                        <span className="text-[#71716b] block text-[11px]">Tasa de Esfuerzo</span>
+                        <span className={`font-medium ${finalEffortRate > 40 ? "text-red-600" : finalEffortRate > 30 ? "text-yellow-600" : "text-green-600"}`}>
+                          {finalEffortRate.toFixed(1)}%
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

@@ -21,10 +21,7 @@ export async function GET(req: Request) {
     const idc = url.searchParams.get("idc")
     const id = url.searchParams.get("id")
     const idi = url.searchParams.get("idi") || url.searchParams.get("inmobiliaria")
-    if (!idc && !id && !idi) {
-      return NextResponse.json({ ok: false, error: "idc, id o idi requerido" }, { status: 400 })
-    }
-
+    
     const supabase = createAdminClient()
     const selectFields = [
       "\"ID\"",
@@ -149,6 +146,7 @@ export async function GET(req: Request) {
     const inmoId = idi || (lead?.usuario != null ? String(lead.usuario) : "")
     let inmobiliaria = null
     let anuncios: any[] = []
+
     if (inmoId) {
       const inmoQuery = async (selectValue: string) => {
         return await supabase.from("Inmobiliarias").select(selectValue).eq("idi", inmoId).maybeSingle()
@@ -169,28 +167,32 @@ export async function GET(req: Request) {
       } else {
         inmobiliaria = inmoData || null
       }
+    }
 
-      const adsQuery = async (selectValue: string, withActive: boolean) => {    
-        let query = supabase.from("Anuncios").select(selectValue).eq("usuario", inmoId)
-        if (withActive) {
-          query = query.eq("Activacion", "Activo")
-        }
-        return await query
+    const adsQuery = async (selectValue: string, withActive: boolean) => {
+      let query = supabase.from("Anuncios").select(selectValue)
+      if (inmoId) {
+        query = query.eq("usuario", inmoId)
       }
-      const { data: adsData, error: adsErr } = await adsQuery("ida, Referencia, Direccion, Precio, Activacion, usuario", true)
-      if (adsErr) {
-        if (isMissingColumnError(adsErr.message)) {
-          const retry = await adsQuery("ida, Referencia, Direccion, Precio, usuario", false)
-          if (retry.error) {
-            return NextResponse.json({ ok: false, error: retry.error.message }, { status: 400 })
-          }
-          anuncios = Array.isArray(retry.data) ? retry.data : []
-        } else {
-          return NextResponse.json({ ok: false, error: adsErr.message }, { status: 400 })
+      if (withActive) {
+        query = query.eq("Activacion", "Activo")
+      }
+      return await query
+    }
+    
+    const { data: adsData, error: adsErr } = await adsQuery("ida, Referencia, Direccion, Precio, Activacion, usuario", true)
+    if (adsErr) {
+      if (isMissingColumnError(adsErr.message)) {
+        const retry = await adsQuery("ida, Referencia, Direccion, Precio, usuario", false)
+        if (retry.error) {
+          return NextResponse.json({ ok: false, error: retry.error.message }, { status: 400 })
         }
+        anuncios = Array.isArray(retry.data) ? retry.data : []
       } else {
-        anuncios = Array.isArray(adsData) ? adsData : []
+        return NextResponse.json({ ok: false, error: adsErr.message }, { status: 400 })
       }
+    } else {
+      anuncios = Array.isArray(adsData) ? adsData : []
     }
 
     return NextResponse.json({ ok: true, lead, inmobiliaria, anuncios })

@@ -7960,6 +7960,8 @@ export default function LeadsPage() {
         }
         inmobiliariaId={inmobiliariaId || 0}
         currentAgentId={currentAgentId}
+        isAdminOrSuperuser={isAdmin || role === 'super' || role === 'admin'}
+        agentes={agentes}
       />
       </>
     )

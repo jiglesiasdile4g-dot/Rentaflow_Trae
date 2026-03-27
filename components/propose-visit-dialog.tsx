@@ -20,6 +20,8 @@ interface ProposeVisitDialogProps {
   selectedAdvertisement?: { Referencia?: string; Direccion?: string; id?: string | number; ida?: string | number } | null
   inmobiliariaId: number
   currentAgentId?: number | null
+  isAdminOrSuperuser?: boolean
+  agentes?: any[]
 }
 
 export function ProposeVisitDialog({ 
@@ -28,8 +30,11 @@ export function ProposeVisitDialog({
   selectedLeadIds,
   selectedAdvertisement,
   inmobiliariaId,
-  currentAgentId
+  currentAgentId,
+  isAdminOrSuperuser = false,
+  agentes = []
 }: ProposeVisitDialogProps) {
+  const [selectedAgentForProposal, setSelectedAgentForProposal] = useState<number | null>(currentAgentId || null)
   const [date, setDate] = useState<Date>()
   const [time, setTime] = useState("")
   const [loading, setLoading] = useState(false)
@@ -50,7 +55,14 @@ export function ProposeVisitDialog({
 
   // Load available dates when dialog opens
   useEffect(() => {
-    if (open && currentAgentId) {
+    // Reset selectedAgentForProposal to currentAgentId when dialog opens
+    if (open) {
+      setSelectedAgentForProposal(currentAgentId || null)
+    }
+  }, [open, currentAgentId])
+
+  useEffect(() => {
+    if (open && selectedAgentForProposal) {
       setLoadingDates(true)
       // Reset selection
       setDate(undefined)
@@ -58,7 +70,7 @@ export function ProposeVisitDialog({
       setAvailableSlots([])
       
       const adId = getAdId()
-      getAvailableDatesForProposal(currentAgentId, inmobiliariaId, adId ? String(adId) : undefined)
+      getAvailableDatesForProposal(selectedAgentForProposal, inmobiliariaId, adId ? String(adId) : undefined)
         .then((dates) => {
           setAvailableDates(dates)
         })
@@ -68,15 +80,15 @@ export function ProposeVisitDialog({
         })
         .finally(() => setLoadingDates(false))
     }
-  }, [open, currentAgentId, inmobiliariaId, getAdId])
+  }, [open, selectedAgentForProposal, inmobiliariaId, getAdId])
 
   // Load slots when date is selected
   useEffect(() => {
-    if (open && date && currentAgentId) {
+    if (open && date && selectedAgentForProposal) {
       setCheckingAvailability(true)
       const dateStr = format(date, "yyyy-MM-dd")
       const adId = getAdId()
-      getAvailableSlotsForProposal(dateStr, currentAgentId, inmobiliariaId, adId ? String(adId) : undefined)
+      getAvailableSlotsForProposal(dateStr, selectedAgentForProposal, inmobiliariaId, adId ? String(adId) : undefined)
         .then((slots) => {
           setAvailableSlots(slots)
           if (time && !slots.includes(time)) {
@@ -91,7 +103,7 @@ export function ProposeVisitDialog({
     } else if (!date) {
         setAvailableSlots([])
     }
-  }, [date, currentAgentId, inmobiliariaId, open, time, getAdId])
+  }, [date, selectedAgentForProposal, inmobiliariaId, open, time, getAdId])
 
   const handleCreateProposal = async () => {
     if (!date || !time) {
@@ -115,7 +127,7 @@ export function ProposeVisitDialog({
         inmuebleId: adId ? String(adId) : undefined,
         inmobiliariaId,
         origin: window.location.origin,
-        agentId: currentAgentId
+        agentId: selectedAgentForProposal
       })
 
       if (result.success) {
@@ -173,8 +185,35 @@ export function ProposeVisitDialog({
         </DialogHeader>
 
         {!generatedLink ? (
-          <div className="flex flex-col md:flex-row gap-6 py-4 h-[400px]">
-            {/* Left Column: Dates List */}
+          <div className="flex flex-col gap-6 py-4">
+            {isAdminOrSuperuser && agentes && agentes.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <Label>Seleccionar Agente para la Visita</Label>
+                <Select
+                  value={selectedAgentForProposal ? String(selectedAgentForProposal) : ""}
+                  onValueChange={(value) => {
+                    setSelectedAgentForProposal(Number(value))
+                    setDate(undefined)
+                    setTime("")
+                    setAvailableSlots([])
+                  }}
+                >
+                  <SelectTrigger className="w-full md:w-[300px]">
+                    <SelectValue placeholder="Seleccionar Agente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agentes.map((agente) => (
+                      <SelectItem key={agente.idag} value={String(agente.idag)}>
+                        {agente.Nombre || agente.Email || `Agente ${agente.idag}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            
+            <div className="flex flex-col md:flex-row gap-6 h-[400px]">
+              {/* Left Column: Dates List */}
             <div className="flex-shrink-0 w-full md:w-[220px] flex flex-col">
               <Label className="mb-2 block">Fechas disponibles</Label>
               <div className="border rounded-md flex-1 overflow-y-auto p-2 bg-slate-50 space-y-2">
@@ -261,6 +300,7 @@ export function ProposeVisitDialog({
                    <span className="font-medium">Inmueble:</span> {selectedAdvertisement.Direccion || selectedAdvertisement.Referencia}
                 </div>
               )}
+            </div>
             </div>
           </div>
         ) : (
