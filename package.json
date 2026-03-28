@@ -7,9 +7,9 @@
     "dev": "next dev",
     "lint": "eslint .",
     "start": "sh -c \"node scripts/reminder-cron.js & next start\"",
-    "release:patch": "npm version patch -m \"chore(release): v%s\"",
-    "release:minor": "npm version minor -m \"chore(release): v%s\"",
-    "release:major": "npm version major -m \"chore(release): v%s\"",
+    "release:patch": "npm version patch -m \"chore(release): v%s\" --ignore-scripts=false",
+    "release:minor": "npm version minor -m \"chore(release): v%s\" --ignore-scripts=false",
+    "release:major": "npm version major -m \"chore(release): v%s\" --ignore-scripts=false",
     "version": "conventional-changelog -p angular -i CHANGELOG.md -s -r 0 && node scripts/set-app-version.js && git add CHANGELOG.md",
     "postversion": "git push origin main --follow-tags",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 0"
