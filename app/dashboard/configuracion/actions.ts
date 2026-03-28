@@ -7,6 +7,24 @@ import { revalidatePath } from "next/cache"
 import { getPlanData } from "@/lib/plan-data"
 import { formatWebhookDate } from "@/lib/utils"
 
+async function logAuditAction(admin: any, actionType: string, targetEmail: string, details: any = {}) {
+    try {
+        const supabase = await createClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        const adminEmail = user?.email || "system"
+
+        // Fire and forget insert into Audit_Logs
+        await admin.from("Audit_Logs").insert({
+            action_type: actionType,
+            admin_email: adminEmail,
+            target_email: targetEmail,
+            details: details
+        })
+    } catch (e) {
+        console.error("Failed to log audit action:", e)
+    }
+}
+
 function getLocalDateString(date = new Date()) {
     const y = date.getFullYear()
     const m = String(date.getMonth() + 1).padStart(2, "0")
@@ -409,6 +427,8 @@ export async function createAgentAction(formData: FormData) {
         // 3. Create Agent record
         await ensureAgentRecord(admin, email, idi, "agente", true)
 
+        await logAuditAction(admin, "CREATE_USER", email, { idi, role: "agente" })
+
     } catch (error: any) {
         console.error("Create agent error:", error)
         redirect(`/dashboard/configuracion?createUser=error&msg=${encodeURIComponent(error.message || "Error al invitar usuario")}`)
@@ -449,6 +469,8 @@ export async function deleteAgentAction(formData: FormData) {
         // Delete from Agentes
         await admin.from("Agentes").delete().ilike("Email", email).eq("idi", idi)
 
+        await logAuditAction(admin, "DELETE_USER", email, { idi })
+
     } catch (e: any) {
         console.error("Error deleting user:", e)
         revalidatePath("/dashboard/configuracion")
@@ -478,6 +500,8 @@ export async function toggleActiveAction(formData: FormData) {
         .from("Perfiles")
         .update({ [activeCol]: newActive })
         .eq(idField, found.profile[idField])
+
+    await logAuditAction(admin, "TOGGLE_ACTIVE", email, { idi, active: newActive })
 
     revalidatePath("/dashboard/configuracion")
 }
@@ -526,6 +550,8 @@ export async function toggleRoleAction(formData: FormData) {
         .from("Perfiles")
         .update(updates)
         .eq(idField, found.profile[idField])
+
+    await logAuditAction(admin, "CHANGE_ROLE", email, { idi, new_role: targetRole })
 
     revalidatePath("/dashboard/configuracion")
 }
@@ -622,10 +648,12 @@ export async function toggleAgentFunctionsAction(formData: FormData) {
                 idi: idi,
                 Telefono: found?.profile?.Telefono || found?.profile?.telefono || 0
             })
+            await logAuditAction(admin, "ENABLE_AGENT_FUNCTIONS", email, { idi })
         }
     } else {
         // Remove agent record
         await admin.from("Agentes").delete().ilike("Email", email).eq("idi", idi)
+        await logAuditAction(admin, "DISABLE_AGENT_FUNCTIONS", email, { idi })
     }
     
     revalidatePath("/dashboard/configuracion")
@@ -747,6 +775,8 @@ export async function updateUserDetailsAction(formData: FormData) {
     } catch (e) {
         console.error(`[updateUserDetailsAction] Error en bloque Agentes:`, e)
     }
+
+    await logAuditAction(admin, "UPDATE_USER_DETAILS", email, { idi, name, phone })
 
     revalidatePath("/dashboard/configuracion")
 }

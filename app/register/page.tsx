@@ -75,8 +75,10 @@ export default function RegisterPage() {
       return
     }
 
-    if (password.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres")
+    // Política de contraseñas robustas
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/
+    if (!passwordRegex.test(password)) {
+      setError("La contraseña debe tener al menos 8 caracteres, mayúsculas, minúsculas, números y un carácter especial.")
       setLoading(false)
       return
     }

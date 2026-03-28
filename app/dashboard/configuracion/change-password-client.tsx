@@ -41,6 +41,18 @@ export function ChangePassword() {
       toast({ title: 'Las contraseñas no coinciden', description: 'Verifica los campos', variant: 'destructive' })
       return
     }
+
+    // Política de contraseñas robustas
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/
+    if (!passwordRegex.test(newPassword)) {
+      toast({
+        title: "Error",
+        description: "La contraseña debe tener al menos 8 caracteres, mayúsculas, minúsculas, números y un carácter especial.",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       setLoading(true)
       const supabase = createClient()

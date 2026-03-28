@@ -16,8 +16,10 @@ export async function updatePasswordAction(formData: FormData) {
     return { error: "Las contraseñas no coinciden" }
   }
 
-  if (password.length < 6) {
-    return { error: "La contraseña debe tener al menos 6 caracteres" }
+  // Política de contraseñas robustas
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/
+  if (!passwordRegex.test(password)) {
+    return { error: "La contraseña debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y al menos un carácter especial." }
   }
 
   // Debug: Check current user
