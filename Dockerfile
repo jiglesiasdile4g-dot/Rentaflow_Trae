@@ -1,5 +1,5 @@
 # Etapa de construcción
-FROM public.ecr.aws/docker/library/node:20-alpine AS builder
+FROM node:20-alpine AS builder
 
 # Establecer el directorio de trabajo
 WORKDIR /app
@@ -18,7 +18,7 @@ COPY . .
 RUN npm run build
 
 # Etapa de producción
-FROM public.ecr.aws/docker/library/node:20-alpine AS production
+FROM node:20-alpine AS production
 
 # Establecer el directorio de trabajo
 WORKDIR /app
