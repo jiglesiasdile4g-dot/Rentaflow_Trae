@@ -29,8 +29,7 @@ export default function LogoutButton() {
         )
       }
       
-      router.push("/login")
-      router.refresh()
+      window.location.href = "/login"
     } catch (error) {
       console.error("Error logging out:", error)
     } finally {

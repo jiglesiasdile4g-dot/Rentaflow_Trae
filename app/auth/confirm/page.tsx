@@ -32,9 +32,7 @@ function AuthConfirmContent() {
       
       if (session) {
         setStatus("Sesión encontrada. Sincronizando...")
-        router.refresh() // Sync server components with new session
-        await new Promise(resolve => setTimeout(resolve, 500)) // Small delay for cookie propagation
-        router.push(next)
+        window.location.href = next
         return
       }
 
@@ -62,10 +60,8 @@ function AuthConfirmContent() {
             // Verify session is active
             const { data: { user } } = await supabase.auth.getUser()
             if (user) {
-                // Force a hard refresh/router refresh to ensure cookies are seen by middleware
-                router.refresh() 
-                await new Promise(resolve => setTimeout(resolve, 1000))
-                router.push(next)
+                // Force a hard refresh to ensure cookies are seen by middleware
+                window.location.href = next
                 return
             }
           }
@@ -81,9 +77,7 @@ function AuthConfirmContent() {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (session) {
           setStatus("Acceso concedido. Redirigiendo...")
-          router.refresh()
-          await new Promise(resolve => setTimeout(resolve, 500))
-          router.push(next)
+          window.location.href = next
         }
       })
 

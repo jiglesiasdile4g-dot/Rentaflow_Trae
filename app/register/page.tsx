@@ -110,10 +110,10 @@ export default function RegisterPage() {
         // If email confirmation is disabled, redirect immediately
         if (data.user && !data.user.email_confirmed_at) {
           setTimeout(() => {
-            router.push("/login")
+            window.location.href = "/login"
           }, 3000)
         } else {
-          router.push("/dashboard")
+          window.location.href = "/dashboard"
         }
       }
     } catch (err) {

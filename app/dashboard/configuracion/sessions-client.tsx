@@ -46,8 +46,7 @@ export function ActiveSessions() {
         )
       }
       
-      router.push('/login')
-      router.refresh()
+      window.location.href = '/login'
     } catch {
       toast({ title: 'Error', description: 'No se pudo cerrar sesión', variant: 'destructive' })
     } finally {
@@ -76,9 +75,7 @@ export function ActiveSessions() {
       }
       
       toast({ title: 'Sesiones cerradas', description: 'Se cerraron todas las sesiones' })
-      router.push('/login')
-      router.refresh()
-      setOpen(false)
+      window.location.href = '/login'
     } catch {
       toast({ title: 'Error', description: 'No se pudo cerrar todas las sesiones', variant: 'destructive' })
     } finally {

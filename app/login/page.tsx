@@ -58,8 +58,7 @@ function LoginContent() {
           data.user?.id,
           {}
         )
-        router.push("/dashboard")
-        router.refresh()
+        window.location.href = "/dashboard"
       }
     } catch (err: any) {
       setError("Error inesperado al iniciar sesión")
