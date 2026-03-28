@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { LogOut } from "lucide-react"
 import { useState } from "react"
+import { logClientEventAction } from "@/app/actions/audit"
 
 export default function LogoutButton() {
   const [loading, setLoading] = useState(false)
@@ -14,7 +15,20 @@ export default function LogoutButton() {
   const handleLogout = async () => {
     setLoading(true)
     try {
+      const { data: { user } } = await supabase.auth.getUser()
       await supabase.auth.signOut()
+      
+      if (user) {
+        await logClientEventAction(
+          "LOGOUT",
+          "AUTHENTICATION",
+          "SUCCESS",
+          user.email,
+          user.email,
+          user.id
+        )
+      }
+      
       router.push("/login")
       router.refresh()
     } catch (error) {

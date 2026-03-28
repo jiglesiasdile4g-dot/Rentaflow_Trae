@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
+import { logClientEventAction } from '@/app/actions/audit'
 
 export function ChangePassword() {
   const [open, setOpen] = useState(false)
@@ -56,11 +57,26 @@ export function ChangePassword() {
     try {
       setLoading(true)
       const supabase = createClient()
+      
+      const { data: { user } } = await supabase.auth.getUser()
+      
       const { error } = await supabase.auth.updateUser({ password: newPassword })
       if (error) {
         toast({ title: 'Error al actualizar', description: error.message, variant: 'destructive' })
         return
       }
+      
+      if (user) {
+        await logClientEventAction(
+          "PASSWORD_CHANGE",
+          "AUTHENTICATION",
+          "SUCCESS",
+          user.email,
+          user.email,
+          user.id
+        )
+      }
+
       toast({ title: 'Contraseña actualizada', description: 'Tu contraseña ha sido cambiada correctamente' })
       setOpen(false)
       setNewPassword('')

@@ -41,5 +41,16 @@ export async function updatePasswordAction(formData: FormData) {
     return { error: error.message }
   }
 
+  // Audit log for password change
+  const { logAuditEvent } = await import("@/lib/audit-logger")
+  await logAuditEvent({
+    actorId: user.id,
+    actorEmail: user.email,
+    actionType: "PASSWORD_CHANGE",
+    category: "AUTHENTICATION",
+    actionResult: "SUCCESS",
+    targetObject: user.email
+  })
+
   redirect("/dashboard?passwordUpdated=true")
 }

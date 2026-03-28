@@ -960,7 +960,7 @@ function FormularioInner() {
                 <div className="bg-[#f9f9f6] border border-[#e8e8e3] rounded-[10px] p-4">
                   <h3 className="text-[12px] font-bold text-[#1a1a1a] uppercase tracking-wider mb-3">Perfil de candidatura</h3>
                   <div className="grid grid-cols-2 gap-y-3 text-[13px]">
-                    <div><span className="text-[#71716b] block text-[11px]">Intención</span><span className="font-medium capitalize">{intent}</span></div>
+                    <div><span className="text-[#71716b] block text-[11px]">Intención</span><span className="font-medium capitalize">{need}</span></div>
                     <div><span className="text-[#71716b] block text-[11px]">Laboral</span><span className="font-medium">{labor}</span></div>
                     <div><span className="text-[#71716b] block text-[11px]">Entrada</span><span className="font-medium">{entrada}</span></div>
                     <div><span className="text-[#71716b] block text-[11px]">Ingresos Conjuntos (Titulares)</span><span className="font-medium">{actualIngresosUF} €</span></div>

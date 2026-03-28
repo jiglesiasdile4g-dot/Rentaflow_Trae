@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LogIn, Mail, Lock, Loader2, Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
 import { isSupabaseConfigured } from "@/lib/utils"
+import { logClientEventAction } from "@/app/actions/audit"
 
 function LoginContent() {
   const [email, setEmail] = useState("")
@@ -38,12 +39,39 @@ function LoginContent() {
 
       if (error) {
         setError(error.message)
+        await logClientEventAction(
+          "LOGIN_FAILED",
+          "AUTHENTICATION",
+          "FAILURE",
+          email,
+          email,
+          undefined,
+          { reason: error.message }
+        )
       } else {
+        await logClientEventAction(
+          "LOGIN_SUCCESS",
+          "AUTHENTICATION",
+          "SUCCESS",
+          email,
+          email,
+          data.user?.id,
+          {}
+        )
         router.push("/dashboard")
         router.refresh()
       }
-    } catch (err) {
+    } catch (err: any) {
       setError("Error inesperado al iniciar sesión")
+      await logClientEventAction(
+        "LOGIN_ERROR",
+        "AUTHENTICATION",
+        "FAILURE",
+        email,
+        email,
+        undefined,
+        { reason: err?.message || "Unexpected error" }
+      )
     } finally {
       setLoading(false)
     }

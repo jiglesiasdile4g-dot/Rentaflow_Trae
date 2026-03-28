@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
+import { logAuditEvent } from "@/lib/audit-logger"
 
 export async function createLeadAction(leadData: any) {
   const supabase = await createClient()
@@ -49,6 +50,22 @@ export async function createLeadAction(leadData: any) {
   if (error) {
     console.error("Error creating lead:", error)
     return { error: error.message }
+  }
+
+  if (data && data[0]) {
+    await logAuditEvent({
+        actorId: user.id,
+        actorEmail: user.email,
+        actionType: "CREATE_LEAD",
+        category: "OPERATIONAL",
+        targetObject: `Lead ${data[0].id}`,
+        actionResult: "SUCCESS",
+        details: { 
+            leadId: data[0].id, 
+            nombre: data[0].Nombre,
+            inmobiliaria: leadData.usuario 
+        }
+    })
   }
 
   revalidatePath("/dashboard/leads")

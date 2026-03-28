@@ -45,6 +45,7 @@ import { isDocumentInvalid } from "@/lib/lead-validation"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { generateSlotCandidates, isOverlapping } from "@/lib/agenda-utils"
+import { logClientEventAction } from "@/app/actions/audit"
 
 // Types duplicated to avoid circular deps
 export type Lead = {
@@ -1063,6 +1064,18 @@ export function LeadDetailModal({
 
       if (error) throw error
 
+      if (currentUser?.id) {
+        await logClientEventAction(
+          "STATUS_CHANGE",
+          "OPERATIONAL",
+          "SUCCESS",
+          `Lead ${lead.id}`,
+          currentUser.email,
+          currentUser.id,
+          { oldStatus: lead.Estado, newStatus: newStatus }
+        )
+      }
+
       const updatedLead = { ...lead, ...updateData }
       setLead(updatedLead as Lead)
       if (onLeadUpdate) onLeadUpdate(updatedLead as Lead)
@@ -1218,6 +1231,17 @@ export function LeadDetailModal({
         } catch {}
         toast({ title: "Error", description: errMsg, variant: "destructive" })
       } else {
+        if (currentUser?.id) {
+          await logClientEventAction(
+            "DOCUMENT_UPLOAD",
+            "OPERATIONAL",
+            "SUCCESS",
+            filename,
+            currentUser.email,
+            currentUser.id,
+            { leadId: lead.id }
+          )
+        }
         toast({ title: "Éxito", description: "Archivo subido correctamente" })
         await loadLeadDocsList()
       }
@@ -1250,12 +1274,24 @@ export function LeadDetailModal({
     setTimeout(() => setCopiedField(null), 2000)
   }
 
-  const openAttachmentPreview = (url: string, name: string) => {
+  const openAttachmentPreview = async (url: string, name: string) => {
     const isPdf = /\.pdf$/i.test(name) || url.toLowerCase().includes(".pdf")
     const proxied = isPdf ? `/api/proxy/pdf?url=${encodeURIComponent(url)}` : url
     setAttachmentPreviewUrl(proxied)
     setAttachmentPreviewName(name)
     setAttachmentPreviewKind(isPdf ? "pdf" : "image")
+    
+    if (currentUser?.id) {
+      await logClientEventAction(
+        "DOCUMENT_VIEW",
+        "SENSITIVE_ACCESS",
+        "SUCCESS",
+        name,
+        currentUser.email,
+        currentUser.id,
+        { leadId: lead?.id }
+      )
+    }
   }
 
   const closeAttachmentPreview = () => {
@@ -1324,6 +1360,18 @@ export function LeadDetailModal({
         .eq("id", lead.id)
 
       if (error) throw error
+
+      if (currentUser?.id) {
+        await logClientEventAction(
+          "NOTES_MODIFIED",
+          "OPERATIONAL",
+          "SUCCESS",
+          `Lead ${lead.id}`,
+          currentUser.email,
+          currentUser.id,
+          { action: "delete_note" }
+        )
+      }
 
       const updatedLead = { ...lead, Observaciones: newNotes, Obsevaciones: newNotes }
       setLead(updatedLead as Lead)
@@ -1416,6 +1464,18 @@ export function LeadDetailModal({
         .eq("id", lead.id)
 
       if (error) throw error
+
+      if (currentUser?.id) {
+        await logClientEventAction(
+          "NOTES_MODIFIED",
+          "OPERATIONAL",
+          "SUCCESS",
+          `Lead ${lead.id}`,
+          currentUser.email,
+          currentUser.id,
+          { action: "add_inline_note" }
+        )
+      }
 
       const updatedLead = { ...lead, Observaciones: updatedNotes, Obsevaciones: updatedNotes }
       setLead(updatedLead as Lead)
@@ -1855,6 +1915,18 @@ export function LeadDetailModal({
         .eq("id", lead.id)
 
       if (error) throw error
+
+      if (currentUser?.id) {
+        await logClientEventAction(
+          "NOTES_MODIFIED",
+          "OPERATIONAL",
+          "SUCCESS",
+          `Lead ${lead.id}`,
+          currentUser.email,
+          currentUser.id,
+          { action: "edit_notes_dialog" }
+        )
+      }
 
       const updatedLead = { ...lead, Observaciones: noteContent, Obsevaciones: noteContent }
       setLead(updatedLead as Lead)
@@ -2736,7 +2808,19 @@ export function LeadDetailModal({
                                                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openAttachmentPreview(fileUrl, file.name)}>
                                                     <Eye className="h-3 w-3" />
                                                 </Button>
-                                                <a href={fileUrl} target="_blank" rel="noreferrer" download>
+                                                <a href={fileUrl} target="_blank" rel="noreferrer" download onClick={async () => {
+                                                    if (currentUser?.id) {
+                                                        await logClientEventAction(
+                                                            "DOCUMENT_DOWNLOAD",
+                                                            "SENSITIVE_ACCESS",
+                                                            "SUCCESS",
+                                                            file.name,
+                                                            currentUser.email,
+                                                            currentUser.id,
+                                                            { leadId: lead?.id }
+                                                        )
+                                                    }
+                                                }}>
                                                     <Button variant="ghost" size="icon" className="h-6 w-6">
                                                         <Download className="h-3 w-3" />
                                                     </Button>

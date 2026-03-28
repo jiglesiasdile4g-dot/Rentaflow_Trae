@@ -6,18 +6,20 @@ import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
 import { getPlanData } from "@/lib/plan-data"
 import { formatWebhookDate } from "@/lib/utils"
+import { logAuditEvent } from "@/lib/audit-logger"
 
 async function logAuditAction(admin: any, actionType: string, targetEmail: string, details: any = {}) {
     try {
         const supabase = await createClient()
         const { data: { user } } = await supabase.auth.getUser()
-        const adminEmail = user?.email || "system"
-
-        // Fire and forget insert into Audit_Logs
-        await admin.from("Audit_Logs").insert({
-            action_type: actionType,
-            admin_email: adminEmail,
-            target_email: targetEmail,
+        
+        await logAuditEvent({
+            actorId: user?.id,
+            actorEmail: user?.email || "system",
+            actionType: actionType,
+            category: 'ADMINISTRATION',
+            targetObject: targetEmail,
+            actionResult: 'SUCCESS',
             details: details
         })
     } catch (e) {

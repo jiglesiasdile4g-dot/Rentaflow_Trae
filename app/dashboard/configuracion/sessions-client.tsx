@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/hooks/use-toast'
+import { logClientEventAction } from '@/app/actions/audit'
 
 export function ActiveSessions() {
   const [open, setOpen] = useState(false)
@@ -30,7 +31,21 @@ export function ActiveSessions() {
     try {
       setLoading(true)
       const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      
       await supabase.auth.signOut({ scope: 'local' } as any)
+      
+      if (user) {
+        await logClientEventAction(
+          "SESSION_LOGOUT_LOCAL",
+          "AUTHENTICATION",
+          "SUCCESS",
+          user.email,
+          user.email,
+          user.id
+        )
+      }
+      
       router.push('/login')
       router.refresh()
     } catch {
@@ -45,7 +60,21 @@ export function ActiveSessions() {
     try {
       setLoading(true)
       const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      
       await supabase.auth.signOut()
+      
+      if (user) {
+        await logClientEventAction(
+          "SESSION_REVOKE_ALL",
+          "AUTHENTICATION",
+          "SUCCESS",
+          user.email,
+          user.email,
+          user.id
+        )
+      }
+      
       toast({ title: 'Sesiones cerradas', description: 'Se cerraron todas las sesiones' })
       router.push('/login')
       router.refresh()
