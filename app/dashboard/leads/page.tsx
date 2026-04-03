@@ -5349,12 +5349,16 @@ export default function LeadsPage() {
                                 )}
                               </div>
                               <div style={{ flex: "2" }}>
-                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
-                                  Datos faltantes o erroneos:
-                                </div>
-                                <div className={`text-sm ${(selectedLead.m_error || selectedLead.m_errror) ? "not-italic text-red-600 font-medium" : "italic text-muted-foreground"}`}>
-                                  {selectedLead.m_error || selectedLead.m_errror || "Ninguno"}
-                                </div>
+                                {(selectedLead.m_error || selectedLead.m_errror) && (
+                                  <>
+                                    <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
+                                      Datos faltantes o erroneos:
+                                    </div>
+                                    <div className="text-sm not-italic text-red-600 font-medium">
+                                      {selectedLead.m_error || selectedLead.m_errror}
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             </div>
 

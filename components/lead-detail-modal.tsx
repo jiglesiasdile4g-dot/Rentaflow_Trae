@@ -2394,12 +2394,12 @@ export function LeadDetailModal({
                                             </div>
                                         </div>
 
-                                        {selectedPersona === 1 && (
+                                        {selectedPersona === 1 && (lead.m_error || lead.m_errror) && (
                                             <div className="grid grid-cols-1 gap-4 pt-2">
                                                 <div className="space-y-1.5">
                                                     <Label className="text-xs text-muted-foreground">Datos faltantes o erroneos:</Label>
-                                                    <div className={`text-sm min-h-[2rem] flex items-center ${(lead.m_error || lead.m_errror) ? "text-red-600 font-medium" : "text-muted-foreground italic"}`}>
-                                                        {lead.m_error || lead.m_errror || "Ninguno"}
+                                                    <div className="text-sm min-h-[2rem] flex items-center text-red-600 font-medium">
+                                                        {lead.m_error || lead.m_errror}
                                                     </div>
                                                 </div>
                                             </div>
