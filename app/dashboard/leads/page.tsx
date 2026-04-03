@@ -97,6 +97,7 @@ type Lead = {
   Persona_3?: string
   Tipo_Documento_3?: string
   Documento_3?: string
+  m_errror?: string // Added to display missing or erroneous data
   Ingresos_3?: number
   "Correo 3"?: string
   "Telefono 3"?: string
@@ -5346,7 +5347,14 @@ export default function LeadsPage() {
                                   <div className="text-xs text-red-600">Número de documento no válido</div>
                                 )}
                               </div>
-                              <div style={{ flex: "2" }}></div>
+                              <div style={{ flex: "2" }}>
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
+                                  Datos faltantes o erroneos:
+                                </div>
+                                <div className={`text-sm ${selectedLead.m_errror ? "not-italic text-red-600 font-medium" : "italic text-muted-foreground"}`}>
+                                  {selectedLead.m_errror || "Ninguno"}
+                                </div>
+                              </div>
                             </div>
 
                           </div>
