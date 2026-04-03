@@ -1312,9 +1312,8 @@ export default function LeadsPage() {
     if (!selectedLead) return
     const s = String(selectedLead.Estado || "")
     
-    // Only auto-correct if status is "Datos Incompletos" or empty/null
-    // Do NOT overwrite advanced statuses like "Visita Propuesta", "Aceptado", etc.
-    if (s !== "Datos Incompletos" && s !== "" && s !== "null") return
+    // Only auto-correct if status is empty/null (do NOT auto-correct 'Datos Incompletos' to allow manual overrides)
+    if (s !== "" && s !== "null" && s !== "Incompleto") return
 
     if (isPersona1CompleteExceptCP(selectedLead)) {
       ;(async () => {
@@ -1752,9 +1751,9 @@ export default function LeadsPage() {
 
       const toCorrect = baseRows.filter((lead: any) => {
         const s = String(lead?.Estado || "")
-        // Only auto-correct if status is "Datos Incompletos" or empty/null
-        // Do NOT overwrite advanced statuses like "Visita Propuesta", "Aceptado", etc.
-        return (s === "Datos Incompletos" || s === "" || s === "null") && isPersona1CompleteExceptCP(lead) && !hasInvalidDoc(lead)
+        // Only auto-correct if status is empty/null or "Incompleto"
+        // Do NOT overwrite "Datos Incompletos" to allow users to manually set it
+        return (s === "Incompleto" || s === "" || s === "null") && isPersona1CompleteExceptCP(lead) && !hasInvalidDoc(lead)
       })
       console.log("[regla-cp] candidates_to_correct", toCorrect.length)
       if (toCorrect.length > 0) {
@@ -2190,8 +2189,15 @@ export default function LeadsPage() {
         await updateLeadStatus(Number(selectedLead.id), "Datos Incompletos")
         setSelectedLead({ ...updatedLead, Estado: "Datos Incompletos" })
       } else if (isPersona1CompleteExceptCP(updatedLead)) {
-        await updateLeadStatus(Number(selectedLead.id), "Datos Completos")
-        setSelectedLead({ ...updatedLead, Estado: "Datos Completos" })
+        // Only auto-upgrade to 'Datos Completos' if the status was previously empty, null, or 'Incompleto'
+        // Do not overwrite manual 'Datos Incompletos' or advanced statuses
+        const s = String(selectedLead.Estado || "")
+        if (s === "" || s === "null" || s === "Incompleto") {
+          await updateLeadStatus(Number(selectedLead.id), "Datos Completos")
+          setSelectedLead({ ...updatedLead, Estado: "Datos Completos" })
+        } else {
+          setSelectedLead(updatedLead)
+        }
       }
 
       console.log("[v0] Personal information updated successfully")
