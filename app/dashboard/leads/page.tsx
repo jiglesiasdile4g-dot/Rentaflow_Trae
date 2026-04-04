@@ -6415,12 +6415,16 @@ export default function LeadsPage() {
                               communications.map((comm) => (
                                 <Card 
                                   key={comm.id} 
-                                  className={`border-l-4 cursor-pointer hover:bg-muted/50 transition-colors ${comm.source === "whatsapp" ? "border-l-emerald-500" : "border-l-blue-500"}`}
+                                  className={`cursor-pointer hover:bg-muted/50 transition-colors ${
+                                    comm.Tipo?.toLowerCase() === "recibido" 
+                                      ? "border-r-4 border-r-rose-500 border-l-0" 
+                                      : (comm.source === "whatsapp" ? "border-l-4 border-l-emerald-500" : "border-l-4 border-l-blue-500")
+                                  }`}
                                   onClick={() => openCommunicationDetail(comm)}
                                 >
-                                  <div className="p-3 space-y-1">
-                                    <div className="flex justify-between items-start gap-2">
-                                      <div className="flex items-center gap-1.5 min-w-0">
+                                  <div className={`p-3 space-y-1 ${comm.Tipo?.toLowerCase() === "recibido" ? "ml-auto text-right" : ""}`}>
+                                    <div className={`flex items-start gap-2 ${comm.Tipo?.toLowerCase() === "recibido" ? "flex-row-reverse justify-start" : "justify-between"}`}>
+                                      <div className={`flex items-center gap-1.5 min-w-0 ${comm.Tipo?.toLowerCase() === "recibido" ? "flex-row-reverse" : ""}`}>
                                         {comm.source === "whatsapp" ? <Phone className="h-3 w-3 text-emerald-600" /> : <Mail className="h-3 w-3 text-blue-600" />}
                                         <span className="font-medium text-xs">{comm.source === "whatsapp" ? "WhatsApp" : "Email"}</span>
                                         <span className="text-[10px] text-muted-foreground">•</span>
