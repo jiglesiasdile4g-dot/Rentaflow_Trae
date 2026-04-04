@@ -6415,7 +6415,7 @@ export default function LeadsPage() {
                               communications.map((comm) => (
                                 <Card 
                                   key={comm.id} 
-                                  className={`cursor-pointer hover:bg-muted/50 transition-colors ${
+                                  className={`cursor-pointer hover:bg-muted/50 transition-colors overflow-hidden ${
                                     comm.Tipo?.toLowerCase() === "recibido" 
                                       ? "border-r-4 border-r-rose-500 border-l-0" 
                                       : (comm.source === "whatsapp" ? "border-l-4 border-l-emerald-500" : "border-l-4 border-l-blue-500")
@@ -7814,17 +7814,17 @@ export default function LeadsPage() {
                 </div>
 
                 {/* Message Body */}
-                <div className="border rounded-lg p-4 bg-[#F8FBF8] dark:bg-muted/30 dark:text-foreground">
+                <div className="border rounded-lg p-4 bg-[#F8FBF8] dark:bg-muted/30 dark:text-foreground overflow-x-hidden">
                   <h3 className="text-sm font-semibold mb-3">Mensaje:</h3>
-                  <div className="overflow-x-hidden break-words">
+                  <div className="break-words" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                     {selectedCommunication.source === "whatsapp" ? (
                       <div
-                        className="prose prose-sm max-w-none dark:prose-invert [&_*]:!whitespace-normal [&_*]:!break-words"
+                        className="prose prose-sm max-w-full dark:prose-invert [&_*]:!max-w-full [&_*]:!whitespace-pre-wrap [&_*]:!break-words"
                         dangerouslySetInnerHTML={{ __html: selectedCommunication.Mensaje || "Sin contenido" }}
                       />
                     ) : selectedCommunication.Html ? (
                       <div
-                        className="prose prose-sm max-w-none dark:prose-invert [&_*]:!whitespace-normal [&_*]:!break-words"
+                        className="prose prose-sm max-w-full dark:prose-invert [&_*]:!max-w-full [&_*]:!whitespace-pre-wrap [&_*]:!break-words"
                         dangerouslySetInnerHTML={{ __html: selectedCommunication.Html }}
                       />
                     ) : selectedCommunication.Text ? (
