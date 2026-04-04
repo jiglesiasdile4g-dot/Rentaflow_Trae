@@ -3069,21 +3069,23 @@ export function LeadDetailModal({
                     {/* Message Body */}
                     <div className="border rounded-lg p-4 bg-[#F8FBF8] dark:bg-muted/30 dark:text-foreground">
                       <h3 className="text-sm font-semibold mb-3">Mensaje:</h3>
-                      {selectedCommunication.source === "whatsapp" ? (
-                        <div
-                          className="prose prose-sm max-w-none dark:prose-invert"
-                          dangerouslySetInnerHTML={{ __html: selectedCommunication.Mensaje || "Sin contenido" }}
-                        />
-                      ) : selectedCommunication.Html ? (
-                        <div
-                          className="prose prose-sm max-w-none dark:prose-invert"
-                          dangerouslySetInnerHTML={{ __html: selectedCommunication.Html }}
-                        />
-                      ) : selectedCommunication.Text ? (
-                        <div className="whitespace-pre-wrap text-sm">{selectedCommunication.Text}</div>
-                      ) : (
-                        <p className="text-sm text-gray-500 italic dark:text-gray-400">Sin contenido</p>
-                      )}
+                      <div className="overflow-x-hidden break-words">
+                        {selectedCommunication.source === "whatsapp" ? (
+                          <div
+                            className="prose prose-sm max-w-none dark:prose-invert [&_*]:!whitespace-normal [&_*]:!break-words"
+                            dangerouslySetInnerHTML={{ __html: selectedCommunication.Mensaje || "Sin contenido" }}
+                          />
+                        ) : selectedCommunication.Html ? (
+                          <div
+                            className="prose prose-sm max-w-none dark:prose-invert [&_*]:!whitespace-normal [&_*]:!break-words"
+                            dangerouslySetInnerHTML={{ __html: selectedCommunication.Html }}
+                          />
+                        ) : selectedCommunication.Text ? (
+                          <div className="whitespace-pre-wrap break-words text-sm">{selectedCommunication.Text}</div>
+                        ) : (
+                          <p className="text-sm text-gray-500 italic dark:text-gray-400">Sin contenido</p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
