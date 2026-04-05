@@ -92,6 +92,7 @@ export type Lead = {
   status_history?: LeadHistoryEntry[]
   m_error?: string
   m_errror?: string
+  situacion_laboral?: string
   [key: string]: any
 }
 
@@ -2330,7 +2331,7 @@ export function LeadDetailModal({
 
                                 return (
                                     <div className="space-y-4">
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div className={`grid grid-cols-1 md:grid-cols-${selectedPersona === 1 ? '4' : '3'} gap-4`}>
                                             <div className="space-y-1.5">
                                                 <Label className="text-xs text-muted-foreground">Email</Label>
                                                 {isEditingPersonalInfo ? (
@@ -2363,7 +2364,7 @@ export function LeadDetailModal({
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div className={`grid grid-cols-1 md:grid-cols-${selectedPersona === 1 ? '4' : '3'} gap-4`}>
                                             <div className="space-y-1.5">
                                                 <Label className="text-xs text-muted-foreground">Ingresos</Label>
                                                 {isEditingPersonalInfo ? (
@@ -2394,6 +2395,16 @@ export function LeadDetailModal({
                                                     <div className="text-xs text-red-600">Número de documento no válido</div>
                                                 )}
                                             </div>
+                                            {selectedPersona === 1 && (
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs text-muted-foreground">Situación Laboral</Label>
+                                                    {isEditingPersonalInfo ? (
+                                                        <Input value={getVal("situacion_laboral")} onChange={e => setVal("situacion_laboral", e.target.value)} className="h-8 text-xs" />
+                                                    ) : (
+                                                        <div className="text-sm min-h-[2rem] flex items-center">{lead.situacion_laboral || "—"}</div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
 
                                         {selectedPersona === 1 && (lead.m_error || lead.m_errror) && (

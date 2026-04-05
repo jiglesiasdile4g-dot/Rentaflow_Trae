@@ -85,6 +85,7 @@ type Lead = {
   Tipo_Documento?: string
   Codigo_Postal?: string
   Pais?: string
+  situacion_laboral?: string
   Persona_2?: string
   Tipo_Documento_2?: string
   Documento_2?: string
@@ -2106,6 +2107,7 @@ export default function LeadsPage() {
           Codigo_Postal: editFormData.Codigo_Postal,
           Tipo_Documento: editFormData.Tipo_Documento,
           Documento: editFormData.Documento,
+          situacion_laboral: editFormData.situacion_laboral,
           Obsevaciones: editFormData.Observaciones ?? editFormData.Obsevaciones,
           // Update persona-specific fields based on selectedPersona
           ...(selectedPersona === 1 && {
@@ -5348,7 +5350,24 @@ export default function LeadsPage() {
                                   <div className="text-xs text-red-600">Número de documento no válido</div>
                                 )}
                               </div>
-                              <div style={{ flex: "2" }}>
+                              <div style={{ flex: "1", minWidth: 0 }}>
+                                <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
+                                  Situación Laboral
+                                </div>
+                                {isEditingPersonalInfo ? (
+                                  <Input
+                                    value={editFormData.situacion_laboral || ""}
+                                    onChange={(e) => setEditFormData({ ...editFormData, situacion_laboral: e.target.value })}
+                                    placeholder="Indefinido, Autónomo, etc."
+                                    className="h-9 text-sm"
+                                  />
+                                ) : (
+                                  <div className={`text-sm ${selectedLead.situacion_laboral ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                    {selectedLead.situacion_laboral || "No proporcionada"}
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ flex: "1", minWidth: 0 }}>
                                 {(selectedLead.m_error || selectedLead.m_errror) && (
                                   <>
                                     <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
