@@ -2407,7 +2407,9 @@ export function LeadDetailModal({
                                             )}
                                         </div>
 
-                                        {selectedPersona === 1 && (lead.m_error || lead.m_errror) && (
+                                        {selectedPersona === 1 && 
+                                        ((lead.m_error && String(lead.m_error).trim() !== "" && String(lead.m_error).trim().toLowerCase() !== "null") || 
+                                         (lead.m_errror && String(lead.m_errror).trim() !== "" && String(lead.m_errror).trim().toLowerCase() !== "null")) && (
                                             <div className="grid grid-cols-1 gap-4 pt-2">
                                                 <div className="space-y-1.5">
                                                     <Label className="text-xs text-muted-foreground">Datos faltantes o erroneos:</Label>

@@ -5368,7 +5368,8 @@ export default function LeadsPage() {
                                 )}
                               </div>
                               <div style={{ flex: "1", minWidth: 0 }}>
-                                {(selectedLead.m_error || selectedLead.m_errror) && (
+                                {((selectedLead.m_error && String(selectedLead.m_error).trim() !== "" && String(selectedLead.m_error).trim().toLowerCase() !== "null") || 
+                                  (selectedLead.m_errror && String(selectedLead.m_errror).trim() !== "" && String(selectedLead.m_errror).trim().toLowerCase() !== "null")) && (
                                   <>
                                     <div className="text-xs text-muted-foreground font-medium mb-1.5 flex items-center gap-2">
                                       Datos faltantes o erroneos:
