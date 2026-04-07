@@ -11,6 +11,11 @@ export const metadata: Metadata = {
   title: "RentAFlow",
   description: "Sistema de gestión de leads y propiedades",
   generator: "v0.app",
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 }
 
 export default function RootLayout({
