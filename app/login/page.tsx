@@ -81,7 +81,7 @@ function LoginContent() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <LogIn className="h-12 w-12 text-primary" />
+            <img src="/logo.png" alt="RentaFlow Logo" className="h-16 object-contain" />
           </div>
           <CardTitle className="text-2xl">Iniciar Sesión</CardTitle>
           <CardDescription>Bienvenido a la gestion de tus leads</CardDescription>
