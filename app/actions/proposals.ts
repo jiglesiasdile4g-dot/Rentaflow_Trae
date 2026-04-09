@@ -4,6 +4,48 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { generateSlotCandidates, AgendaSlot, AdData } from "@/lib/agenda-utils"
 
+function getTimeZoneOffsetMinutes(timeZone: string, date: Date) {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "shortOffset",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
+  const parts = dtf.formatToParts(date)
+  const tzName = parts.find((p) => p.type === "timeZoneName")?.value || "GMT"
+  const match = tzName.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/i)
+  if (!match) return 0
+  const sign = match[1] === "-" ? -1 : 1
+  const hours = Number(match[2] || 0)
+  const minutes = Number(match[3] || 0)
+  return sign * (hours * 60 + minutes)
+}
+
+function madridLocalDateTimeToUtcIso(dateStr: string, time: string) {
+  const [y, m, d] = dateStr.split("-").map(Number)
+  const [hh, mm] = time.split(":").map(Number)
+  const asUtc = new Date(Date.UTC(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0))
+  const offsetMinutes = getTimeZoneOffsetMinutes("Europe/Madrid", asUtc)
+  const corrected = new Date(asUtc.getTime() - offsetMinutes * 60_000)
+  return corrected.toISOString()
+}
+
+function formatMadridDateStr(date: Date) {
+  const d = new Date(date)
+  const s = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d)
+  return s
+}
+
 export async function createVisitProposal(data: {
   leadIds: string[]
   date: Date
@@ -18,10 +60,8 @@ export async function createVisitProposal(data: {
   const supabase = await createClient()
   const adminSupabase = createAdminClient()
   
-  // Combine date and time
-  const dateTime = new Date(data.date)
-  const [hours, minutes] = data.time.split(":").map(Number)
-  dateTime.setHours(hours, minutes, 0, 0)
+  const madridDateStr = formatMadridDateStr(data.date)
+  const fechaVisitaIso = madridLocalDateTimeToUtcIso(madridDateStr, data.time)
 
   // Resolve Agent UUID if agentId is provided
   let agentUuid = null
@@ -58,7 +98,7 @@ export async function createVisitProposal(data: {
   const { data: proposal, error } = await supabase
     .from("PropuestasVisita")
     .insert({
-      fecha_visita: dateTime.toISOString(),
+      fecha_visita: fechaVisitaIso,
       inmueble_ref: data.inmuebleRef,
       inmueble_direccion: data.inmuebleDireccion,
       inmueble_id: data.inmuebleId,
@@ -134,9 +174,9 @@ export async function createVisitProposal(data: {
       proposal_id: proposal.id,
       link: link,
       visita: {
-        fecha: dateTime.toISOString().split('T')[0], // YYYY-MM-DD
+        fecha: madridDateStr, // YYYY-MM-DD (Europe/Madrid)
         hora: data.time,
-        fecha_completa: dateTime.toISOString()
+        fecha_completa: fechaVisitaIso
       },
       agente: agent,
       inmueble: advertisement || {

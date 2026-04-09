@@ -32,6 +32,36 @@ const fallbackDraftColumns = defaultColumns.filter((c) => draftFieldNames.includ
 
 const nonEditableColumns = new Set(["id", "created_at", "updated_at"])
 
+const buildEmailSrcDoc = (rawHtml: string) => {
+  const html = String(rawHtml || "")
+  const hasHtmlTag = /<html[\s>]/i.test(html)
+  const hasHeadTag = /<head[\s>]/i.test(html)
+  const hasBodyTag = /<body[\s>]/i.test(html)
+
+  const baseHead = `
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <base target="_blank" />
+    <style>
+      html, body { margin: 0; padding: 0; background: #ffffff; }
+      img { max-width: 100%; height: auto; }
+      table { max-width: 100%; }
+    </style>
+  `.trim()
+
+  if (hasHtmlTag) {
+    if (hasHeadTag) {
+      return html.replace(/<head([^>]*)>/i, `<head$1>${baseHead}`)
+    }
+    if (hasBodyTag) {
+      return html.replace(/<html([^>]*)>/i, `<html$1><head>${baseHead}</head>`)
+    }
+    return `<!doctype html><html><head>${baseHead}</head><body>${html}</body></html>`
+  }
+
+  return `<!doctype html><html><head>${baseHead}</head><body>${html}</body></html>`
+}
+
 const getKeyField = (row: Record<string, any>, columns: ColumnDef[]) => {
   if ("id" in row) return "id"
   const columnNames = columns.map((c) => c.name)
@@ -105,6 +135,7 @@ export default function ComunicacionesPage() {
   const [htmlLineHeight, setHtmlLineHeight] = useState(20)
   const [htmlPaddingTop, setHtmlPaddingTop] = useState(12)
   const [htmlScrollTop, setHtmlScrollTop] = useState(0)
+  const [previewMode, setPreviewMode] = useState<"email" | "wysiwyg">("email")
   const [previewLineHeight, setPreviewLineHeight] = useState(20)
   const [previewPaddingTop, setPreviewPaddingTop] = useState(12)
   const [previewScrollTop, setPreviewScrollTop] = useState(0)
@@ -751,14 +782,36 @@ export default function ComunicacionesPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Resultado</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label>Resultado</Label>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={previewMode === "email" ? "default" : "outline"}
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setPreviewMode("email")}
+                  >
+                    Vista real
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={previewMode === "wysiwyg" ? "default" : "outline"}
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setPreviewMode("wysiwyg")}
+                  >
+                    WYSIWYG
+                  </Button>
+                </div>
+              </div>
               {activeRange ? (
                 <div className="text-xs text-muted-foreground">
                   {activeRange.start === activeRange.end ? `Línea en HTML: ${activeRange.start}` : `Líneas en HTML: ${activeRange.start}–${activeRange.end}`}
                 </div>
               ) : null}
               <div className="relative">
-                {activeRange ? (
+                {previewMode === "wysiwyg" && activeRange ? (
                   <div
                     className={`pointer-events-none absolute left-0 right-0 ${activePanel === "preview" ? "bg-primary/20" : "bg-primary/10"}`}
                     style={{
@@ -772,92 +825,103 @@ export default function ComunicacionesPage() {
                     />
                   </div>
                 ) : null}
-                <div
-                  className="rounded-md border p-3 h-[640px] overflow-auto relative z-10 bg-transparent"
-                  ref={wysiwygRef}
-                  contentEditable
-                  suppressContentEditableWarning
-                  onInput={(event) => {
-                    const text = (event.currentTarget as HTMLDivElement).textContent || ""
-                    const offsets = getSelectionOffsetsInText(event.currentTarget as HTMLDivElement)
-                    const startOffset = offsets?.start ?? getCaretOffsetInText(event.currentTarget as HTMLDivElement) ?? text.length
-                    const endOffset = offsets?.end ?? startOffset
-                    if (selectedId) {
-                      setEditDraft({ ...editDraft, texto_html: event.currentTarget.innerHTML })
-                    } else {
-                      setNewDraft({ ...newDraft, texto_html: event.currentTarget.innerHTML })
-                    }
-                    setActivePanel("preview")
-                    const lineStart = getLineFromPosition(text, startOffset)
-                    const lineEnd = getLineFromPosition(text, endOffset)
-                    setActiveLine(lineStart)
-                    setActiveRange({ start: Math.min(lineStart, lineEnd), end: Math.max(lineStart, lineEnd) })
-                    const selectedText = window.getSelection()?.toString() || ""
-                    const ratio = text.length > 0 ? startOffset / text.length : null
-                    if (selectedText) {
-                      syncHtmlByText(selectedText, ratio)
-                    } else {
-                      scrollOtherPanelToLine("preview", lineStart)
-                    }
-                  }}
-                  onClick={(event) => {
-                    const text = (event.currentTarget as HTMLDivElement).textContent || ""
-                    const offsets = getSelectionOffsetsInText(event.currentTarget as HTMLDivElement)
-                    const startOffset = offsets?.start ?? getCaretOffsetInText(event.currentTarget as HTMLDivElement) ?? text.length
-                    const endOffset = offsets?.end ?? startOffset
-                    setActivePanel("preview")
-                    const lineStart = getLineFromPosition(text, startOffset)
-                    const lineEnd = getLineFromPosition(text, endOffset)
-                    setActiveLine(lineStart)
-                    setActiveRange({ start: Math.min(lineStart, lineEnd), end: Math.max(lineStart, lineEnd) })
-                    const selectedText = window.getSelection()?.toString() || ""
-                    const ratio = text.length > 0 ? startOffset / text.length : null
-                    if (selectedText) {
-                      syncHtmlByText(selectedText, ratio)
-                    } else {
-                      scrollOtherPanelToLine("preview", lineStart)
-                    }
-                  }}
-                  onKeyUp={(event) => {
-                    const text = (event.currentTarget as HTMLDivElement).textContent || ""
-                    const offsets = getSelectionOffsetsInText(event.currentTarget as HTMLDivElement)
-                    const startOffset = offsets?.start ?? getCaretOffsetInText(event.currentTarget as HTMLDivElement) ?? text.length
-                    const endOffset = offsets?.end ?? startOffset
-                    setActivePanel("preview")
-                    const lineStart = getLineFromPosition(text, startOffset)
-                    const lineEnd = getLineFromPosition(text, endOffset)
-                    setActiveLine(lineStart)
-                    setActiveRange({ start: Math.min(lineStart, lineEnd), end: Math.max(lineStart, lineEnd) })
-                    const selectedText = window.getSelection()?.toString() || ""
-                    const ratio = text.length > 0 ? startOffset / text.length : null
-                    if (selectedText) {
-                      syncHtmlByText(selectedText, ratio)
-                    } else {
-                      scrollOtherPanelToLine("preview", lineStart)
-                    }
-                  }}
-                onMouseUp={(event) => {
-                  const text = (event.currentTarget as HTMLDivElement).textContent || ""
-                  const offsets = getSelectionOffsetsInText(event.currentTarget as HTMLDivElement)
-                  const startOffset = offsets?.start ?? getCaretOffsetInText(event.currentTarget as HTMLDivElement) ?? text.length
-                  const endOffset = offsets?.end ?? startOffset
-                  setActivePanel("preview")
-                  const lineStart = getLineFromPosition(text, startOffset)
-                  const lineEnd = getLineFromPosition(text, endOffset)
-                  setActiveLine(lineStart)
-                  setActiveRange({ start: Math.min(lineStart, lineEnd), end: Math.max(lineStart, lineEnd) })
-                  const selectedText = window.getSelection()?.toString() || ""
-                  const ratio = text.length > 0 ? startOffset / text.length : null
-                  if (selectedText) {
-                    syncHtmlByText(selectedText, ratio)
-                  } else {
-                    scrollOtherPanelToLine("preview", lineStart)
-                  }
-                }}
-                  onScroll={(event) => {
-                    setPreviewScrollTop((event.currentTarget as HTMLDivElement).scrollTop)
-                  }}
-                />
+                {previewMode === "wysiwyg" ? (
+                  <div
+                    className="rounded-md border p-3 h-[640px] overflow-auto relative z-10 bg-transparent"
+                    ref={wysiwygRef}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onInput={(event) => {
+                      const text = (event.currentTarget as HTMLDivElement).textContent || ""
+                      const offsets = getSelectionOffsetsInText(event.currentTarget as HTMLDivElement)
+                      const startOffset = offsets?.start ?? getCaretOffsetInText(event.currentTarget as HTMLDivElement) ?? text.length
+                      const endOffset = offsets?.end ?? startOffset
+                      if (selectedId) {
+                        setEditDraft({ ...editDraft, texto_html: event.currentTarget.innerHTML })
+                      } else {
+                        setNewDraft({ ...newDraft, texto_html: event.currentTarget.innerHTML })
+                      }
+                      setActivePanel("preview")
+                      const lineStart = getLineFromPosition(text, startOffset)
+                      const lineEnd = getLineFromPosition(text, endOffset)
+                      setActiveLine(lineStart)
+                      setActiveRange({ start: Math.min(lineStart, lineEnd), end: Math.max(lineStart, lineEnd) })
+                      const selectedText = window.getSelection()?.toString() || ""
+                      const ratio = text.length > 0 ? startOffset / text.length : null
+                      if (selectedText) {
+                        syncHtmlByText(selectedText, ratio)
+                      } else {
+                        scrollOtherPanelToLine("preview", lineStart)
+                      }
+                    }}
+                    onClick={(event) => {
+                      const text = (event.currentTarget as HTMLDivElement).textContent || ""
+                      const offsets = getSelectionOffsetsInText(event.currentTarget as HTMLDivElement)
+                      const startOffset = offsets?.start ?? getCaretOffsetInText(event.currentTarget as HTMLDivElement) ?? text.length
+                      const endOffset = offsets?.end ?? startOffset
+                      setActivePanel("preview")
+                      const lineStart = getLineFromPosition(text, startOffset)
+                      const lineEnd = getLineFromPosition(text, endOffset)
+                      setActiveLine(lineStart)
+                      setActiveRange({ start: Math.min(lineStart, lineEnd), end: Math.max(lineStart, lineEnd) })
+                      const selectedText = window.getSelection()?.toString() || ""
+                      const ratio = text.length > 0 ? startOffset / text.length : null
+                      if (selectedText) {
+                        syncHtmlByText(selectedText, ratio)
+                      } else {
+                        scrollOtherPanelToLine("preview", lineStart)
+                      }
+                    }}
+                    onKeyUp={(event) => {
+                      const text = (event.currentTarget as HTMLDivElement).textContent || ""
+                      const offsets = getSelectionOffsetsInText(event.currentTarget as HTMLDivElement)
+                      const startOffset = offsets?.start ?? getCaretOffsetInText(event.currentTarget as HTMLDivElement) ?? text.length
+                      const endOffset = offsets?.end ?? startOffset
+                      setActivePanel("preview")
+                      const lineStart = getLineFromPosition(text, startOffset)
+                      const lineEnd = getLineFromPosition(text, endOffset)
+                      setActiveLine(lineStart)
+                      setActiveRange({ start: Math.min(lineStart, lineEnd), end: Math.max(lineStart, lineEnd) })
+                      const selectedText = window.getSelection()?.toString() || ""
+                      const ratio = text.length > 0 ? startOffset / text.length : null
+                      if (selectedText) {
+                        syncHtmlByText(selectedText, ratio)
+                      } else {
+                        scrollOtherPanelToLine("preview", lineStart)
+                      }
+                    }}
+                    onMouseUp={(event) => {
+                      const text = (event.currentTarget as HTMLDivElement).textContent || ""
+                      const offsets = getSelectionOffsetsInText(event.currentTarget as HTMLDivElement)
+                      const startOffset = offsets?.start ?? getCaretOffsetInText(event.currentTarget as HTMLDivElement) ?? text.length
+                      const endOffset = offsets?.end ?? startOffset
+                      setActivePanel("preview")
+                      const lineStart = getLineFromPosition(text, startOffset)
+                      const lineEnd = getLineFromPosition(text, endOffset)
+                      setActiveLine(lineStart)
+                      setActiveRange({ start: Math.min(lineStart, lineEnd), end: Math.max(lineStart, lineEnd) })
+                      const selectedText = window.getSelection()?.toString() || ""
+                      const ratio = text.length > 0 ? startOffset / text.length : null
+                      if (selectedText) {
+                        syncHtmlByText(selectedText, ratio)
+                      } else {
+                        scrollOtherPanelToLine("preview", lineStart)
+                      }
+                    }}
+                    onScroll={(event) => {
+                      setPreviewScrollTop((event.currentTarget as HTMLDivElement).scrollTop)
+                    }}
+                  />
+                ) : (
+                  <div className="rounded-md border h-[640px] overflow-hidden bg-white relative z-10">
+                    <iframe
+                      title="Vista real email"
+                      className="w-full h-full"
+                      sandbox="allow-popups allow-popups-to-escape-sandbox"
+                      srcDoc={buildEmailSrcDoc(String(selectedId ? editDraft.texto_html || "" : newDraft.texto_html || ""))}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -917,13 +981,14 @@ export default function ComunicacionesPage() {
             </div>
             <div className="space-y-1">
               <Label>Preview</Label>
-              <div
-                className="rounded-md border p-3"
-                ref={editPreviewRef}
-                contentEditable
-                suppressContentEditableWarning
-                onInput={(event) => setEditDraft({ ...editDraft, texto_html: event.currentTarget.innerHTML })}
-              />
+              <div className="rounded-md border h-[260px] overflow-hidden bg-white">
+                <iframe
+                  title="Preview email"
+                  className="w-full h-full"
+                  sandbox="allow-popups allow-popups-to-escape-sandbox"
+                  srcDoc={buildEmailSrcDoc(String(editDraft.texto_html || ""))}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -964,13 +1029,14 @@ export default function ComunicacionesPage() {
             </div>
             <div className="space-y-1">
               <Label>Preview</Label>
-              <div
-                className="rounded-md border p-3"
-                ref={createPreviewRef}
-                contentEditable
-                suppressContentEditableWarning
-                onInput={(event) => setNewDraft({ ...newDraft, texto_html: event.currentTarget.innerHTML })}
-              />
+              <div className="rounded-md border h-[260px] overflow-hidden bg-white">
+                <iframe
+                  title="Preview email"
+                  className="w-full h-full"
+                  sandbox="allow-popups allow-popups-to-escape-sandbox"
+                  srcDoc={buildEmailSrcDoc(String(newDraft.texto_html || ""))}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>

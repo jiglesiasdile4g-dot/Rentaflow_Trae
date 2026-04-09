@@ -4,8 +4,6 @@ import { getVisitProposal } from "@/app/actions/proposals"
 import { ProposalBookingForm } from "../../../components/proposal-booking-form"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Calendar, Clock, MapPin, Building, ExternalLink } from "lucide-react"
-import { format } from "date-fns"
-import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
@@ -19,6 +17,19 @@ export default async function VisitProposalPage({ params }: { params: Promise<{ 
 
   const isReservada = proposal.estado === "reservada"
   const date = new Date(proposal.fecha_visita)
+  const fechaLabel = new Intl.DateTimeFormat("es-ES", {
+    timeZone: "Europe/Madrid",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date)
+  const horaLabel = new Intl.DateTimeFormat("es-ES", {
+    timeZone: "Europe/Madrid",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date)
   // @ts-ignore - inmobiliaria might be added dynamically
   const inmobiliaria = proposal.inmobiliaria
 
@@ -53,7 +64,7 @@ export default async function VisitProposalPage({ params }: { params: Promise<{ 
               <div>
                 <p className="font-semibold">Fecha</p>
                 <p className="text-muted-foreground capitalize">
-                  {format(date, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
+                  {fechaLabel}
                 </p>
               </div>
             </div>
@@ -63,7 +74,7 @@ export default async function VisitProposalPage({ params }: { params: Promise<{ 
               <div>
                 <p className="font-semibold">Hora</p>
                 <p className="text-muted-foreground">
-                  {format(date, "HH:mm", { locale: es })}
+                  {horaLabel}
                 </p>
               </div>
             </div>
