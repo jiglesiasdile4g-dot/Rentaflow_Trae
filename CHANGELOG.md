@@ -1,9 +1,21 @@
-## [0.9.19](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.11...v0.9.19) (2026-03-26)
+## [0.9.20](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.11...v0.9.20) (2026-04-09)
 
 
 ### Bug Fixes
 
+* **agenda): send real lead email (Correo) in confirm/reschedule/cancel visit webhooks\nfeat(config): allow superusers to create + edit inmobiliarias; admins can edit; adjust role detection\nfix(config:** correct JSX structure in Inmobiliaria section ([fba8510](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/fba8510393b1ed327ecbfe6c700f5aa19983f2a3))
+* allow same-property visits and correct slot generation logic for admin and public pages ([eade4b6](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/eade4b6428c104c7e64c8fd2cb67506753d28d83))
+* **auth:** resolve ERR_ABORTED race conditions in router push/refresh during authentication and session management ([f67aad1](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/f67aad194e5f7bfaa259132d22984abc1226c0d8))
+* **booking:** allow agendar-visita link to show confirmed appointments ([aff7bd3](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/aff7bd3324c9f8e35f6283bbf674e5eb3873266f))
 * comunicaciones crear y cancelar ([6c9902f](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/6c9902fb648590a7e3ecaf9eba4b201bce9a186f))
+* corregir redireccion de root y persistencia de filtros en agenda ([24fb801](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/24fb801982c0b4274f8ec09293ffc01415e94d7d))
+* **docker:** use standard node image instead of AWS ECR to resolve DNS timeout ([d959985](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/d959985c93ab8fb854ded5d8a853a8210e6b402b))
+* **leads:** correct 'm_error' field name typo to properly display missing data info ([73a37ba](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/73a37ba297b857c3b70d5e6222cb28660fc06335))
+* **leads:** hide overflow in communication cards and prevent prose from scrolling ([1f31d17](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/1f31d1714c4e2a94c0976c2324a4c736b02bf89b))
+* **leads:** infer advertisement from selected leads for Visita Grupal ([9bb1d13](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/9bb1d1311e5029222b9ed9448a4799cdd987a30a))
+* **leads:** resolve typescript possibly undefined error on Inmueble inference ([d258fdc](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/d258fdced5695e783f0e052adf4f91f4e92d5cb8))
+* **leads:** stop auto-correcting 'Datos Incompletos' to 'Datos Completos' to allow manual override ([ed78e4d](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/ed78e4d392ab691ddaa9070e029f36f0f560e98f))
+* **leads:** strictly hide 'm_error' field when empty, blank, or string 'null' ([874a1db](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/874a1dbd185ab9fdcfcab538a6176db28c68dc3f))
 * resolve resendUserConfirmationAction error and improve logic ([e1f7ae8](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/e1f7ae8554d616b91747fd2fee472e3f0709e162))
 * validar documento y estados de lead ([afe0d5f](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/afe0d5f0d738a290069d616506715a08948176b5))
 * wrap formulario search params in suspense ([33552dd](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/33552dd5edd64314c32cef516bd085db417a1031))
@@ -12,7 +24,22 @@
 ### Features
 
 * add plan usage alert to ads page and fix starter plan card layout ([524cb4c](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/524cb4c95f392590a2282f342e7f9b4703840742))
+* **auth:** use logo image on login page instead of Lucide icon ([cbd656b](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/cbd656bcd9ccba8bd58c4f4bf6f674a4897d6979))
 * enviar revisión comunicaciones ([7e49913](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/7e499137fbaff006a29cade882c5a65003650c43))
+* **formulario:** add Situacion_Laboral and Motivo_Alquiler to submit payload ([6f7db03](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/6f7db032ec39b71867e6192949976f10a9ce8084))
+* implementar logs de auditoría mejorados, política de retención y correcciones menores ([513a7a0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/513a7a0777add4a09f65a5cb4297fff22edf908e))
+* implementar mitigación ignore-scripts y añadir campos laborales al formulario ([7c0a1c5](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/7c0a1c5e7aef6abefe1211facb8a564c83cf5b9e))
+* **layout:** use logo image as favicon globally ([3efa49c](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/3efa49c92d5964e6ad02818c2c23744856c7efa4))
+* **leads:** add 'Situacion Laboral' next to 'Documento de Identidad' in personal info ([c756a96](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/c756a96b4f325afec2249418f63a69d8bfc3c625))
+* **leads:** change border side and alignment for received communications ([1e92c9a](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/1e92c9a5d80485ebf159cc3fe528a85e02fdf539))
+* **leads:** display 'm_errror' as 'Datos faltantes o erroneos' in lead personal info ([46fd59e](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/46fd59e1491c6156f05823de288e01f6af7d64e9))
+* **leads:** hide 'm_error' field when empty or null ([0267f09](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/0267f09c65481b07afc3e7ae5a44fb18a3dcfcfe))
+* políticas de seguridad (contraseñas robustas y logs de auditoría) ([591ec6b](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/591ec6b19038b346cc68da2652d80eaf5a1286f9))
+
+
+### Performance Improvements
+
+* **anuncios:** limit data fetching to last 90 days to improve load time ([2ae2869](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/2ae286953536eed1a14dd3250681bc64783242e1))
 
 
 
