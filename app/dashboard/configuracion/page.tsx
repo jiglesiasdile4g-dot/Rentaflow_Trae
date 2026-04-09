@@ -29,7 +29,8 @@ import {
   resendUserConfirmationAction,
   updateUserDetailsAction,
   triggerVisitReminderAction,
-  createInmobiliariaAction
+  createInmobiliariaAction,
+  updateInmobiliariaAction
 } from "./actions"
 import { LogoUpload } from "./logo-upload"
 import { UserActions } from "./user-actions"
@@ -51,6 +52,8 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
   // First get the user's profile to find their inmobiliaria ID and role
   let inmobiliariaData: any = null
   let userRoleLabel = "Usuario"
+  let isSuperuser = false
+  let isAdmin = false
   let agentCount = 0
   let planIdNum = 0
   let usersList: Array<{ id?: any; usuario: string; nombre?: string; telefono?: string; is_admin: boolean; role?: string; activo?: boolean | null; has_agent_record?: boolean; inmobiliariaId?: number | null; inmobiliariaNombre?: string | null }> = []
@@ -113,8 +116,9 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
       console.log("[v0] Error fetching profile:", perfilError)
     } else if (perfil && perfil.inmobiliaria) {
       const roleStr = String(perfil.role || "").toLowerCase()
-      const isAdmin = perfil.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
-      userRoleLabel = isAdmin ? "Administrador" : "Usuario"
+      isSuperuser = perfil.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
+      isAdmin = ["administrador", "admin"].includes(roleStr) || isSuperuser
+      userRoleLabel = isSuperuser ? "Superusuario" : (isAdmin ? "Administrador" : "Usuario")
       let reqIdi: number | null = null
       let isAllRequested = false
       try {
@@ -133,7 +137,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
           }
         }
       } catch {}
-      isAllInmobiliarias = isAdmin && isAllRequested
+      isAllInmobiliarias = isSuperuser && isAllRequested
       currentIdi = isAllInmobiliarias ? null : reqIdi !== null ? reqIdi : Number(perfil.inmobiliaria)
       addDebug("role", userRoleLabel)
       addDebug("current_idi", currentIdi)
@@ -153,7 +157,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
         }
       }
       let perfilesData: any[] = []
-      if (userRoleLabel === "Administrador") {
+      if (isAdmin) {
         const admin = createAdminClient()
         addDebug("list_source", "admin")
         perfilesData = isAllInmobiliarias ? await fetchPerfilesAll(admin, addDebug) : await fetchPerfilesByIdi(admin, Number(currentIdi), addDebug)
@@ -426,10 +430,10 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
             <div className="space-y-2">
               <Label htmlFor="role">Rol</Label>
               <div className="flex items-center gap-2">
-                <Badge variant={userRoleLabel === "Administrador" ? "feature" : "secondary"} className="rounded-full">
+                <Badge variant={userRoleLabel === "Superusuario" ? "feature" : "secondary"} className="rounded-full">
                   {userRoleLabel}
                 </Badge>
-                {userRoleLabel === "Administrador" && (
+                {userRoleLabel === "Superusuario" && (
                   <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
                     Superusuario
                   </span>
@@ -448,7 +452,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                   <Building2 className="h-5 w-5 text-muted-foreground" />
                   <CardTitle>Información de Inmobiliaria</CardTitle>
                 </div>
-                {userRoleLabel === "Administrador" && (
+                {userRoleLabel === "Superusuario" && (
                   <Dialog>
                     <DialogTrigger asChild>
                       <Button size="sm" className="h-8 text-xs" variant="outline">
@@ -546,10 +550,46 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                     </DialogContent>
                   </Dialog>
                 )}
+                {isAdmin && inmobiliariaData && (
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button size="sm" className="h-8 text-xs ml-2" variant="outline">
+                        <Building2 className="mr-2 h-3 w-3" />
+                        Editar inmobiliaria
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Editar inmobiliaria</DialogTitle>
+                        <DialogDescription>Modificar los datos de la inmobiliaria actual</DialogDescription>
+                      </DialogHeader>
+                      <form action={updateInmobiliariaAction} className="space-y-4 py-2">
+                        <input type="hidden" name="idi" value={inmobiliariaData.idi} />
+                        <div className="space-y-2">
+                          <Label htmlFor="inmobiliaria-nombre-edit">Nombre de la Inmobiliaria</Label>
+                          <Input id="inmobiliaria-nombre-edit" name="Nombre" defaultValue={inmobiliariaData.Nombre || ""} required />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-color-principal-edit">Color principal</Label>
+                            <Input id="inmo-color-principal-edit" name="color_primario" type="color" defaultValue={inmobiliariaData.color_primario || "#000000"} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="inmo-color-secundario-edit">Color secundario</Label>
+                            <Input id="inmo-color-secundario-edit" name="color_secundario" type="color" defaultValue={inmobiliariaData.color_secundario || "#ffffff"} />
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button type="submit">Actualizar inmobiliaria</Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                )}
               </div>
-              <CardDescription>Datos de tu empresa inmobiliaria</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+            <CardDescription>Datos de tu empresa inmobiliaria</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
               {inmoStatus === "success" && inmoMsg && (
                 <Alert className="py-2">
                   <AlertDescription className="text-xs">{inmoMsg}</AlertDescription>

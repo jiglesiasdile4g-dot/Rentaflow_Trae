@@ -253,8 +253,8 @@ export async function createInmobiliariaAction(formData: FormData) {
         .limit(1)
         .maybeSingle()
     const roleStr = String(perfil?.role || "").toLowerCase()
-    const isAdmin = perfil?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
-    if (!isAdmin) {
+    const isSuperuser = perfil?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
+    if (!isSuperuser) {
         redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("Sin permisos para crear inmobiliarias")}`)
     }
     const nombre = String(formData.get("Nombre") || "").trim()
@@ -314,6 +314,70 @@ export async function createInmobiliariaAction(formData: FormData) {
     }
     revalidatePath("/dashboard/configuracion")
     redirect(`/dashboard/configuracion?inmo=success&imsg=${encodeURIComponent("Inmobiliaria creada")}`)
+}
+
+export async function updateInmobiliariaAction(formData: FormData) {
+    const supabase = await createClient()
+    const admin = createAdminClient()
+    const {
+        data: { user },
+    } = await supabase.auth.getUser()
+    if (!user?.email) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("Usuario no autenticado")}`)
+    }
+    const { data: perfil } = await admin
+        .from("Perfiles")
+        .select("is_admin, role")
+        .ilike("usuario", user.email)
+        .limit(1)
+        .maybeSingle()
+    const roleStr = String(perfil?.role || "").toLowerCase()
+    const isAdmin = perfil?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
+    if (!isAdmin) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("Sin permisos para editar inmobiliarias")}`)
+    }
+    const idiRaw = String(formData.get("idi") || "").trim()
+    const idi = Number(idiRaw)
+    if (!idi || !Number.isFinite(idi)) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("ID de inmobiliaria inválido")}`)
+    }
+    const nombre = (formData.get("Nombre") ?? formData.get("nombre") ?? "").toString().trim()
+    const direccion = (formData.get("Direccion") ?? formData.get("direccion") ?? "").toString().trim()
+    const telefono = (formData.get("Telefono") ?? formData.get("telefono") ?? "").toString().trim()
+    const mailContacto = (formData.get("Mail contacto") ?? formData.get("mail_contacto") ?? "").toString().trim()
+    const mailSistema = (formData.get("Mail sistema") ?? formData.get("mail_sistema") ?? "").toString().trim()
+    const whatsappEmpresa = (formData.get("Whatsapp_empresa") ?? formData.get("whatsapp_empresa") ?? "").toString().trim()
+    const personaContacto = (formData.get("Persona de Contacto") ?? formData.get("persona_contacto") ?? "").toString().trim()
+    const paginaWeb = (formData.get("pagina_web") ?? "").toString().trim()
+    const logoUrl = (formData.get("logo_url") ?? "").toString().trim()
+    const colorPrimario = (formData.get("color_primario") ?? "").toString().trim()
+    const colorSecundario = (formData.get("color_secundario") ?? "").toString().trim()
+    const firmaHtml = (formData.get("firma_html") ?? "").toString().trim()
+    const whatsappActivo = formData.get("whatsapp_activo") != null
+    const inmobiliariaAct = (formData.get("inmobiliaria_act") ?? "").toString().trim()
+
+    const updates: Record<string, any> = {}
+    if (nombre) updates.Nombre = nombre
+    if (direccion) updates.Direccion = direccion
+    if (telefono) updates.Telefono = telefono
+    if (mailContacto) updates["Mail contacto"] = mailContacto
+    if (mailSistema) updates["Mail sistema"] = mailSistema
+    if (whatsappEmpresa) updates.Whatsapp_empresa = whatsappEmpresa
+    if (personaContacto) updates["Persona de Contacto"] = personaContacto
+    if (paginaWeb) updates.pagina_web = paginaWeb
+    if (logoUrl) updates.logo_url = logoUrl
+    if (colorPrimario) updates.color_primario = colorPrimario
+    if (colorSecundario) updates.color_secundario = colorSecundario
+    if (firmaHtml) updates.firma_html = firmaHtml
+    if (inmobiliariaAct) updates.inmobiliaria_act = inmobiliariaAct
+    updates.whatsapp_activo = whatsappActivo
+
+    const { error } = await admin.from("Inmobiliarias").update(updates).eq("idi", idi)
+    if (error) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent(error.message || "Error actualizando inmobiliaria")}`)
+    }
+    revalidatePath("/dashboard/configuracion")
+    redirect(`/dashboard/configuracion?inmo=success&imsg=${encodeURIComponent("Inmobiliaria actualizada")}`)
 }
 
 async function ensureAgentRecord(admin: any, email: string, idi: number, role: string, shouldCreate: boolean) {

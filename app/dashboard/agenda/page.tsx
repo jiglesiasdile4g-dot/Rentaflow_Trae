@@ -1142,6 +1142,22 @@ export default function AgendaPage() {
         const leadData = { ...(fullLead || { ...visitToConfirm, id: actualLeadId }) }
         delete (leadData as any).status_history
 
+        // Ensure we send the real customer email (not proxy)
+        const candidateEmails = [
+          fullLead?.Correo,
+          (fullLead as any)?.["Correo 2"],
+          (fullLead as any)?.["Correo 3"],
+          (fullLead as any)?.["Correo 4"],
+          (visitToConfirm as any)?.Correo
+        ].filter((e) => typeof e === "string" && e.trim() && e.trim().toLowerCase() !== "null") as string[]
+        const fallbackEmails = [
+          (fullLead as any)?.correo,
+          (visitToConfirm as any)?.correo,
+          (fullLead as any)?.correo_proxy,
+          (visitToConfirm as any)?.correo_proxy
+        ].filter((e) => typeof e === "string" && e.trim() && e.trim().toLowerCase() !== "null") as string[]
+        const emailToSend = candidateEmails[0] || fallbackEmails[0] || ""
+
         const payload = {
           "Link de Agendamiento": bookingLink,
           "Nombre de lead": `${fullLead?.Nombre || visitToConfirm.Nombre} ${fullLead?.Apellidos || visitToConfirm.Apellidos || ''}`.trim(),
@@ -1160,6 +1176,7 @@ export default function AgendaPage() {
           "Fecha Completa": newDateTimeIso,
           "Motivo": "Confirmado por agente",
           ...leadData,
+          Correo: emailToSend,
           fecha_de_visita: newDateTimeIso
         }
 
@@ -1441,6 +1458,21 @@ export default function AgendaPage() {
         const leadData = { ...(fullLead || visitToReschedule) }
         delete leadData.status_history
 
+        const candidateEmails2 = [
+          fullLead?.Correo,
+          (fullLead as any)?.["Correo 2"],
+          (fullLead as any)?.["Correo 3"],
+          (fullLead as any)?.["Correo 4"],
+          (visitToReschedule as any)?.Correo
+        ].filter((e) => typeof e === "string" && e.trim() && e.trim().toLowerCase() !== "null") as string[]
+        const fallbackEmails2 = [
+          (fullLead as any)?.correo,
+          (visitToReschedule as any)?.correo,
+          (fullLead as any)?.correo_proxy,
+          (visitToReschedule as any)?.correo_proxy
+        ].filter((e) => typeof e === "string" && e.trim() && e.trim().toLowerCase() !== "null") as string[]
+        const emailToSend2 = candidateEmails2[0] || fallbackEmails2[0] || ""
+
         const payload = {
             "Link de Agendamiento": bookingLink,
             "Nombre de lead": `${fullLead?.Nombre || visitToReschedule.Nombre} ${fullLead?.Apellidos || visitToReschedule.Apellidos || ''}`.trim(),
@@ -1459,6 +1491,7 @@ export default function AgendaPage() {
             "Fecha Completa": newDateTimeIso,
             "Motivo": "Reprogramado por agente",
             ...leadData,
+            Correo: emailToSend2,
             fecha_de_visita: newDateTimeIso
         }
 
@@ -1556,6 +1589,21 @@ export default function AgendaPage() {
 
           const { date: formattedDate, time: formattedTime } = formatWebhookDate(visitToCancel.fecha_de_visita)
           const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${visitToCancel.id}`
+          const candidateEmails3 = [
+              fullLead?.Correo,
+              (fullLead as any)?.["Correo 2"],
+              (fullLead as any)?.["Correo 3"],
+              (fullLead as any)?.["Correo 4"],
+              (visitToCancel as any)?.Correo
+          ].filter((e) => typeof e === "string" && e.trim() && e.trim().toLowerCase() !== "null") as string[]
+          const fallbackEmails3 = [
+              (fullLead as any)?.correo,
+              (visitToCancel as any)?.correo,
+              (fullLead as any)?.correo_proxy,
+              (visitToCancel as any)?.correo_proxy
+          ].filter((e) => typeof e === "string" && e.trim() && e.trim().toLowerCase() !== "null") as string[]
+          const emailToSend3 = candidateEmails3[0] || fallbackEmails3[0] || ""
+
           const cancelPayload = {
               "Link de Agendamiento": bookingLink,
               "Nombre de lead": `${fullLead?.Nombre || visitToCancel.Nombre} ${fullLead?.Apellidos || visitToCancel.Apellidos || ''}`.trim(),
@@ -1575,6 +1623,7 @@ export default function AgendaPage() {
               "Motivo": "Cancelado por agente",
               ...fullLead,
               ...visitToCancel, 
+              Correo: emailToSend3,
               visita_completada: "cancelada",
               fecha_de_visita: null,
               Estado: "Aceptado"
