@@ -122,7 +122,30 @@ function AgendarVisitaContent() {
           throw new Error("No se encontraron datos del cliente.")
         }
 
-        if (leadData.Estado !== "Visita Propuesta") {
+        const estado = String(leadData.Estado || "").trim()
+        const visitaStatus = String((leadData as any).visita_completada || "").trim().toLowerCase()
+        const hasVisitDate = !!leadData.fecha_de_visita && String(leadData.fecha_de_visita).trim() !== ""
+        const isCancelledState =
+          ["cancelado", "cancelada", "descartado", "descartada"].includes(estado.toLowerCase()) ||
+          visitaStatus.includes("cancelad") ||
+          visitaStatus.includes("descartad")
+        const isProposedState = estado === "Visita Propuesta" || visitaStatus.includes("visita propuesta")
+        const isConfirmedState = hasVisitDate && !isProposedState
+
+        if (isCancelledState) {
+          setLead(leadData)
+          if (agent) {
+            setAgentName(agent.Nombre)
+            if (agent.Email) setAgentEmail(agent.Email)
+            setAgent(agent)
+          }
+          setAdvertisement(adData || null)
+          if (inmoData) setInmobiliaria(inmoData)
+          setIsCancelled(true)
+          return
+        }
+
+        if (!isProposedState && !isConfirmedState) {
           const mailSistema = inmoData
             ? (inmoData as any)["Mail sistema"] ??
               (inmoData as any).mail_sistema ??
@@ -146,6 +169,15 @@ function AgendarVisitaContent() {
         }
         setAdvertisement(adData || null)
         if (inmoData) setInmobiliaria(inmoData)
+
+        if (hasVisitDate) {
+          const d = new Date(String(leadData.fecha_de_visita))
+          if (!Number.isNaN(d.getTime())) {
+            setSelectedDate(new Date(d.getFullYear(), d.getMonth(), d.getDate()))
+            setSelectedSlot(`${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`)
+            setSuccess(true)
+          }
+        }
 
         // Calculate Availability locally using data fetched from server
         calculateAvailability(agenda || [], existingVisits || [], allAds || [], adData || null)
