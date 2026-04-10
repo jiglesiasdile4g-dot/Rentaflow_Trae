@@ -642,7 +642,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                   Administra el equipo de tu inmobiliaria
                 </CardDescription>
               </div>
-              {userRoleLabel === "Administrador" && (
+              {isAdmin && (
                 <div className="flex items-center gap-2">
                   <form action={triggerVisitReminderAction}>
                     <Button type="submit" size="sm" className="h-8 text-xs" variant="outline">
@@ -721,7 +721,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                 <AlertDescription className="text-xs">{createUserMsg}</AlertDescription>
               </Alert>
             )}
-            {userRoleLabel !== "Administrador" && (
+            {!isAdmin && (
               <Alert variant="destructive" className="py-2">
                 <AlertDescription className="text-xs">
                   Solo administradores pueden gestionar usuarios. <br/>
@@ -731,7 +731,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                 </AlertDescription>
               </Alert>
             )}
-            {userRoleLabel === "Administrador" && !isAllInmobiliarias && (
+            {isAdmin && !isAllInmobiliarias && (
               <div className="flex flex-wrap gap-4 text-xs text-muted-foreground border-b pb-4">
                 <div className="flex items-center gap-1">
                   <span className="font-medium">Plan:</span> {(planData as any)?.Nombre || String(planIdNum)}
@@ -749,7 +749,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                 )}
               </div>
             )}
-            {userRoleLabel === "Administrador" && debugItems.length > 0 && (
+            {isAdmin && debugItems.length > 0 && (
               <div className="rounded-md bg-muted/50 p-2 text-[10px] text-muted-foreground hidden">
                 {/* Debug hidden by default to save space, can be enabled if needed */}
                 <div className="font-medium mb-1">Debug</div>
@@ -762,7 +762,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
               </div>
             )}
             
-            {userRoleLabel === "Administrador" && (
+            {isAdmin && (
               <form className="flex flex-wrap items-center gap-2 border-b pb-4" method="get">
                 {isAllInmobiliarias ? (
                   <input type="hidden" name="idi" value="all" />
@@ -796,7 +796,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
               </form>
             )}
 
-            {userRoleLabel === "Administrador" && (
+            {isAdmin && (
               <div className="rounded-md border overflow-hidden">
                 <div className="max-h-[300px] overflow-y-auto">
                   <table className="w-full text-xs">
