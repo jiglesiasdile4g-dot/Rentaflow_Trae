@@ -2,6 +2,12 @@
 
 import { createAdminClient } from "@/lib/supabase/admin"
 
+function normalizeEmailKey(value: any) {
+  const raw = String(value || "").trim().toLowerCase()
+  const local = raw.includes("@") ? raw.split("@")[0] : raw
+  return { raw, local }
+}
+
 export async function getAgentsByIdi(inmobiliariaId: number) {
   const supabase = createAdminClient()
   try {
@@ -29,18 +35,20 @@ export async function getAgentsByIdi(inmobiliariaId: number) {
      const profileMap = new Map<string, string>()
      if (profilesData) {
          profilesData.forEach((p: any) => {
-             const email = (p.usuario || p.Usuario || "").toLowerCase().trim()
+             const { raw, local } = normalizeEmailKey(p.usuario || p.Usuario || "")
              const name = p.nombre || p.Nombre
-             if (email && name) {
-                 profileMap.set(email, name)
+             if (name && String(name).trim()) {
+                 const v = String(name).trim()
+                 if (raw) profileMap.set(raw, v)
+                 if (local) profileMap.set(local, v)
              }
          })
      }
 
      // Map to ensure backward compatibility and use updated names
      const mappedData = (agentsData || []).map((agent: any) => {
-         const email = (agent.Email || "").toLowerCase().trim()
-         const profileName = profileMap.get(email)
+         const { raw: email, local } = normalizeEmailKey(agent.Email)
+         const profileName = profileMap.get(email) || profileMap.get(local)
          
          // Use profile name if available, otherwise fallback to agent name, then email prefix
          let displayName = profileName || agent.Nombre || email.split('@')[0]
