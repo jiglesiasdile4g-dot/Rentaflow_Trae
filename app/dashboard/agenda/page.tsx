@@ -625,7 +625,7 @@ export default function AgendaPage() {
           // Since we don't persist 'canManageOthers', we should probably check it on mount.
           
           // To avoid complexity, we'll re-check profile/permissions if agentsList is empty
-          if (agentsList.length === 0) {
+          if (agentsList.length === 0 || showLoader) {
               const { data: profile } = await supabase
                 .from("Perfiles")
                 .select("role, is_admin")

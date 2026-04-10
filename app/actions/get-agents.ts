@@ -8,6 +8,39 @@ function normalizeEmailKey(value: any) {
   return { raw, local }
 }
 
+async function fetchProfilesForInmobiliaria(supabase: any, inmobiliariaId: number) {
+  const inmoFields = ["inmobiliaria", "Inmobiliaria"]
+  for (const field of inmoFields) {
+    try {
+      const { data, error } = await supabase.from("Perfiles").select("*").eq(field, inmobiliariaId)
+      if (!error && data) return data
+    } catch {}
+  }
+  return []
+}
+
+async function findProfileByUserKey(supabase: any, key: string, inmobiliariaId?: number) {
+  const userFields = ["usuario", "Usuario"]
+  const inmoFields = ["inmobiliaria", "Inmobiliaria"]
+  for (const uField of userFields) {
+    for (const iField of inmoFields) {
+      try {
+        let q = supabase.from("Perfiles").select("*").ilike(uField, key).limit(1)
+        if (typeof inmobiliariaId === "number" && Number.isFinite(inmobiliariaId)) {
+          q = q.eq(iField, inmobiliariaId)
+        }
+        const { data, error } = await q.maybeSingle()
+        if (!error && data) return data
+      } catch {}
+    }
+    try {
+      const { data, error } = await supabase.from("Perfiles").select("*").ilike(uField, key).limit(1).maybeSingle()
+      if (!error && data) return data
+    } catch {}
+  }
+  return null
+}
+
 export async function getAgentsByIdi(inmobiliariaId: number) {
   const supabase = createAdminClient()
   try {
@@ -26,10 +59,7 @@ export async function getAgentsByIdi(inmobiliariaId: number) {
 
     // 2. Fetch Perfiles (modern user table with updated names)
     // We fetch profiles for this inmobiliaria to get the most up-to-date names
-    const { data: profilesData } = await supabase
-        .from("Perfiles")
-        .select("usuario, nombre, Nombre")
-        .eq("inmobiliaria", inmobiliariaId)
+    const profilesData = await fetchProfilesForInmobiliaria(supabase, inmobiliariaId)
     
     // Create a map for quick lookup: email -> name
      const profileMap = new Map<string, string>()
@@ -46,30 +76,23 @@ export async function getAgentsByIdi(inmobiliariaId: number) {
      }
 
     // Fallback: attempt to resolve missing names by querying Perfiles for the agents' emails/local-parts
-    const missingKeys: string[] = []
-    ;(agentsData || []).forEach((agent: any) => {
+    for (const agent of agentsData || []) {
       const { raw, local } = normalizeEmailKey(agent.Email)
-      if (!profileMap.has(raw) && !profileMap.has(local)) {
-        if (raw) missingKeys.push(raw)
-        if (local) missingKeys.push(local)
-      }
-    })
-    if (missingKeys.length > 0) {
-      const uniqueMissing = Array.from(new Set(missingKeys))
-      const { data: extraProfiles } = await supabase
-        .from("Perfiles")
-        .select("usuario, nombre, Nombre")
-        .in("usuario", uniqueMissing)
-      if (extraProfiles) {
-        extraProfiles.forEach((p: any) => {
-          const { raw, local } = normalizeEmailKey(p.usuario || p.Usuario || "")
-          const name = p.nombre || p.Nombre
-          if (name && String(name).trim()) {
-            const v = String(name).trim()
-            if (raw) profileMap.set(raw, v)
-            if (local) profileMap.set(local, v)
-          }
-        })
+      if (profileMap.has(raw) || profileMap.has(local)) continue
+
+      const candidates = [raw, `${local}%`, `${local}@%`].filter(Boolean) as string[]
+      for (const key of candidates) {
+        const profile = await findProfileByUserKey(supabase, key, inmobiliariaId)
+        const name = (profile as any)?.nombre || (profile as any)?.Nombre
+        if (name && String(name).trim()) {
+          const v = String(name).trim()
+          const { raw: pRaw, local: pLocal } = normalizeEmailKey((profile as any)?.usuario || (profile as any)?.Usuario || "")
+          if (pRaw) profileMap.set(pRaw, v)
+          if (pLocal) profileMap.set(pLocal, v)
+          if (raw) profileMap.set(raw, v)
+          if (local) profileMap.set(local, v)
+          break
+        }
       }
     }
 
