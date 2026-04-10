@@ -95,6 +95,21 @@ export default function AgendaPage() {
   const [canManageOthers, setCanManageOthers] = useState(false)
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
   const [agentsList, setAgentsList] = useState<Array<{ idag: number; Nombre: string; nombre?: string; Email: string }>>([])
+  const agentIdRef = useRef<number | null>(null)
+  const agentsListRef = useRef<Array<{ idag: number; Nombre: string; nombre?: string; Email: string }>>([])
+  const canManageOthersRef = useRef(false)
+
+  useEffect(() => {
+    agentIdRef.current = agentId
+  }, [agentId])
+
+  useEffect(() => {
+    agentsListRef.current = agentsList
+  }, [agentsList])
+
+  useEffect(() => {
+    canManageOthersRef.current = canManageOthers
+  }, [canManageOthers])
 
   // Tabs state
   const [calendarDays, setCalendarDays] = useState<DayTab[]>([])
@@ -615,7 +630,7 @@ export default function AgendaPage() {
       if (!user) return
       setCurrentUserEmail(user.email || null)
 
-      let activeAgentId = targetId || agentId
+      let activeAgentId = targetId || agentIdRef.current
 
       // Logic to ensure agents list is loaded and permissions are checked
       // We do this if we have inmobiliariaId, regardless of whether we have an activeAgentId
@@ -625,7 +640,7 @@ export default function AgendaPage() {
           // Since we don't persist 'canManageOthers', we should probably check it on mount.
           
           // To avoid complexity, we'll re-check profile/permissions if agentsList is empty
-          if (agentsList.length === 0 || showLoader) {
+          if (agentsListRef.current.length === 0) {
               const { data: profile } = await supabase
                 .from("Perfiles")
                 .select("role, is_admin")
@@ -877,7 +892,7 @@ export default function AgendaPage() {
     } finally {
       if (showLoader) setLoading(false)
     }
-  }, [agentId, inmobiliariaId, nextWeekDaysCount, prevWeekDaysCount, supabase, toast, agentsList, canManageOthers])
+  }, [inmobiliariaId, nextWeekDaysCount, prevWeekDaysCount, supabase, toast])
 
   useEffect(() => {
     if (isStateRestored) {
