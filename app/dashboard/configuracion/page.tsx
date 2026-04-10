@@ -30,7 +30,8 @@ import {
   updateUserDetailsAction,
   triggerVisitReminderAction,
   createInmobiliariaAction,
-  updateInmobiliariaAction
+  updateInmobiliariaAction,
+  syncAgentNamesAction
 } from "./actions"
 import { LogoUpload } from "./logo-upload"
 import { UserActions } from "./user-actions"
@@ -62,6 +63,11 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
   let debugItems: Array<{ label: string; value: string }> = []
   const addDebug = (label: string, value: any) => {
     debugItems.push({ label, value: String(value) })
+  }
+  const normalizeEmailKey = (value: any) => {
+    const raw = String(value || "").trim().toLowerCase()
+    const local = raw.includes("@") ? raw.split("@")[0] : raw
+    return { raw, local }
   }
   const reminderStatus = typeof searchParams?.reminder === "string" ? searchParams.reminder : null
   const reminderMsg = typeof searchParams?.rmsg === "string" ? searchParams.rmsg : null
@@ -254,16 +260,19 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
         }
       }
       
-      const activeAgentEmails = new Map((activeAgents || []).map((a: any) => [
-        (a.Email || "").toLowerCase(), 
-        { nombre: a.Nombre, telefono: a.Telefono }
-      ]))
+      const activeAgentEmails = new Map<string, { nombre: any; telefono: any }>()
+      ;(activeAgents || []).forEach((a: any) => {
+        const { raw, local } = normalizeEmailKey(a.Email)
+        const value = { nombre: a.Nombre, telefono: a.Telefono }
+        if (raw && !activeAgentEmails.has(raw)) activeAgentEmails.set(raw, value)
+        if (local && !activeAgentEmails.has(local)) activeAgentEmails.set(local, value)
+      })
       console.log("[v0] Active agent emails set:", Array.from(activeAgentEmails.keys()))
 
       // Deduplicate perfilesData for display
       const uniquePerfilesMap = new Map();
       (perfilesData || []).forEach((p: any) => {
-          const email = String(p.usuario || p.Usuario || "").toLowerCase();
+          const email = normalizeEmailKey(p.usuario || p.Usuario || "").raw
           if (email && !uniquePerfilesMap.has(email)) {
               uniquePerfilesMap.set(email, p);
           }
@@ -290,8 +299,8 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
       }
 
       usersList = uniquePerfiles.map((p: any) => {
-        const uEmail = String(p?.usuario || p?.Usuario || "").toLowerCase()
-        const agentData = activeAgentEmails.get(uEmail)
+        const { raw: uEmail, local: uLocal } = normalizeEmailKey(p?.usuario || p?.Usuario || "")
+        const agentData = activeAgentEmails.get(uEmail) || activeAgentEmails.get(uLocal)
         const hasRecord = !!agentData
         console.log(`[v0] User: ${uEmail}, Has Agent Record: ${hasRecord}`)
         
@@ -648,6 +657,13 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                     <Button type="submit" size="sm" className="h-8 text-xs" variant="outline">
                       <Bell className="mr-2 h-3 w-3" />
                       Ejecutar recordatorio
+                    </Button>
+                  </form>
+                  <form action={syncAgentNamesAction}>
+                    <input type="hidden" name="idi" value={String(currentIdi ?? "")} />
+                    <Button type="submit" size="sm" className="h-8 text-xs" variant="outline">
+                      <UserPlus className="mr-2 h-3 w-3" />
+                      Sincronizar agentes
                     </Button>
                   </form>
                   <Dialog>

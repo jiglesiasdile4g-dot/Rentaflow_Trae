@@ -27,6 +27,72 @@ async function logAuditAction(admin: any, actionType: string, targetEmail: strin
     }
 }
 
+function normalizeEmailKey(value: any) {
+    const raw = String(value || "").trim().toLowerCase()
+    const local = raw.includes("@") ? raw.split("@")[0] : raw
+    return { raw, local }
+}
+
+export async function syncAgentNamesAction(formData: FormData) {
+    const admin = createAdminClient()
+    const supabase = await createClient()
+    const {
+        data: { user },
+    } = await supabase.auth.getUser()
+    if (!user?.email) {
+        redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent("Usuario no autenticado")}`)
+    }
+    const idiRaw = String(formData.get("idi") || "").trim()
+    const idi = Number(idiRaw)
+    const { data: perfil } = await admin
+        .from("Perfiles")
+        .select("is_admin, role, inmobiliaria")
+        .ilike("usuario", user.email)
+        .maybeSingle()
+    const roleStr = String(perfil?.role || "").toLowerCase()
+    const isSuperuser = perfil?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
+    const scopeIdi = Number.isFinite(idi) && idi > 0 ? idi : Number(perfil?.inmobiliaria || 0)
+    if (!scopeIdi && !isSuperuser) {
+        redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent("No se pudo determinar la inmobiliaria")}`)
+    }
+    const whereIdi = scopeIdi || null
+    const { data: agents, error: agentsError } = await admin
+        .from("Agentes")
+        .select("idag, Nombre, Email, idi")
+        .match(whereIdi ? { idi: whereIdi } : {})
+    if (agentsError) {
+        redirect(`/dashboard/configuracion?manageUser=error&mmsg=${encodeURIComponent(agentsError.message)}`)
+    }
+    const { data: perfiles } = await admin
+        .from("Perfiles")
+        .select("usuario, nombre, Nombre, inmobiliaria")
+        .match(whereIdi ? { inmobiliaria: String(whereIdi) } : {})
+    const profileMap = new Map<string, string>()
+    ;(perfiles || []).forEach((p: any) => {
+        const { raw, local } = normalizeEmailKey(p.usuario || p.Usuario || "")
+        const nm = p.nombre || p.Nombre
+        if (nm && String(nm).trim()) {
+            const val = String(nm).trim()
+            if (raw) profileMap.set(raw, val)
+            if (local) profileMap.set(local, val)
+        }
+    })
+    let updated = 0
+    for (const ag of agents || []) {
+        const { raw, local } = normalizeEmailKey(ag.Email)
+        const targetName = profileMap.get(raw) || profileMap.get(local) || ag.Nombre
+        if (targetName && targetName !== ag.Nombre) {
+            const { error } = await admin
+                .from("Agentes")
+                .update({ Nombre: targetName })
+                .eq("idag", ag.idag)
+            if (!error) updated += 1
+        }
+    }
+    revalidatePath("/dashboard/configuracion")
+    redirect(`/dashboard/configuracion?manageUser=success&mmsg=${encodeURIComponent(`Agentes sincronizados: ${updated}`)}`)
+}
+
 function getLocalDateString(date = new Date()) {
     const y = date.getFullYear()
     const m = String(date.getMonth() + 1).padStart(2, "0")
