@@ -45,6 +45,34 @@ export async function getAgentsByIdi(inmobiliariaId: number) {
          })
      }
 
+    // Fallback: attempt to resolve missing names by querying Perfiles for the agents' emails/local-parts
+    const missingKeys: string[] = []
+    ;(agentsData || []).forEach((agent: any) => {
+      const { raw, local } = normalizeEmailKey(agent.Email)
+      if (!profileMap.has(raw) && !profileMap.has(local)) {
+        if (raw) missingKeys.push(raw)
+        if (local) missingKeys.push(local)
+      }
+    })
+    if (missingKeys.length > 0) {
+      const uniqueMissing = Array.from(new Set(missingKeys))
+      const { data: extraProfiles } = await supabase
+        .from("Perfiles")
+        .select("usuario, nombre, Nombre")
+        .in("usuario", uniqueMissing)
+      if (extraProfiles) {
+        extraProfiles.forEach((p: any) => {
+          const { raw, local } = normalizeEmailKey(p.usuario || p.Usuario || "")
+          const name = p.nombre || p.Nombre
+          if (name && String(name).trim()) {
+            const v = String(name).trim()
+            if (raw) profileMap.set(raw, v)
+            if (local) profileMap.set(local, v)
+          }
+        })
+      }
+    }
+
      // Map to ensure backward compatibility and use updated names
      const mappedData = (agentsData || []).map((agent: any) => {
          const { raw: email, local } = normalizeEmailKey(agent.Email)
