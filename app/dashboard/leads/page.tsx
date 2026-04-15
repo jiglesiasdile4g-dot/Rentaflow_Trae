@@ -1962,6 +1962,36 @@ export default function LeadsPage() {
     return s.trim()
   }
 
+  const buildEmailSrcDoc = (rawHtml?: string) => {
+    const html = String(rawHtml || "")
+    const hasHtmlTag = /<html[\s>]/i.test(html)
+    const hasHeadTag = /<head[\s>]/i.test(html)
+    const hasBodyTag = /<body[\s>]/i.test(html)
+
+    const baseHead = `
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <base target="_blank" />
+      <style>
+        html, body { margin: 0; padding: 0; background: #ffffff; }
+        img { max-width: 100%; height: auto; }
+        table { max-width: 100%; }
+      </style>
+    `.trim()
+
+    if (hasHtmlTag) {
+      if (hasHeadTag) {
+        return html.replace(/<head([^>]*)>/i, `<head$1>${baseHead}`)
+      }
+      if (hasBodyTag) {
+        return html.replace(/<html([^>]*)>/i, `<html$1><head>${baseHead}</head>`)
+      }
+      return `<!doctype html><html><head>${baseHead}</head><body>${html}</body></html>`
+    }
+
+    return `<!doctype html><html><head>${baseHead}</head><body>${html}</body></html>`
+  }
+
   const getWhatsAppTitleAndBody = (html?: string) => {
     const text = cleanHtmlForPreview(html)
     const lines = text.split("\n").map((l) => l.trim()).filter(Boolean)
@@ -7843,10 +7873,14 @@ export default function LeadsPage() {
                         dangerouslySetInnerHTML={{ __html: selectedCommunication.Mensaje || "Sin contenido" }}
                       />
                     ) : selectedCommunication.Html ? (
-                      <div
-                        className="prose prose-sm max-w-full dark:prose-invert [&_*]:!max-w-full [&_*]:!whitespace-pre-wrap [&_*]:!break-words"
-                        dangerouslySetInnerHTML={{ __html: selectedCommunication.Html }}
-                      />
+                      <div className="rounded-md border bg-white overflow-hidden">
+                        <iframe
+                          title="Vista real email"
+                          className="w-full h-[70vh]"
+                          sandbox="allow-popups allow-popups-to-escape-sandbox"
+                          srcDoc={buildEmailSrcDoc(selectedCommunication.Html)}
+                        />
+                      </div>
                     ) : selectedCommunication.Text ? (
                       <div className="whitespace-pre-wrap break-words text-sm">{selectedCommunication.Text}</div>
                     ) : (
