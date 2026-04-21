@@ -1,3 +1,24 @@
+## [0.9.21](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.20...v0.9.21) (2026-04-21)
+
+
+### Bug Fixes
+
+* **agenda:** reliably map agent display name from Perfiles across schema variants + refresh list ([a84652e](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/a84652e972568451688548010e0beaa4609176c7))
+* **agenda:** resolve agent display name by querying Perfiles with both email and local-part fallback ([fa98831](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/fa98831fb71fbfb280da2867a28fba00071caa56))
+* **agenda:** show agent display name from Perfiles even when email lacks domain ([b3a8992](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/b3a89923d1bb5925248a29abf54a564ae2205553))
+* **agenda:** stop infinite reload by stabilizing fetchAgentAndSchedule and avoiding agentsList dependency loop ([8019234](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/801923425bd5772441de804f849c596819959a84))
+* **config:** allow admin/superuser to manage users (use isAdmin instead of label) ([1117d58](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/1117d5884b5fe6491a7642180855864c72b62003))
+* **leads:** render email Html in iframe for accurate HTML preview ([1b9ea32](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/1b9ea325fe471cbbdbcfb9331baa0d5e36df6142))
+* **leads:** show loading spinner instead of blank screen on /dashboard/leads ([2db9ee3](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/2db9ee342b8d6cdd7f61efbbd3d4178ccaa691cb))
+* **timezone): store proposal visit time in Europe/Madrid and render proposal page in Madrid time\nfix(comms:** render email HTML in iframe (real preview) ([dcd65e2](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/dcd65e24ad6636af687ab11c8dd16c205add1a59))
+
+
+### Features
+
+* **config:** add 'Sincronizar agentes' to align Agentes.Nombre with Perfiles.nombre (match by email and local-part) ([340f5fd](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/340f5fdf4150638bd2dff62095717cc723a25d33))
+
+
+
 ## [0.9.20](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.11...v0.9.20) (2026-04-09)
 
 
