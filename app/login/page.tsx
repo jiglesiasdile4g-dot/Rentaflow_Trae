@@ -2,18 +2,20 @@
 
 import type React from "react"
 
-import { Suspense, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LogIn, Mail, Lock, Loader2, Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
 import { isSupabaseConfigured } from "@/lib/utils"
 import { logClientEventAction } from "@/app/actions/audit"
+import { useTheme } from "next-themes"
 
 function LoginContent() {
   const [email, setEmail] = useState("")
@@ -21,8 +23,14 @@ function LoginContent() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
   const router = useRouter()
   const configured = isSupabaseConfigured()
+  const { resolvedTheme, theme, setTheme } = useTheme()
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -76,8 +84,22 @@ function LoginContent() {
     }
   }
 
+  const isDark = mounted ? ((resolvedTheme || theme) === "dark") : false
+
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
+      {mounted && (
+        <div className="absolute top-4 right-4 flex items-center gap-2">
+          <Label htmlFor="login-dark-mode" className="text-sm text-muted-foreground">
+            Modo oscuro
+          </Label>
+          <Switch
+            id="login-dark-mode"
+            checked={isDark}
+            onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
+          />
+        </div>
+      )}
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">

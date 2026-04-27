@@ -33,6 +33,13 @@ function normalizeEmailKey(value: any) {
     return { raw, local }
 }
 
+function normalizePhoneToNumber(value: any) {
+    const digits = String(value ?? "").replace(/\D/g, "")
+    if (!digits) return 0
+    const num = Number(digits)
+    return Number.isFinite(num) ? num : 0
+}
+
 export async function syncAgentNamesAction(formData: FormData) {
     const admin = createAdminClient()
     const supabase = await createClient()
@@ -466,7 +473,7 @@ async function ensureAgentRecord(admin: any, email: string, idi: number, role: s
                 Nombre: name,
                 Email: email,
                 idi: idi,
-                Telefono: found?.profile?.Telefono || found?.profile?.telefono || 0
+                Telefono: normalizePhoneToNumber(found?.profile?.Telefono ?? found?.profile?.telefono)
             })
         }
     } else {
@@ -774,12 +781,16 @@ export async function toggleAgentFunctionsAction(formData: FormData) {
         // Check if exists
         const { data: existing } = await admin.from("Agentes").select("idag").ilike("Email", email).eq("idi", idi).maybeSingle()
         if (!existing) {
-            await admin.from("Agentes").insert({
+            const { error: insertError } = await admin.from("Agentes").insert({
                 Nombre: name,
                 Email: email,
                 idi: idi,
-                Telefono: found?.profile?.Telefono || found?.profile?.telefono || 0
+                Telefono: normalizePhoneToNumber(found?.profile?.Telefono ?? found?.profile?.telefono)
             })
+            if (insertError) {
+                console.error("[toggleAgentFunctionsAction] Error enabling agent functions:", insertError)
+                return { error: insertError.message || "No se pudieron activar las funciones de agente" }
+            }
             await logAuditAction(admin, "ENABLE_AGENT_FUNCTIONS", email, { idi })
         }
     } else {

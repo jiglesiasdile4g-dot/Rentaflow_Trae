@@ -63,21 +63,59 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
   const searchParams = useSearchParams()
   const [logoVersion, setLogoVersion] = useState<number>(0)
   const [logoError, setLogoError] = useState(false)
+  const [hasLogo, setHasLogo] = useState(false)
 
   const logoUrl = useMemo(() => {
-    if (!inmobiliariaId) return null
+    if (!inmobiliariaId || !hasLogo) return null
     const { data } = supabase.storage.from('imagenes').getPublicUrl(`logos/${inmobiliariaId}-logo.png`)
     return logoVersion ? `${data.publicUrl}?v=${logoVersion}` : data.publicUrl
-  }, [inmobiliariaId, supabase, logoVersion])
+  }, [hasLogo, inmobiliariaId, supabase, logoVersion])
 
   useEffect(() => {
     const handleUpdate = () => {
          setLogoVersion(Date.now())
          setLogoError(false)
+         setHasLogo(true)
     }
     window.addEventListener('logo-updated', handleUpdate)
     return () => window.removeEventListener('logo-updated', handleUpdate)
   }, [])
+
+  useEffect(() => {
+    let active = true
+    const check = async () => {
+      if (!inmobiliariaId) {
+        if (active) {
+          setHasLogo(false)
+          setLogoError(false)
+        }
+        return
+      }
+
+      const fileName = `${inmobiliariaId}-logo.png`
+      const { data } = await supabase.storage.from("imagenes").list("logos", {
+        limit: 10,
+        offset: 0,
+        search: fileName,
+      })
+
+      const file = (data || []).find((f) => f.name === fileName)
+      if (!active) return
+
+      if (file) {
+        setHasLogo(true)
+        const v = file.updated_at ? new Date(file.updated_at).getTime() : Date.now()
+        setLogoVersion(v)
+        setLogoError(false)
+      } else {
+        setHasLogo(false)
+      }
+    }
+    check()
+    return () => {
+      active = false
+    }
+  }, [inmobiliariaId, supabase])
 
   useEffect(() => {
     let active = true

@@ -163,7 +163,7 @@ export function UserActions({
             </DropdownMenuSubContent>
           </DropdownMenuSub>
 
-          {toggleAgentFunctionsAction && user.role !== 'agente' && (
+          {toggleAgentFunctionsAction && (user.role !== "agente" || !user.has_agent_record) && (
             <DropdownMenuItem
               onClick={(e) => {
                 e.preventDefault()
