@@ -1,3 +1,13 @@
+## [0.9.22](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.21...v0.9.22) (2026-04-29)
+
+
+### Bug Fixes
+
+* **demo:** restringir modo demo y ocultar PII ([11149de](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/11149de2c19b8267e0f80a442d150b8bbff4f3f2))
+* **ui:** login theme switch and agent functions toggle ([8917afa](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/8917afafd445fc52db52c4f9a95108710a1a1e67))
+
+
+
 ## [0.9.21](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.20...v0.9.21) (2026-04-21)
 
 
