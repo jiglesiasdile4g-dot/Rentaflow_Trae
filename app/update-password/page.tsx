@@ -32,8 +32,8 @@ export default function UpdatePasswordPage() {
 
   const handleLogout = async () => {
     const supabase = createClient()
-    await supabase.auth.signOut()
-    window.location.href = "/login"
+    await supabase.auth.signOut({ scope: "local" } as any)
+    window.location.assign("/login")
   }
 
   return (

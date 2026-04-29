@@ -240,7 +240,42 @@ export default function LeadsPage() {
   const { toast } = useToast()
   const [copiedField, setCopiedField] = React.useState<string | null>(null)
 
-  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading, isAdmin, role, userEmail } = useInmobiliaria()
+  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading, isAdmin, role, userEmail, demoMode, demoSince } = useInmobiliaria()
+  const shouldBlurPiiForLead = useCallback((lead: any) => {
+    if (!demoMode) return false
+    if (!demoSince) return true
+    const createdAt = lead?.created_at
+    if (!createdAt) return true
+    const created = new Date(String(createdAt))
+    const since = new Date(String(demoSince))
+    if (Number.isNaN(created.getTime()) || Number.isNaN(since.getTime())) return true
+    return created.getTime() < since.getTime()
+  }, [demoMode, demoSince])
+
+  const renderLeadDisplayName = useCallback((lead: any, maskRemainder: boolean) => {
+    const nombreRaw = String(lead?.Nombre || "").trim()
+    const apellidosRaw = String(lead?.Apellidos || "").trim()
+    const full = `${nombreRaw}${nombreRaw && apellidosRaw ? " " : ""}${apellidosRaw}`.trim()
+    if (!full) return "Sin nombre"
+    if (!maskRemainder) return full
+
+    const baseForFirst = nombreRaw || apellidosRaw
+    const baseParts = baseForFirst.split(/\s+/).filter(Boolean)
+    const first = baseParts[0] || ""
+    if (!first) return "Sin nombre"
+
+    const nombreParts = nombreRaw.split(/\s+/).filter(Boolean)
+    const nombreRemainder = nombreParts.length > 1 ? nombreParts.slice(1).join(" ") : ""
+    const remainder = [nombreRemainder, apellidosRaw].filter(Boolean).join(" ").trim()
+    if (!remainder) return first
+
+    return (
+      <span>
+        <span>{first}</span>
+        <span className="ml-1 blur-sm select-none">{remainder}</span>
+      </span>
+    )
+  }, [])
 
   const supabase = createClient()
   const searchParams = useSearchParams()
@@ -851,7 +886,16 @@ export default function LeadsPage() {
       const mappedData = result?.data || []
       const error = result?.error
 
-      if (error) throw new Error(error.message || error)
+      if (error) {
+        console.error("[v0] Failed to fetch agentes:", error)
+        setAgentes([])
+        toast({
+          title: "Aviso",
+          description: "No se pudieron cargar los agentes. Reintenta recargando la página.",
+          variant: "destructive",
+        })
+        return
+      }
       
       console.log("[v0] fetchAgentes success, count:", mappedData?.length)
       setAgentes(mappedData || [])
@@ -859,13 +903,18 @@ export default function LeadsPage() {
         if (error?.name !== 'AbortError' && !error?.message?.includes('Abort')) {
           console.error("[v0] Failed to fetch agentes:", error)
           setAgentes([])
+          toast({
+            title: "Error",
+            description: "Falló la carga de agentes (error de red).",
+            variant: "destructive",
+          })
         }
       }
-    }, [])
+    }, [toast])
 
   useEffect(() => {
     if (inmobiliariaId) {
-      fetchAgentes(inmobiliariaId)
+      fetchAgentes(inmobiliariaId).catch(() => {})
     }
   }, [inmobiliariaId, fetchAgentes])
 
@@ -3978,6 +4027,7 @@ export default function LeadsPage() {
                             ].some(Boolean)
                             const isDataComplete = completionPercentage >= 80 && !docInvalid
                             const personaCount = countPersonas(lead)
+                            const shouldBlurPii = shouldBlurPiiForLead(lead)
 
                             // Add checkbox for individual selection
                             const isSelected = selectedLeadIds.includes(lead.id)
@@ -4032,7 +4082,7 @@ export default function LeadsPage() {
                                       <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 mb-1">
                                           <h3 className="font-semibold text-sm truncate">
-                                            {lead.Nombre || "Sin nombre"}
+                                            <span>{renderLeadDisplayName(lead, shouldBlurPii)}</span>
                                           </h3>
 
                                           <div className="flex items-center gap-1.5">
@@ -4197,8 +4247,8 @@ export default function LeadsPage() {
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-0 text-xs text-muted-foreground mb-2">
                                           <div className="flex items-center gap-1">
                                             <Mail className="h-3 w-3" />
-                                            <span className="truncate">{lead.Correo || "Sin email"}</span>
-                                            {lead.correo_proxy && (
+                                            <span className={cn("truncate", shouldBlurPii && "blur-sm select-none")}>{lead.Correo || "Sin email"}</span>
+                                            {!demoMode && lead.correo_proxy && (
                                               <TooltipProvider>
                                                 <Tooltip>
                                                   <TooltipTrigger asChild>
@@ -4215,7 +4265,7 @@ export default function LeadsPage() {
                                           </div>
                                           <div className="flex items-center gap-1">
                                             <Phone className="h-3 w-3" />
-                                            <span>{lead.Telefono || "Sin teléfono"}</span>
+                                            <span className={cn(shouldBlurPii && "blur-sm select-none")}>{lead.Telefono || "Sin teléfono"}</span>
                                           </div>
                                           <div className="flex items-center gap-1">
                                             <Building className="h-3 w-3" />
@@ -4508,7 +4558,7 @@ export default function LeadsPage() {
 
                                     <div className="flex-1 min-w-0">
                                       <div className="flex items-center gap-2 mb-1">
-                                        <h3 className="font-semibold text-sm truncate">{lead.Nombre || "Sin nombre"}</h3>
+                                        <h3 className="font-semibold text-sm truncate">{renderLeadDisplayName(lead, shouldBlurPiiForLead(lead))}</h3>
 
                                         <div className="flex items-center gap-1.5">
                                           {(() => {
@@ -4668,11 +4718,11 @@ export default function LeadsPage() {
                                       <div className="grid grid-cols-1 md:grid-cols-3 gap-0 text-xs text-muted-foreground mb-2">
                                         <div className="flex items-center gap-1">
                                           <Mail className="h-3 w-3" />
-                                          <span className="truncate">{lead.Correo || "Sin email"}</span>
+                                          <span className={cn("truncate", shouldBlurPiiForLead(lead) && "blur-sm select-none")}>{lead.Correo || "Sin email"}</span>
                                         </div>
                                         <div className="flex items-center gap-1">
                                           <Phone className="h-3 w-3" />
-                                          <span>{lead.Telefono || "Sin teléfono"}</span>
+                                          <span className={cn(shouldBlurPiiForLead(lead) && "blur-sm select-none")}>{lead.Telefono || "Sin teléfono"}</span>
                                         </div>
                                         <div className="flex items-center gap-1">
                                           <Building className="h-3 w-3" />
@@ -4903,7 +4953,14 @@ export default function LeadsPage() {
               <div className="flex flex-col h-full max-w-full">
                 <div className="border-b border-border p-5 px-6 flex justify-between items-center flex-shrink-0">
                   <div className="flex items-baseline gap-4 flex-wrap">
-                    <h1 className="text-2xl font-bold m-0">{selectedLead.Nombre || "Sin nombre"}</h1>
+                    {(() => {
+                      const shouldBlurPii = shouldBlurPiiForLead(selectedLead)
+                      return (
+                        <h1 className="text-2xl font-bold m-0">
+                          {renderLeadDisplayName(selectedLead, shouldBlurPii)}
+                        </h1>
+                      )
+                    })()}
                     <span className="text-sm text-muted-foreground font-normal">| {selectedLead.Inmueble || "Sin inmueble"}</span>
                     <span className="text-xs text-muted-foreground ml-2">Fecha Entrada: {selectedLead.created_at ? formatDateTime(selectedLead.created_at) : "N/A"}</span>
                     {selectedLead.origen && (
@@ -5002,7 +5059,7 @@ export default function LeadsPage() {
                               }
                             `}
                             >
-                              <span className="tracking-wide">{selectedLead?.Nombre || "Persona 1"}</span>
+                              <span className="tracking-wide">{renderLeadDisplayName({ Nombre: selectedLead?.Nombre }, shouldBlurPiiForLead(selectedLead))}</span>
                               {selectedPersona === 1 && (
                                 <div className="absolute bottom-0 left-0 right-0 h-px bg-background" />
                               )}
@@ -5028,7 +5085,8 @@ export default function LeadsPage() {
                               `}
                               >
                                 <span className="tracking-wide font-semibold">
-                                  {selectedLead.tipo2 === "Avalista" ? "🛡️ AVALISTA: " : ""}{selectedLead.Persona_2}
+                                  {selectedLead.tipo2 === "Avalista" ? "🛡️ AVALISTA: " : ""}
+                                  <span className={cn(shouldBlurPiiForLead(selectedLead) && "blur-sm select-none")}>{selectedLead.Persona_2}</span>
                                 </span>
                                 {selectedPersona === 2 && (
                                   <div className="absolute bottom-0 left-0 right-0 h-px bg-background" />
@@ -5056,7 +5114,8 @@ export default function LeadsPage() {
                               `}
                               >
                                 <span className="tracking-wide font-semibold">
-                                  {selectedLead.tipo3 === "Avalista" ? "🛡️ AVALISTA: " : ""}{selectedLead.Persona_3}
+                                  {selectedLead.tipo3 === "Avalista" ? "🛡️ AVALISTA: " : ""}
+                                  <span className={cn(shouldBlurPiiForLead(selectedLead) && "blur-sm select-none")}>{selectedLead.Persona_3}</span>
                                 </span>
                                 {selectedPersona === 3 && (
                                   <div className="absolute bottom-0 left-0 right-0 h-px bg-background" />
@@ -5085,7 +5144,8 @@ export default function LeadsPage() {
                             `}
                             >
                               <span className="tracking-wide font-semibold">
-                                🛡️ {selectedLead.tipo4 === "Avalista" ? "AVALISTA" : "AVAL"}: {selectedLead.Persona_4}
+                                🛡️ {selectedLead.tipo4 === "Avalista" ? "AVALISTA" : "AVAL"}:{" "}
+                                <span className={cn(shouldBlurPiiForLead(selectedLead) && "blur-sm select-none")}>{selectedLead.Persona_4}</span>
                               </span>
                               {selectedPersona === 4 && (
                                 <div className="absolute bottom-0 left-0 right-0 h-px bg-amber-50" />
@@ -5147,7 +5207,8 @@ export default function LeadsPage() {
                                         <TooltipTrigger asChild>
                                           <button
                                             onClick={() => copyToClipboard(selectedLead.Correo!, "Email")}
-                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                            disabled={shouldBlurPiiForLead(selectedLead)}
+                                            className={`bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors ${shouldBlurPiiForLead(selectedLead) ? "opacity-50 pointer-events-none" : ""}`}
                                           >
                                             {copiedField === "Email" ? (
                                               <Check size={14} className="text-emerald-500" />
@@ -5171,14 +5232,20 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div className={`text-sm break-words ${selectedLead.Correo ? "not-italic text-foreground" : "italic text-muted-foreground"}`}>
+                                  <div className={cn(
+                                    `text-sm break-words ${selectedLead.Correo ? "not-italic text-foreground" : "italic text-muted-foreground"}`,
+                                    shouldBlurPiiForLead(selectedLead) && "blur-sm select-none"
+                                  )}>
                                     {selectedLead.Correo || "No especificado"}
                                     {selectedLead.correo_proxy && (
                                       <div className="flex items-center gap-2 mt-1">
                                         <TooltipProvider>
                                           <Tooltip>
                                             <TooltipTrigger asChild>
-                                              <div className="text-xs text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/50 max-w-full truncate">
+                                              <div className={cn(
+                                                "text-xs text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/50 max-w-full truncate",
+                                                shouldBlurPiiForLead(selectedLead) && "blur-sm select-none"
+                                              )}>
                                                 Proxy: {selectedLead.correo_proxy.substring(0, 10)}...{selectedLead.correo_proxy.includes("@") ? selectedLead.correo_proxy.split("@")[1] : selectedLead.correo_proxy.slice(-10)}
                                               </div>
                                             </TooltipTrigger>
@@ -5196,7 +5263,8 @@ export default function LeadsPage() {
                                                   e.stopPropagation()
                                                   copyToClipboard(selectedLead.correo_proxy!, "Proxy Email")
                                                 }}
-                                                className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                                disabled={shouldBlurPiiForLead(selectedLead)}
+                                                className={`bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors ${shouldBlurPiiForLead(selectedLead) ? "opacity-50 pointer-events-none" : ""}`}
                                               >
                                                 {copiedField === "Proxy Email" ? (
                                                   <Check size={12} className="text-emerald-500" />
@@ -5224,7 +5292,8 @@ export default function LeadsPage() {
                                         <TooltipTrigger asChild>
                                           <button
                                             onClick={() => copyToClipboard(selectedLead.Telefono!, "Teléfono")}
-                                            className="bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                                            disabled={shouldBlurPiiForLead(selectedLead)}
+                                            className={`bg-transparent border-none cursor-pointer p-0 flex items-center text-muted-foreground hover:text-foreground transition-colors ${shouldBlurPiiForLead(selectedLead) ? "opacity-50 pointer-events-none" : ""}`}
                                           >
                                             {copiedField === "Teléfono" ? (
                                               <Check size={14} className="text-emerald-500" />
@@ -5248,7 +5317,7 @@ export default function LeadsPage() {
                                     className="h-9 text-sm"
                                   />
                                 ) : (
-                                  <div className="text-sm font-medium text-foreground">
+                                  <div className={cn("text-sm font-medium text-foreground", shouldBlurPiiForLead(selectedLead) && "blur-sm select-none")}>
                                     {selectedLead.Telefono || "No especificado"}
                                   </div>
                                 )}
@@ -7124,7 +7193,9 @@ export default function LeadsPage() {
                 <div className="p-4 bg-gray-50 dark:bg-muted/50 rounded-lg border space-y-2 w-full overflow-hidden">
                   <div className="flex justify-between gap-2 flex-wrap">
                     <span className="text-sm font-medium text-muted-foreground min-w-0">Nombre:</span>
-                    <span className="text-sm font-semibold text-right whitespace-normal break-words">{selectedLead.Nombre}</span>
+                    <span className="text-sm font-semibold text-right whitespace-normal break-words">
+                      {renderLeadDisplayName(selectedLead, shouldBlurPiiForLead(selectedLead))}
+                    </span>
                   </div>
                   <div className="flex justify-between gap-2 flex-wrap">
                     <span className="text-sm font-medium text-muted-foreground min-w-0">Email:</span>
@@ -7135,7 +7206,7 @@ export default function LeadsPage() {
                     <div className="text-xs font-semibold text-muted-foreground mb-1">Ingresos por Persona:</div>
                     {avalCalculation.persona1Income > 0 && (
                       <div className="flex justify-between gap-2 flex-wrap pl-2">
-                        <span className="text-xs text-muted-foreground min-w-0">{selectedLead.Nombre || "Persona 1"}:</span>
+                        <span className="text-xs text-muted-foreground min-w-0">{renderLeadDisplayName({ Nombre: selectedLead.Nombre }, shouldBlurPiiForLead(selectedLead))}:</span>
                         <span className="text-xs font-medium text-green-600 dark:text-green-400 text-right whitespace-normal break-words">
                           {formatCurrency(avalCalculation.persona1Income)}
                         </span>

@@ -230,7 +230,41 @@ export function LeadDetailModal({
 }: LeadDetailModalProps) {
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(false)
-  const { inmobiliariaId, inmobiliariaNombre, isAdmin, role, userEmail } = useInmobiliaria()
+  const { inmobiliariaId, inmobiliariaNombre, isAdmin, role, userEmail, demoMode, demoSince } = useInmobiliaria()
+  const shouldBlurPii = (() => {
+    if (!demoMode) return false
+    if (!demoSince) return true
+    const createdAt = lead?.created_at
+    if (!createdAt) return true
+    const created = new Date(String(createdAt))
+    const since = new Date(String(demoSince))
+    if (Number.isNaN(created.getTime()) || Number.isNaN(since.getTime())) return true
+    return created.getTime() < since.getTime()
+  })()
+  const displayLeadName = (() => {
+    const nombreRaw = String(lead?.Nombre || "").trim()
+    const apellidosRaw = String(lead?.Apellidos || "").trim()
+    const full = `${nombreRaw}${nombreRaw && apellidosRaw ? " " : ""}${apellidosRaw}`.trim()
+    if (!full) return "Sin nombre"
+    if (!shouldBlurPii) return full
+
+    const baseForFirst = nombreRaw || apellidosRaw
+    const baseParts = baseForFirst.split(/\s+/).filter(Boolean)
+    const first = baseParts[0] || ""
+    if (!first) return "Sin nombre"
+
+    const nombreParts = nombreRaw.split(/\s+/).filter(Boolean)
+    const nombreRemainder = nombreParts.length > 1 ? nombreParts.slice(1).join(" ") : ""
+    const remainder = [nombreRemainder, apellidosRaw].filter(Boolean).join(" ").trim()
+    if (!remainder) return first
+
+    return (
+      <span>
+        <span>{first}</span>
+        <span className="ml-1 blur-sm select-none">{remainder}</span>
+      </span>
+    )
+  })()
   const [communications, setCommunications] = useState<Communication[]>([])
   const [commsLoading, setCommsLoading] = useState(false)
   const [selectedCommunication, setSelectedCommunication] = useState<Communication | null>(null)
@@ -1972,7 +2006,7 @@ export function LeadDetailModal({
                   </div>
                   <div>
                     <DialogTitle className="text-2xl font-bold mb-1">
-                      {lead.Nombre} {lead.Apellidos}
+                      {displayLeadName}
                     </DialogTitle>
                     <div className="flex flex-wrap gap-2 text-sm text-muted-foreground items-center">
                       <span className="flex items-center gap-1">
@@ -2880,7 +2914,7 @@ export function LeadDetailModal({
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">
-                      Lead: {lead.Nombre} {lead.Apellidos}
+                      Lead: {displayLeadName}
                     </Label>
                     <p className="text-sm text-muted-foreground">
                       Estado: <span className="font-semibold text-blue-600">{lead.Estado || "Desconocido"}</span>
@@ -3121,18 +3155,18 @@ export function LeadDetailModal({
                     <div className="p-4 bg-gray-50 dark:bg-muted/50 rounded-lg border space-y-2">
                       <div className="flex justify-between">
                         <span className="text-sm font-medium text-muted-foreground">Nombre:</span>
-                        <span className="text-sm font-semibold">{lead.Nombre}</span>
+                    <span className="text-sm font-semibold">{displayLeadName}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-sm font-medium text-muted-foreground">Email:</span>
-                        <span className="text-sm">{lead.Correo}</span>
+                        <span className={cn("text-sm", shouldBlurPii && "blur-sm select-none")}>{lead.Correo}</span>
                       </div>
 
                       <div className="pt-2 border-t space-y-1.5">
                         <div className="text-xs font-semibold text-muted-foreground mb-1">Ingresos por Persona:</div>
                         {avalCalculation.persona1Income > 0 && (
                           <div className="flex justify-between pl-2">
-                            <span className="text-xs text-muted-foreground">{lead.Nombre || "Persona 1"}:</span>
+                            <span className="text-xs text-muted-foreground">{(lead.Nombre || "Persona 1")}:</span>
                             <span className="text-xs font-medium text-green-600 dark:text-green-400">
                               {formatCurrency(avalCalculation.persona1Income)}
                             </span>
@@ -3290,7 +3324,9 @@ export function LeadDetailModal({
               <DialogContent className="sm:max-w-md z-[30000]">
                 <DialogHeader>
                   <DialogTitle>Anotaciones</DialogTitle>
-                  <DialogDescription>{lead ? `Lead: ${lead.Nombre}` : ""}</DialogDescription>
+                  <DialogDescription>
+                    {lead ? `Lead: ${String(lead.Nombre || "").trim().split(/\s+/).filter(Boolean)[0] || "Sin nombre"}` : ""}
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
                   <Textarea
@@ -3370,11 +3406,12 @@ export function LeadDetailModal({
                         <span className="text-muted-foreground">ID:</span> <span className="font-semibold">{String(lead.id)}</span>
                       </div>
                       <div className="text-sm">
-                        <span className="text-muted-foreground">Nombre:</span> <span className="font-semibold">{lead.Nombre || "Sin nombre"}</span>
+                        <span className="text-muted-foreground">Nombre:</span>{" "}
+                        <span className="font-semibold">{displayLeadName}</span>
                       </div>
                       <div className="text-sm max-w-full">
                         <span className="text-muted-foreground">Email:</span>{" "}
-                        <span className="font-semibold break-all">{lead.Correo || "Sin email"}</span>
+                        <span className={cn("font-semibold break-all", shouldBlurPii && "blur-sm select-none")}>{lead.Correo || "Sin email"}</span>
                       </div>
                     </div>
                   )}

@@ -33,7 +33,7 @@ export function ActiveSessions() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       
-      await supabase.auth.signOut({ scope: 'local' } as any)
+      await supabase.auth.signOut({ scope: "local" } as any)
       
       if (user) {
         await logClientEventAction(
@@ -46,7 +46,7 @@ export function ActiveSessions() {
         )
       }
       
-      window.location.href = '/login'
+      window.location.assign("/login")
     } catch {
       toast({ title: 'Error', description: 'No se pudo cerrar sesión', variant: 'destructive' })
     } finally {
@@ -62,6 +62,7 @@ export function ActiveSessions() {
       const { data: { user } } = await supabase.auth.getUser()
       
       await supabase.auth.signOut()
+      await new Promise((r) => setTimeout(r, 250))
       
       if (user) {
         await logClientEventAction(
@@ -75,7 +76,7 @@ export function ActiveSessions() {
       }
       
       toast({ title: 'Sesiones cerradas', description: 'Se cerraron todas las sesiones' })
-      window.location.href = '/login'
+      window.location.assign("/login")
     } catch {
       toast({ title: 'Error', description: 'No se pudo cerrar todas las sesiones', variant: 'destructive' })
     } finally {
@@ -113,4 +114,3 @@ export function ActiveSessions() {
     </>
   )
 }
-

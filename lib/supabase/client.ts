@@ -15,13 +15,31 @@ export function createClient() {
     throw new Error("Missing Supabase environment variables. Please check your environment configuration.")
   }
 
+  const fetchWithRetry: typeof fetch = async (url, options: any = {}) => {
+    const maxAttempts = 2
+    const baseDelayMs = 400
+    let lastErr: any = null
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const hasSignal = Boolean(options?.signal)
+        const signal = hasSignal ? options.signal : AbortSignal.timeout(60_000)
+        return await fetch(url, { ...options, signal })
+      } catch (e: any) {
+        lastErr = e
+        const msg = String(e?.message || "")
+        const isTimeout = msg.toLowerCase().includes("timed out") || e?.name === "TimeoutError"
+        const isNetwork = e?.name === "TypeError" || msg.toLowerCase().includes("fetch failed")
+        if (attempt >= maxAttempts || (!isTimeout && !isNetwork)) throw e
+        await new Promise((r) => setTimeout(r, baseDelayMs * attempt))
+      }
+    }
+    throw lastErr
+  }
+
   client = createBrowserClient(supabaseUrl, supabaseAnonKey, {
     global: {
       fetch: (url, options = {}) => {
-        return fetch(url, {
-          ...options,
-          signal: AbortSignal.timeout(20000),
-        })
+        return fetchWithRetry(url, options)
       },
     },
   })

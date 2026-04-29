@@ -10,6 +10,7 @@ import { APP_VERSION, APP_NAME } from "@/lib/version"
 import { useEffect, useState, useMemo } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 
 interface SidebarProps {
   user: {
@@ -56,7 +57,7 @@ const menuItems = [
 
 export default function Sidebar({ user, collapsed = false, onToggle }: SidebarProps) {
   const pathname = usePathname()
-  const { inmobiliariaId, inmobiliariaNombre, loading, isAdmin, role, setAdminSelectedInmobiliaria } = useInmobiliaria()
+  const { inmobiliariaId, inmobiliariaNombre, loading, isAdmin, role, setAdminSelectedInmobiliaria, demoMode, setDemoMode } = useInmobiliaria()
   const supabase = createClient()
   const [inmos, setInmos] = useState<{ idi: number; Nombre: string }[]>([])
   const router = useRouter()
@@ -293,6 +294,16 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
           <div className="mb-2">
             <p className="text-xs text-muted-foreground">Versión {APP_VERSION}</p>
           </div>
+        )}
+        {!collapsed && (
+          <>
+            {isAdmin && inmobiliariaId === 1 && (
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <span className="text-xs text-muted-foreground">Modo demo</span>
+                <Switch checked={demoMode} onCheckedChange={(v) => setDemoMode(Boolean(v))} />
+              </div>
+            )}
+          </>
         )}
         <div className={cn("flex", collapsed ? "justify-center" : "")}>
            <LogoutButton />

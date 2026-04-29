@@ -9,14 +9,13 @@ import { logClientEventAction } from "@/app/actions/audit"
 
 export default function LogoutButton() {
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
   const supabase = createClient()
 
   const handleLogout = async () => {
     setLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      await supabase.auth.signOut()
+      await supabase.auth.signOut({ scope: "local" } as any)
       
       if (user) {
         await logClientEventAction(
@@ -29,7 +28,7 @@ export default function LogoutButton() {
         )
       }
       
-      window.location.href = "/login"
+      window.location.assign("/login")
     } catch (error) {
       console.error("Error logging out:", error)
     } finally {

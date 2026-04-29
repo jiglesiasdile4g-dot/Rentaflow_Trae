@@ -120,110 +120,98 @@ export async function createVisitProposal(data: {
   let webhookErrorMsg = ""
   try {
     console.log("[createVisitProposal] Fetching details for webhook...")
-    // 1. Fetch details
-    // Leads
-    const { data: leads } = await supabase
-      .from("Clientes")
-      .select("*")
-      .in("id", data.leadIds)
-
-    // Agent
-    let agent = null
-    if (data.agentId) {
-      const { data: agentData } = await supabase
-        .from("Agentes")
+      const { data: leads } = await supabase
+        .from("Clientes")
         .select("*")
-        .eq("idag", data.agentId)
-        .single()
-      agent = agentData
-    }
+        .in("id", data.leadIds)
 
-    // Advertisement
-    let advertisement = null
-    if (data.inmuebleId) {
-      const { data: adData } = await supabase
-        .from("Anuncios")
-        .select("*")
-        .eq("ida", data.inmuebleId)
-        .single()
-      advertisement = adData
-    }
-
-    // Inmobiliaria
-    let inmobiliaria = null
-    if (data.inmobiliariaId) {
-      const { data: inmoData } = await supabase
-        .from("Inmobiliarias")
-        .select("*")
-        .eq("idi", data.inmobiliariaId)
-        .single()
-      inmobiliaria = inmoData
-    }
-
-    // 2. Construct Payload
-    const link = `${data.origin}/oferta-visita/${proposal.id}`
-    
-    // Remove status_history from leads
-    const cleanLeads = (leads || []).map((lead: any) => {
-      const rest = { ...lead }
-      if ("status_history" in rest) delete rest.status_history
-      return rest
-    })
-    
-    const payload = {
-      proposal_id: proposal.id,
-      link: link,
-      visita: {
-        fecha: madridDateStr, // YYYY-MM-DD (Europe/Madrid)
-        hora: data.time,
-        fecha_completa: fechaVisitaIso
-      },
-      agente: agent,
-      inmueble: advertisement || {
-        id: data.inmuebleId,
-        referencia: data.inmuebleRef,
-        direccion: data.inmuebleDireccion
-      },
-      inmobiliaria: inmobiliaria,
-      leads: cleanLeads
-    }
-
-    console.log("[createVisitProposal] Payload constructed. Size:", JSON.stringify(payload).length)
-
-    // 3. Send Webhook
-    // Note: Using production URL 'webhook' instead of 'webhook-test' to ensure it works without manual workflow execution
-    const webhookUrl = "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/visita_grupal"
-    
-    console.log("[createVisitProposal] Sending webhook to:", webhookUrl)
-    
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    })
-
-    console.log("[createVisitProposal] Webhook response status:", response.status)
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("[createVisitProposal] Webhook failed:", response.status, errorText)
-      // Try to parse JSON error message from n8n if possible
-      try {
-        const errorJson = JSON.parse(errorText)
-        webhookErrorMsg = errorJson.message || errorText
-      } catch {
-        webhookErrorMsg = `Status ${response.status}: ${errorText.slice(0, 100)}`
+      let agent = null
+      if (data.agentId) {
+        const { data: agentData } = await supabase
+          .from("Agentes")
+          .select("*")
+          .eq("idag", data.agentId)
+          .single()
+        agent = agentData
       }
-    } else {
-      webhookSuccess = true
-      console.log("[createVisitProposal] Webhook sent successfully.")
-    }
 
+      let advertisement = null
+      if (data.inmuebleId) {
+        const { data: adData } = await supabase
+          .from("Anuncios")
+          .select("*")
+          .eq("ida", data.inmuebleId)
+          .single()
+        advertisement = adData
+      }
+
+      let inmobiliaria = null
+      if (data.inmobiliariaId) {
+        const { data: inmoData } = await supabase
+          .from("Inmobiliarias")
+          .select("*")
+          .eq("idi", data.inmobiliariaId)
+          .single()
+        inmobiliaria = inmoData
+      }
+
+      const link = `${data.origin}/oferta-visita/${proposal.id}`
+
+      const cleanLeads = (leads || []).map((lead: any) => {
+        const rest = { ...lead }
+        if ("status_history" in rest) delete rest.status_history
+        return rest
+      })
+
+      const payload = {
+        proposal_id: proposal.id,
+        link: link,
+        visita: {
+          fecha: madridDateStr,
+          hora: data.time,
+          fecha_completa: fechaVisitaIso
+        },
+        agente: agent,
+        inmueble: advertisement || {
+          id: data.inmuebleId,
+          referencia: data.inmuebleRef,
+          direccion: data.inmuebleDireccion
+        },
+        inmobiliaria: inmobiliaria,
+        leads: cleanLeads
+      }
+
+      console.log("[createVisitProposal] Payload constructed. Size:", JSON.stringify(payload).length)
+
+      const webhookUrl = "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/visita_grupal"
+
+      console.log("[createVisitProposal] Sending webhook to:", webhookUrl)
+
+      const response = await fetch(webhookUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      })
+
+      console.log("[createVisitProposal] Webhook response status:", response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("[createVisitProposal] Webhook failed:", response.status, errorText)
+        try {
+          const errorJson = JSON.parse(errorText)
+          webhookErrorMsg = errorJson.message || errorText
+        } catch {
+          webhookErrorMsg = `Status ${response.status}: ${errorText.slice(0, 100)}`
+        }
+      } else {
+        webhookSuccess = true
+        console.log("[createVisitProposal] Webhook sent successfully.")
+      }
   } catch (err) {
     console.error("[createVisitProposal] Error in webhook processing:", err)
-    // Continue execution to return success for proposal creation
   }
 
   return { success: true, proposalId: proposal.id, webhookSuccess, webhookError: webhookErrorMsg }
@@ -563,9 +551,8 @@ export async function bookVisitProposal(proposalId: string, leadPhone: string) {
       }
   }
 
-  // 5. Send Webhook (Confirmacion Visita)
   try {
-      console.log("[bookVisitProposal] Preparing confirmation webhook...")
+    console.log("[bookVisitProposal] Preparing confirmation webhook...")
 
       // Fetch additional data
       const { data: inmobiliaria } = await supabase
@@ -666,7 +653,7 @@ export async function bookVisitProposal(proposalId: string, leadPhone: string) {
       }
 
   } catch (webhookErr) {
-      console.error("[bookVisitProposal] Error preparing webhook:", webhookErr)
+    console.error("[bookVisitProposal] Error preparing webhook:", webhookErr)
   }
 
   return { success: true, message: "Visita confirmada exitosamente.", leadName: lead?.Nombre || "" }

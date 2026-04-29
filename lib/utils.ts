@@ -51,3 +51,43 @@ export function formatWebhookDate(date: string | Date | number | undefined | nul
 
   return { date: dateStr, time: timeStr }
 }
+
+export function maskEmail(value: any) {
+  const raw = String(value || "").trim()
+  if (!raw) return ""
+  const at = raw.indexOf("@")
+  if (at <= 1) return "***"
+  const local = raw.slice(0, at)
+  const domain = raw.slice(at + 1)
+  const domainParts = domain.split(".").filter(Boolean)
+  const tld = domainParts.length > 1 ? domainParts[domainParts.length - 1] : ""
+  const maskedLocal = local[0] + "***" + local.slice(-1)
+  const maskedDomain = domainParts.length ? "***" + (tld ? "." + tld : "") : "***"
+  return `${maskedLocal}@${maskedDomain}`
+}
+
+export function maskPhone(value: any) {
+  const digits = String(value ?? "").replace(/\D/g, "")
+  if (!digits) return ""
+  const last4 = digits.slice(-4)
+  return `***${last4}`
+}
+
+export function maskName(value: any) {
+  const raw = String(value || "").trim()
+  if (!raw) return ""
+  const parts = raw.split(/\s+/).filter(Boolean)
+  if (parts.length === 1) return parts[0].slice(0, 1) + "***"
+  return parts
+    .map((p, idx) => {
+      if (!p) return ""
+      if (idx === 0) return p.slice(0, 1) + "***"
+      return p.slice(0, 1) + "."
+    })
+    .join(" ")
+}
+
+export function isDemoCookieEnabled(cookieString: string | undefined | null) {
+  const s = String(cookieString || "")
+  return /(?:^|;\s*)rf_demo=1(?:;|$)/.test(s)
+}

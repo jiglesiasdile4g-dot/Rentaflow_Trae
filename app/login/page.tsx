@@ -66,7 +66,8 @@ function LoginContent() {
           data.user?.id,
           {}
         )
-        window.location.href = "/dashboard"
+        try { await supabase.auth.getSession() } catch {}
+        window.location.assign("/dashboard")
       }
     } catch (err: any) {
       setError("Error inesperado al iniciar sesión")

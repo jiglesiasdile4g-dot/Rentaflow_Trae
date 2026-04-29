@@ -21,10 +21,11 @@ import {
 import { Loader2, Calendar as CalendarIcon, Clock, MapPin, User, CheckCircle, AlertCircle, XCircle, RefreshCw } from "lucide-react"
 import { format, addDays, isSameDay } from "date-fns"
 import { es } from "date-fns/locale"
-import { cn, formatWebhookDate } from "@/lib/utils"
+import { cn, formatWebhookDate, isDemoCookieEnabled } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
 import { generateSlotCandidates, isOverlapping } from "@/lib/agenda-utils"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { createClient } from "@/lib/supabase/client"
 
 type Lead = {
   id: string
@@ -65,6 +66,7 @@ function AgendarVisitaContent() {
   const searchParams = useSearchParams()
   const leadId = searchParams.get("leadId")
   const { toast } = useToast()
+  const [demoMode, setDemoMode] = useState(false)
 
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(true)
@@ -94,8 +96,57 @@ function AgendarVisitaContent() {
     const [submittingProposal, setSubmittingProposal] = useState(false)
     const [proposalSuccess, setProposalSuccess] = useState(false)
 
-    // Remove client-side supabase
-  // const supabase = createClient()
+  useEffect(() => {
+    const enabled = isDemoCookieEnabled(document.cookie)
+    if (!enabled) {
+      setDemoMode(false)
+      return
+    }
+
+    const disableCookies = () => {
+      try {
+        const secure = typeof window !== "undefined" && window.location?.protocol === "https:" ? "; Secure" : ""
+        document.cookie = `rf_demo=0; Path=/; Max-Age=31536000; SameSite=Lax${secure}`
+        document.cookie = `rf_demo_since=; Path=/; Max-Age=0; SameSite=Lax${secure}`
+      } catch {}
+    }
+
+    const run = async () => {
+      try {
+        const supabase = createClient()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!user?.email) {
+          disableCookies()
+          setDemoMode(false)
+          return
+        }
+
+        const { data: perfil } = await supabase
+          .from("Perfiles")
+          .select("inmobiliaria, is_admin, role")
+          .ilike("usuario", user.email)
+          .maybeSingle()
+
+        const roleStr = String(perfil?.role || "").toLowerCase()
+        const isAdmin = perfil?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
+        const isIdi1 = Number(perfil?.inmobiliaria) === 1
+
+        if (isAdmin && isIdi1) {
+          setDemoMode(true)
+        } else {
+          disableCookies()
+          setDemoMode(false)
+        }
+      } catch {
+        disableCookies()
+        setDemoMode(false)
+      }
+    }
+
+    run()
+  }, [])
 
   useEffect(() => {
     console.log("AgendarVisitaPage mounted. LeadID:", leadId)
@@ -783,7 +834,8 @@ function AgendarVisitaContent() {
       <div className="bg-slate-900 pt-12 pb-24 px-4 text-center">
         <h1 className="text-3xl font-bold tracking-tight text-white">Agendar Visita</h1>
         <p className="mt-2 text-lg text-slate-300">
-            Hola {lead?.Nombre}, selecciona la fecha y hora para tu visita.
+            Hola{" "}
+            <span className={cn(demoMode && "blur-sm select-none")}>{lead?.Nombre}</span>, selecciona la fecha y hora para tu visita.
         </p>
       </div>
 

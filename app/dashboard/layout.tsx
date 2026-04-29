@@ -16,26 +16,22 @@ export default async function DashboardLayout({
   }
   const supabase = await createClient()
 
-  let user
-  try {
-    const { data: userData, error: userError } = await supabase.auth.getUser()
-    if (userError) throw userError
-    user = userData.user
-  } catch (error) {
-    // If auth fails (e.g. invalid refresh token), redirect to login
-    redirect("/login")
-  }
-
-  if (!user) {
-    redirect("/login")
-  }
+  const { data: sessionData } = await supabase.auth.getSession()
+  const user = sessionData?.session?.user || null
+  if (!user) redirect("/login")
 
   // Fetch user profile to get the name
-  const { data: profile } = await supabase
-    .from("Perfiles")
-    .select("nombre, Nombre")
-    .eq("usuario", user.email)
-    .maybeSingle()
+  let profile: any = null
+  try {
+    const { data } = await supabase
+      .from("Perfiles")
+      .select("nombre, Nombre")
+      .eq("usuario", user.email)
+      .maybeSingle()
+    profile = data
+  } catch {
+    profile = null
+  }
   
   const userName = profile?.nombre || profile?.Nombre || user.email
 

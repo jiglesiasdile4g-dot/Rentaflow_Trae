@@ -10,6 +10,9 @@ interface InmobiliariaContextType {
   isAdmin: boolean
   role: string | null
   userEmail: string | null
+  demoMode: boolean
+  demoSince: string | null
+  setDemoMode: (enabled: boolean) => void
   loading: boolean
   error: string | null
   refreshProfile: () => Promise<void>
@@ -23,6 +26,9 @@ const InmobiliariaContext = createContext<InmobiliariaContextType>({
   isAdmin: false,
   role: null,
   userEmail: null,
+  demoMode: false,
+  demoSince: null,
+  setDemoMode: () => {},
   loading: true,
   error: null,
   refreshProfile: async () => {},
@@ -36,6 +42,8 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
   const [isAdmin, setIsAdmin] = useState<boolean>(false)
   const [role, setRole] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [demoMode, setDemoModeState] = useState<boolean>(false)
+  const [demoSince, setDemoSince] = useState<string | null>(null)
   const [ownInmobiliariaId, setOwnInmobiliariaId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -46,6 +54,52 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
   const sessionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const supabase = createClient()
+
+  useEffect(() => {
+    try {
+      const cookieStr = String(document.cookie || "")
+      const enabled = /(?:^|;\s*)rf_demo=1(?:;|$)/.test(cookieStr)
+      setDemoModeState(enabled)
+      const m = cookieStr.match(/(?:^|;\s*)rf_demo_since=([^;]*)(?:;|$)/)
+      const since = m && m[1] ? decodeURIComponent(m[1]) : null
+      setDemoSince(since || null)
+    } catch {}
+  }, [])
+
+  const setDemoMode = useCallback((enabled: boolean) => {
+    const allowed = isAdmin && inmobiliariaId === 1
+    try {
+      if (enabled && !allowed) {
+        enabled = false
+      }
+      const base = `rf_demo=${enabled ? "1" : "0"}; Path=/; Max-Age=31536000; SameSite=Lax`
+      const secure = typeof window !== "undefined" && window.location?.protocol === "https:" ? "; Secure" : ""
+      document.cookie = base + secure
+      if (enabled) {
+        const nextSince = new Date().toISOString()
+        document.cookie = `rf_demo_since=${encodeURIComponent(nextSince)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`
+        setDemoSince(nextSince)
+      } else {
+        document.cookie = `rf_demo_since=; Path=/; Max-Age=0; SameSite=Lax${secure}`
+        setDemoSince(null)
+      }
+    } catch {}
+    setDemoModeState(Boolean(enabled))
+  }, [inmobiliariaId, isAdmin])
+
+  useEffect(() => {
+    if (loading) return
+    const allowed = isAdmin && inmobiliariaId === 1
+    if (allowed) return
+    if (!demoMode) return
+    try {
+      const secure = typeof window !== "undefined" && window.location?.protocol === "https:" ? "; Secure" : ""
+      document.cookie = `rf_demo=0; Path=/; Max-Age=31536000; SameSite=Lax${secure}`
+      document.cookie = `rf_demo_since=; Path=/; Max-Age=0; SameSite=Lax${secure}`
+    } catch {}
+    setDemoModeState(false)
+    setDemoSince(null)
+  }, [demoMode, inmobiliariaId, isAdmin, loading])
 
   const fetchProfile = useCallback(async () => {
     if (isFetchingRef.current) {
@@ -121,7 +175,8 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
 
       console.log("[v0] Found inmobiliaria ID:", perfil.inmobiliaria)
 
-      const adminFlag = perfil?.is_admin === true
+      const roleStr = String(perfil?.role || "").toLowerCase()
+      const adminFlag = perfil?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
       setIsAdmin(adminFlag)
       // Force "administrador" role if adminFlag is true, ignoring DB role if conflicting
       setRole(adminFlag ? "administrador" : (perfil.role || "agente"))
@@ -170,7 +225,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
   const handleSessionTimeout = useCallback(async () => {
     console.log("[v0] Session timeout - logging out user")
     try {
-      await supabase.auth.signOut()
+      await supabase.auth.signOut({ scope: "local" } as any)
       // Clear any existing timers
       if (inactivityTimerRef.current) {
         clearTimeout(inactivityTimerRef.current)
@@ -310,6 +365,9 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
         isAdmin,
         role,
         userEmail,
+        demoMode: isAdmin && inmobiliariaId === 1 ? demoMode : false,
+        demoSince: isAdmin && inmobiliariaId === 1 ? demoSince : null,
+        setDemoMode,
         loading,
         error,
         refreshProfile: fetchProfile,

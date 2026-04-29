@@ -154,7 +154,7 @@ export default function AgendaPage() {
 
   const { toast } = useToast()
   const supabase = createClient()
-  const { inmobiliariaId, inmobiliariaNombre } = useInmobiliaria()
+  const { inmobiliariaId, inmobiliariaNombre, demoMode } = useInmobiliaria()
 
   // Helper to safely parse dates
   const safeDate = (dateStr: string | null | undefined): Date | null => {
@@ -2338,7 +2338,9 @@ export default function AgendaPage() {
                             <div className="flex items-center gap-2">
                               <User className="h-4 w-4 shrink-0 text-muted-foreground" />
                               <h4 className="font-bold text-lg">
-                                {visit.Nombre} {visit.Apellidos}
+                                <span className={cn(demoMode && "blur-sm select-none")}>
+                                  {visit.Nombre} {visit.Apellidos}
+                                </span>
                               </h4>
                             </div>
                             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -2352,7 +2354,9 @@ export default function AgendaPage() {
                                 title="Llamar"
                               >
                                 <Phone className="h-4 w-4 shrink-0 group-hover:text-primary" />
-                                <span className="font-medium underline decoration-dotted underline-offset-4 group-hover:text-primary">{visit.Telefono}</span>
+                                <span className={cn("font-medium underline decoration-dotted underline-offset-4 group-hover:text-primary", demoMode && "blur-sm select-none")}>
+                                  {visit.Telefono}
+                                </span>
                               </a>
                             )}
                           </div>
@@ -2447,7 +2451,9 @@ export default function AgendaPage() {
                                 <div className="flex items-center gap-2">
                                   <User className={cn("h-4 w-4 shrink-0", completed ? "!text-black" : "text-muted-foreground")} />
                                   <h4 className={cn("font-bold text-lg", completed && "!text-black")}>
-                                    {visit.Nombre} {visit.Apellidos}
+                                    <span className={cn(demoMode && "blur-sm select-none")}>
+                                      {visit.Nombre} {visit.Apellidos}
+                                    </span>
                                   </h4>
                                 </div>
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -2461,7 +2467,9 @@ export default function AgendaPage() {
                                     title="Llamar"
                                   >
                                     <Phone className="h-4 w-4 shrink-0 group-hover:text-primary" />
-                                    <span className="font-medium underline decoration-dotted underline-offset-4 group-hover:text-primary">{visit.Telefono}</span>
+                                    <span className={cn("font-medium underline decoration-dotted underline-offset-4 group-hover:text-primary", demoMode && "blur-sm select-none")}>
+                                      {visit.Telefono}
+                                    </span>
                                   </a>
                                 )}
                                 {(visit.Ingresos !== null && visit.Ingresos !== undefined) && (
@@ -2545,7 +2553,8 @@ export default function AgendaPage() {
           <DialogHeader>
             <DialogTitle>Resumen de la Visita</DialogTitle>
             <DialogDescription>
-              Añade notas o feedback sobre la visita con {selectedVisitToComplete?.Nombre}.
+              Añade notas o feedback sobre la visita con{" "}
+              <span className={cn(demoMode && "blur-sm select-none")}>{selectedVisitToComplete?.Nombre}</span>.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -2588,7 +2597,8 @@ export default function AgendaPage() {
           <DialogHeader>
             <DialogTitle>Confirmar cita</DialogTitle>
             <DialogDescription>
-              Indica la hora exacta para la visita con {visitToConfirm?.Nombre}.
+              Indica la hora exacta para la visita con{" "}
+              <span className={cn(demoMode && "blur-sm select-none")}>{visitToConfirm?.Nombre}</span>.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -2629,7 +2639,8 @@ export default function AgendaPage() {
           <DialogHeader>
             <DialogTitle>Reprogramar Visita</DialogTitle>
             <DialogDescription>
-              Cambia la fecha y hora para la visita con {visitToReschedule?.Nombre}.
+              Cambia la fecha y hora para la visita con{" "}
+              <span className={cn(demoMode && "blur-sm select-none")}>{visitToReschedule?.Nombre}</span>.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -2700,8 +2711,18 @@ export default function AgendaPage() {
             <DialogTitle>{cancelMode === "reject" ? "Rechazar propuesta" : "Cancelar visita"}</DialogTitle>
             <DialogDescription>
               {cancelMode === "reject"
-                ? `¿Estás seguro de que deseas rechazar la propuesta de ${visitToCancel?.Nombre}?`
-                : `¿Estás seguro de que deseas cancelar la visita con ${visitToCancel?.Nombre}? Esta acción eliminará la fecha programada.`}
+                ? (
+                  <span>
+                    ¿Estás seguro de que deseas rechazar la propuesta de{" "}
+                    <span className={cn(demoMode && "blur-sm select-none")}>{visitToCancel?.Nombre}</span>?
+                  </span>
+                )
+                : (
+                  <span>
+                    ¿Estás seguro de que deseas cancelar la visita con{" "}
+                    <span className={cn(demoMode && "blur-sm select-none")}>{visitToCancel?.Nombre}</span>? Esta acción eliminará la fecha programada.
+                  </span>
+                )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

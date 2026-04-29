@@ -1130,12 +1130,18 @@ export default function AnunciosPage() {
     console.log("[v0] Fetching quality metrics for referencia:", anuncioReferencia, "period:", period)
 
     // Get all leads for this anuncio in the timeframe
-    const { data: leads, error: leadsError } = await supabase
+    let leadsQuery = supabase
       .from("Clientes")
       .select('IDC, Estado, "Pedir Aval", created_at, Correo, Fecha_Datos_Completos')
-      .ilike("Inmueble", anuncioReferencia)
+      .ilike("Inmueble", `%${anuncioReferencia}%`)
       .gte("created_at", startDate.toISOString())
       .lte("created_at", endDate.toISOString())
+
+    if (inmobiliariaId) {
+      leadsQuery = leadsQuery.eq("usuario", inmobiliariaId)
+    }
+
+    const { data: leads, error: leadsError } = await leadsQuery
 
     console.log("[v0] Leads found for quality metrics:", leads?.length || 0, "Error:", leadsError)
 
@@ -1163,7 +1169,7 @@ export default function AnunciosPage() {
     // </CHANGE>
 
     return { datosIncompletos, necesidadAval }
-  }, [customDateRange])
+  }, [customDateRange, inmobiliariaId])
 
   const fetchLeadsByPhase = async (
     anuncioRef: string,
@@ -1184,8 +1190,12 @@ export default function AnunciosPage() {
     let query = supabase
       .from("Clientes")
       .select("*, status_history")
-      .ilike("Inmueble", anuncioRef)
+      .ilike("Inmueble", `%${anuncioRef}%`)
       .order("created_at", { ascending: false })
+
+    if (inmobiliariaId) {
+      query = query.eq("usuario", inmobiliariaId)
+    }
 
     if (phase === "total") {
       // No filter
@@ -2219,6 +2229,23 @@ export default function AnunciosPage() {
         // }
 
         let leadsTotales = allLeads.length
+        if (leadsTotales === 0 && inmobiliariaId) {
+          const inmuebleValues = [referencia, anuncio.Direccion].filter(Boolean) as string[]
+          if (inmuebleValues.length > 0) {
+            try {
+              let q = supabase
+                .from("Clientes")
+                .select("id", { count: "exact", head: true })
+                .eq("usuario", inmobiliariaId)
+                .in("Inmueble", inmuebleValues)
+              if (signal) q = q.abortSignal(signal)
+              const { count, error } = await q
+              if (!error && typeof count === "number" && count > 0) {
+                leadsTotales = count
+              }
+            } catch {}
+          }
+        }
 
         const leadsDesdeCorte = allLeads?.filter((lead) => {
           const createdAt = new Date(lead.created_at)
@@ -2526,8 +2553,7 @@ export default function AnunciosPage() {
       }
       run()
       return () => {
-        // Delay abort to allow requests to complete
-        setTimeout(() => controller.abort(), 5000)
+        controller.abort()
       }
     } else {
       console.log("[DEBUG] Skipping fetch calls - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
@@ -3177,14 +3203,14 @@ export default function AnunciosPage() {
         const fetchByRef = supabase
           .from("Clientes")
           .select("*, status_history")
-          .ilike("Inmueble", anuncio.referencia.trim())
+          .ilike("Inmueble", `%${anuncio.referencia.trim()}%`)
   
         let fetchByAddr = null
         if (anuncio.direccion) {
           fetchByAddr = supabase
             .from("Clientes")
             .select("*, status_history")
-            .ilike("Inmueble", anuncio.direccion.trim())
+            .ilike("Inmueble", `%${anuncio.direccion.trim()}%`)
         }
   
         const [resRef, resAddr] = await Promise.all([fetchByRef, fetchByAddr ? fetchByAddr : Promise.resolve({ data: [], error: null })])
@@ -3199,7 +3225,76 @@ export default function AnunciosPage() {
         
         leads = Array.from(allLeadsMap.values())
       }
+      const fetchAllLeadsByPattern = async (pattern: string) => {
+        const pageSize = 1000
+        const collected: any[] = []
+        let from = 0
+        while (true) {
+          let q = supabase
+            .from("Clientes")
+            .select("*, status_history")
+            .ilike("Inmueble", pattern)
+            .order("created_at", { ascending: false })
+            .range(from, from + pageSize - 1)
+
+          if (inmobiliariaId) {
+            q = q.eq("usuario", inmobiliariaId)
+          }
+
+          const { data, error } = await q
+          if (error) throw error
+          const rows = data || []
+          collected.push(...rows)
+          if (rows.length < pageSize) break
+          from += pageSize
+          if (from > 50000) break
+        }
+        return collected
+      }
+
+      try {
+        const ref = anuncio.referencia?.trim()
+        const dir = anuncio.direccion?.trim()
+        const patterns = [
+          ref ? `%${ref}%` : null,
+          dir ? `%${dir}%` : null,
+        ].filter(Boolean) as string[]
+
+        if (patterns.length > 0) {
+          const [byRef, byDir] = await Promise.all([
+            patterns[0] ? fetchAllLeadsByPattern(patterns[0]) : Promise.resolve([]),
+            patterns[1] ? fetchAllLeadsByPattern(patterns[1]) : Promise.resolve([]),
+          ])
+
+          const merged = new Map<any, any>()
+          ;(leads || []).forEach((l) => merged.set(l.IDC, l))
+          ;(byRef || []).forEach((l) => merged.set(l.IDC, l))
+          ;(byDir || []).forEach((l) => merged.set(l.IDC, l))
+          leads = Array.from(merged.values())
+        }
+      } catch (e) {
+        console.log("[v0] Error fetching full lead history for stats:", e)
+      }
+
       console.log(`[v0] Found ${leads.length} leads for stats`)
+
+      let initialStatsPeriod: "hoy" | "esteMes" | "ultimoMes" | "periodoActual" | "esteAno" | "custom" = "esteMes"
+      let earliestLeadDate: Date | null = null
+      if (leads.length > 0) {
+        const minTs = leads.reduce<number | null>((acc, l) => {
+          const t = l?.created_at ? new Date(l.created_at).getTime() : NaN
+          if (!Number.isFinite(t)) return acc
+          if (acc == null) return t
+          return Math.min(acc, t)
+        }, null)
+        if (minTs != null) earliestLeadDate = new Date(minTs)
+      }
+
+      if (anuncio.referencia?.includes("(DEMO)") && earliestLeadDate) {
+        initialStatsPeriod = "custom"
+        setCustomDateRange({ from: earliestLeadDate, to: new Date() })
+      }
+      setStatsPeriod(initialStatsPeriod)
 
       // Filter by activation date to ensure consistency with other metrics
       // if (anuncio.fecha_activacion) {
@@ -3296,6 +3391,9 @@ export default function AnunciosPage() {
       // Usar la fecha de publicación del anuncio como fecha de inicio
       // Si hay fecha de activación, usar esa preferentemente para no mostrar historial vacío irrelevante
       let anuncioCreationDate = anuncio.created_at ? new Date(anuncio.created_at) : new Date(now.getTime() - 30 * dayMs)
+      if (earliestLeadDate && !isNaN(earliestLeadDate.getTime()) && earliestLeadDate < anuncioCreationDate) {
+        anuncioCreationDate = earliestLeadDate
+      }
       
       // DISABLED: This causes empty graphs if activation date is recent. We want to see full history.
       // if (anuncio.fecha_activacion) {
@@ -3342,7 +3440,7 @@ export default function AnunciosPage() {
           visitaCompletada,
           datosCompletos: datosCompletosStrict,
         },
-        statsPeriod: "esteMes", // Initialize with default period for this anuncio
+        statsPeriod: initialStatsPeriod,
         // These are placeholders, actual calculation might be needed or removed
         rebotesAltos: Math.random() > 0.5,
         incompletosAlto: Math.random() > 0.7,
