@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { generateSlotCandidates, AgendaSlot, AdData } from "@/lib/agenda-utils"
-import { getN8nWebhookUrl, getPublicAppBaseUrl } from "@/lib/utils"
+import { getWebhookUrl, getPublicAppBaseUrl } from "@/lib/utils"
 
 function getTimeZoneOffsetMinutes(timeZone: string, date: Date) {
   const dtf = new Intl.DateTimeFormat("en-US", {
@@ -184,7 +184,7 @@ export async function createVisitProposal(data: {
 
       console.log("[createVisitProposal] Payload constructed. Size:", JSON.stringify(payload).length)
 
-      const webhookUrl = getN8nWebhookUrl("visita_grupal")
+      const webhookUrl = getWebhookUrl("visita_grupal")
 
       console.log("[createVisitProposal] Sending webhook to:", webhookUrl)
 
@@ -645,7 +645,7 @@ export async function bookVisitProposal(proposalId: string, leadPhone: string) {
           leads: [cleanLead]
       }
 
-      const webhookUrl = getN8nWebhookUrl("confirmacion_visita")
+      const webhookUrl = getWebhookUrl("confirmacion_visita")
       console.log("[bookVisitProposal] Sending webhook to:", webhookUrl)
 
       if (!webhookUrl) {

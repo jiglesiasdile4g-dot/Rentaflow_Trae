@@ -11,7 +11,7 @@ import { Mail, Plus, RefreshCw, Save } from "lucide-react"
 import { createComunicacion, listComunicaciones, updateComunicacion } from "@/app/actions/comunicaciones"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { getN8nWebhookUrl } from "@/lib/utils"
+import { getWebhookUrl } from "@/lib/utils"
 
 type ColumnDef = {
   name: string
@@ -487,7 +487,7 @@ export default function ComunicacionesPage() {
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), 15000)
     try {
-      const webhookUrl = getN8nWebhookUrl("revision_comunicacion")
+      const webhookUrl = getWebhookUrl("revision_comunicacion")
       if (!webhookUrl) throw new Error("Webhook no configurado")
       const res = await fetch(webhookUrl, {
         method: "POST",

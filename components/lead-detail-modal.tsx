@@ -40,7 +40,7 @@ import {
   Trash2, ExternalLink, RefreshCw, Edit, Plus, Upload, Eye, Download, CalendarIcon, StickyNote, CalendarDays
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { cn, formatDateTime, formatWebhookDate, getN8nWebhookUrl, buildBookingLink } from "@/lib/utils"
+import { cn, formatDateTime, formatWebhookDate, getWebhookUrl, buildBookingLink } from "@/lib/utils"
 import { isDocumentInvalid } from "@/lib/lead-validation"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -1119,7 +1119,7 @@ export function LeadDetailModal({
 
       if (newStatus === "Descartado") {
         try {
-          const webhookUrl = getN8nWebhookUrl("descartado")
+          const webhookUrl = getWebhookUrl("descartado")
           if (webhookUrl) {
             await fetchWithTimeout(webhookUrl, {
               method: "POST",

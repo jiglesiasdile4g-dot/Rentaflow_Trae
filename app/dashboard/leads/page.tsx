@@ -29,7 +29,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Eye, Download, UploadCloud, IdCard, Image as ImageIcon, Tag, Trash, Trash2, StickyNote, Calendar as CalendarIcon, History as HistoryIcon, CalendarDays } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
-import { formatDate, formatDateTime, cn, formatWebhookDate, getN8nWebhookUrl, getPedirAvalWebhookUrl, buildBookingLink } from "@/lib/utils"
+import { formatDate, formatDateTime, cn, formatWebhookDate, getWebhookUrl, buildBookingLink } from "@/lib/utils"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import React from "react" // Imported React
@@ -2375,7 +2375,7 @@ export default function LeadsPage() {
 
   const sendDescartadoWebhook = async (payload: any) => {
     try {
-      const webhookUrl = getN8nWebhookUrl("descartado")
+      const webhookUrl = getWebhookUrl("descartado")
       if (!webhookUrl) return
       await fetch(webhookUrl, {
         method: "POST",
@@ -2389,7 +2389,7 @@ export default function LeadsPage() {
 
   const sendPedirAvalWebhook = async (payload: any) => {
     try {
-      const webhookUrl = getPedirAvalWebhookUrl()
+      const webhookUrl = getWebhookUrl("pedir_aval")
       if (!webhookUrl) return
       await fetch(webhookUrl, {
         method: "POST",

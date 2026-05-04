@@ -26,7 +26,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { cn, formatWebhookDate, getN8nWebhookUrl, buildBookingLink } from "@/lib/utils"
+import { cn, formatWebhookDate, getWebhookUrl, buildBookingLink } from "@/lib/utils"
 import { fixUserPermissionsAction } from "@/app/actions/user-config"
 import { LeadDetailModal } from "@/components/lead-detail-modal"
 import { generateSlotCandidates, isOverlapping, AgendaSlot, AdData } from "@/lib/agenda-utils"
@@ -1195,7 +1195,7 @@ export default function AgendaPage() {
           fecha_de_visita: newDateTimeIso
         }
 
-        const webhookUrl = getN8nWebhookUrl("confirmacion_visita")
+        const webhookUrl = getWebhookUrl("confirmacion_visita")
         if (webhookUrl) {
           await fetch(webhookUrl, {
             method: "POST",

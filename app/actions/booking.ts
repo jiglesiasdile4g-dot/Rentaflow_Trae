@@ -1,7 +1,7 @@
 "use server"
 
 import { createAdminClient } from "@/lib/supabase/admin"
-import { getN8nWebhookUrl } from "@/lib/utils"
+import { getWebhookUrl } from "@/lib/utils"
 
 export async function getBookingData(leadId: string) {
   console.log("[Booking Action] getBookingData called with ID:", leadId)
@@ -311,7 +311,7 @@ export async function cancelVisit(leadId: string) {
       }
 
       try {
-        const webhookUrl = getN8nWebhookUrl("descartado")
+        const webhookUrl = getWebhookUrl("descartado")
         if (!webhookUrl) {
           return { success: true }
         }

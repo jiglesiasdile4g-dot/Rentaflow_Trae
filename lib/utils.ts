@@ -107,16 +107,42 @@ export function buildBookingLink(leadId: string | number) {
 
 export function getN8nWebhookUrl(hook: string) {
   const baseRaw = process.env.NEXT_PUBLIC_N8N_BASE_URL || process.env.N8N_BASE_URL || ""
-  const base = String(baseRaw || "").trim().replace(/\/$/, "")
+  const base = String(baseRaw || "")
+    .trim()
+    .replace(/^[`"']+|[`"']+$/g, "")
+    .trim()
+    .replace(/\/+$/, "")
   if (!base) return null
   const cleaned = String(hook || "").trim().replace(/^\/+/, "").replace(/^webhook\/+/, "")
   if (!cleaned) return null
   return `${base}/webhook/${cleaned}`
 }
 
-export function getPedirAvalWebhookUrl() {
-  const hook = process.env.NEXT_PUBLIC_N8N_PEDIR_AVAL_HOOK || process.env.N8N_PEDIR_AVAL_HOOK || ""
-  const cleaned = String(hook || "").trim()
-  if (!cleaned) return null
-  return getN8nWebhookUrl(cleaned)
+export function getWebhookUrl(name: string) {
+  const key = String(name || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+
+  const urlKey = `NEXT_PUBLIC_N8N_WEBHOOK_${key}`
+  const hookKey = `NEXT_PUBLIC_N8N_HOOK_${key}`
+  const serverUrlKey = `N8N_WEBHOOK_${key}`
+  const serverHookKey = `N8N_HOOK_${key}`
+
+  const urlRaw = process.env[urlKey] || process.env[serverUrlKey] || ""
+  const url = String(urlRaw || "")
+    .trim()
+    .replace(/^[`"']+|[`"']+$/g, "")
+    .trim()
+  if (url) return url
+
+  const hookRaw = process.env[hookKey] || process.env[serverHookKey] || ""
+  const hook = String(hookRaw || "")
+    .trim()
+    .replace(/^[`"']+|[`"']+$/g, "")
+    .trim()
+  if (hook) return getN8nWebhookUrl(hook)
+
+  return getN8nWebhookUrl(name)
 }
