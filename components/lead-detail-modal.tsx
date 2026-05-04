@@ -19,6 +19,51 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
     throw error
   }
 }
+
+function pickLeadPersonalData(lead: any) {
+  const src = lead || {}
+  const data: Record<string, any> = {
+    id: src.id ?? src.ID ?? src.Id ?? null,
+    idc: src.idc ?? src.IDC ?? null,
+    Nombre: src.Nombre ?? null,
+    Apellidos: src.Apellidos ?? null,
+    Correo: src.Correo ?? null,
+    Telefono: src.Telefono ?? null,
+    Pais: src.Pais ?? null,
+    Tipo_Documento: src.Tipo_Documento ?? null,
+    Documento: src.Documento ?? null,
+    Ingresos: src.Ingresos ?? null,
+
+    Persona_2: src.Persona_2 ?? null,
+    tipo2: src.tipo2 ?? null,
+    "Correo 2": src["Correo 2"] ?? null,
+    "Telefono 2": src["Telefono 2"] ?? null,
+    Pais_2: src.Pais_2 ?? null,
+    Tipo_Documento_2: src.Tipo_Documento_2 ?? null,
+    Documento_2: src.Documento_2 ?? null,
+    Ingresos_2: src.Ingresos_2 ?? null,
+
+    Persona_3: src.Persona_3 ?? null,
+    tipo3: src.tipo3 ?? null,
+    "Correo 3": src["Correo 3"] ?? null,
+    "Telefono 3": src["Telefono 3"] ?? null,
+    "Pais 3": src["Pais 3"] ?? null,
+    Tipo_Documento_3: src.Tipo_Documento_3 ?? null,
+    Documento_3: src.Documento_3 ?? null,
+    Ingresos_3: src.Ingresos_3 ?? null,
+
+    Persona_4: src.Persona_4 ?? null,
+    tipo4: src.tipo4 ?? null,
+    "Correo 4": src["Correo 4"] ?? src["Coreo 4"] ?? null,
+    "Telefono 4": src["Telefono 4"] ?? null,
+    "Pais 4": src["Pais 4"] ?? null,
+    "Tipo_Documento 4": src["Tipo_Documento 4"] ?? null,
+    Documento_4: src.Documento_4 ?? null,
+    Ingresos_4: src.Ingresos_4 ?? null,
+  }
+
+  return data
+}
 import { resolveUserName } from "@/app/actions/get-agents"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
@@ -265,6 +310,21 @@ export function LeadDetailModal({
       </span>
     )
   })()
+
+  const renderBlurredIdentityDoc = (value: any) => {
+    const raw = String(value ?? "").trim()
+    if (!raw) return "—"
+    if (!shouldBlurPii) return raw
+    const n = Math.min(5, raw.length)
+    const blurred = raw.slice(0, n)
+    const rest = raw.slice(n)
+    return (
+      <span className="inline-flex items-center">
+        <span className="blur-sm select-none">{blurred}</span>
+        <span>{rest}</span>
+      </span>
+    )
+  }
   const [communications, setCommunications] = useState<Communication[]>([])
   const [commsLoading, setCommsLoading] = useState(false)
   const [selectedCommunication, setSelectedCommunication] = useState<Communication | null>(null)
@@ -1138,6 +1198,44 @@ export function LeadDetailModal({
         }
       }
 
+      if (newStatus === "Pedir Aval") {
+        try {
+          const res = await fetchWithTimeout("/api/peticion-aval", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              leadId: lead.id,
+              lead: pickLeadPersonalData(updatedLead),
+            }),
+          })
+          if (!res.ok) {
+            const t = await res.text().catch(() => "")
+            console.error("peticion_aval failed:", res.status, t.slice(0, 200))
+          }
+        } catch (webhookErr) {
+          console.error("Error calling peticion_aval webhook:", webhookErr)
+        }
+      }
+
+      if (newStatus === "Aceptado") {
+        try {
+          const res = await fetchWithTimeout("/api/aprobado", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              leadId: lead.id,
+              lead: pickLeadPersonalData(updatedLead),
+            }),
+          })
+          if (!res.ok) {
+            const t = await res.text().catch(() => "")
+            console.error("aprobado failed:", res.status, t.slice(0, 200))
+          }
+        } catch (webhookErr) {
+          console.error("Error calling aprobado webhook:", webhookErr)
+        }
+      }
+
       if (shouldCancelVisit) {
         toast({
             title: "Visita cancelada",
@@ -1151,6 +1249,24 @@ export function LeadDetailModal({
       }
     } catch (err) {
       console.error("Error updating lead status:", err)
+      const code = (err as any)?.code
+      const msg = String((err as any)?.message || "")
+      if (code === "42883" && msg.toLowerCase().includes("http_post")) {
+        toast({
+          title: "Error de base de datos",
+          description: "Falta la función http_post en Supabase (trigger). No se pudo cambiar el estado.",
+          variant: "destructive",
+        })
+        return
+      }
+      if (code === "22P02" && msg.toLowerCase().includes("invalid input syntax for type json")) {
+        toast({
+          title: "Error de base de datos",
+          description: "Trigger http_post recibiendo parámetros en formato incorrecto (JSON inválido). No se pudo cambiar el estado.",
+          variant: "destructive",
+        })
+        return
+      }
       toast({
         title: "Error",
         description: "No se pudo actualizar el estado",
@@ -2424,7 +2540,7 @@ export function LeadDetailModal({
                                                     <Input value={getVal(docKey)} onChange={e => setVal(docKey, e.target.value)} className={`h-8 text-xs ${docInvalid ? "border-red-500 text-red-600 focus-visible:ring-red-500" : ""}`} />
                                                 ) : (
                                                     <div className="flex items-center gap-2 text-sm min-h-[2rem]">
-                                                        <span className={`truncate ${docInvalid ? "text-red-600" : ""}`}>{lead[docKey] || "—"}</span>
+                                                        <span className={`truncate ${docInvalid ? "text-red-600" : ""}`}>{renderBlurredIdentityDoc(lead[docKey])}</span>
                                                         {lead[docKey] && <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => copyToClipboard(lead[docKey], "Documento")}><Copy className="h-3 w-3" /></Button>}
                                                     </div>
                                                 )}

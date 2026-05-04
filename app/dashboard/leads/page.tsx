@@ -277,6 +277,21 @@ export default function LeadsPage() {
     )
   }, [])
 
+  const renderBlurredIdentityDoc = useCallback((value: any, blur: boolean) => {
+    const raw = String(value ?? "").trim()
+    if (!raw) return "No proporcionado"
+    if (!blur) return raw
+    const n = Math.min(5, raw.length)
+    const blurred = raw.slice(0, n)
+    const rest = raw.slice(n)
+    return (
+      <span className="inline-flex items-center">
+        <span className="blur-sm select-none">{blurred}</span>
+        <span>{rest}</span>
+      </span>
+    )
+  }, [])
+
   const supabase = createClient()
   const searchParams = useSearchParams()
   const pathname = usePathname()
@@ -2387,6 +2402,88 @@ export default function LeadsPage() {
     }
   }
 
+  const pickLeadPersonalData = (lead: any) => {
+    const src = lead || {}
+    const data: Record<string, any> = {
+      id: src.id ?? src.ID ?? src.Id ?? null,
+      idc: src.idc ?? src.IDC ?? null,
+      Nombre: src.Nombre ?? null,
+      Apellidos: src.Apellidos ?? null,
+      Correo: src.Correo ?? null,
+      Telefono: src.Telefono ?? null,
+      Pais: src.Pais ?? null,
+      Tipo_Documento: src.Tipo_Documento ?? null,
+      Documento: src.Documento ?? null,
+      Ingresos: src.Ingresos ?? null,
+
+      Persona_2: src.Persona_2 ?? null,
+      tipo2: src.tipo2 ?? null,
+      "Correo 2": src["Correo 2"] ?? null,
+      "Telefono 2": src["Telefono 2"] ?? null,
+      Pais_2: src.Pais_2 ?? null,
+      Tipo_Documento_2: src.Tipo_Documento_2 ?? null,
+      Documento_2: src.Documento_2 ?? null,
+      Ingresos_2: src.Ingresos_2 ?? null,
+
+      Persona_3: src.Persona_3 ?? null,
+      tipo3: src.tipo3 ?? null,
+      "Correo 3": src["Correo 3"] ?? null,
+      "Telefono 3": src["Telefono 3"] ?? null,
+      "Pais 3": src["Pais 3"] ?? null,
+      Tipo_Documento_3: src.Tipo_Documento_3 ?? null,
+      Documento_3: src.Documento_3 ?? null,
+      Ingresos_3: src.Ingresos_3 ?? null,
+
+      Persona_4: src.Persona_4 ?? null,
+      tipo4: src.tipo4 ?? null,
+      "Correo 4": src["Correo 4"] ?? src["Coreo 4"] ?? null,
+      "Telefono 4": src["Telefono 4"] ?? null,
+      "Pais 4": src["Pais 4"] ?? null,
+      "Tipo_Documento 4": src["Tipo_Documento 4"] ?? null,
+      Documento_4: src.Documento_4 ?? null,
+      Ingresos_4: src.Ingresos_4 ?? null,
+    }
+    return data
+  }
+
+  const sendPeticionAvalWebhook = async (leadForWebhook: any) => {
+    try {
+      const res = await fetch("/api/peticion-aval", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId: leadForWebhook?.id,
+          lead: pickLeadPersonalData(leadForWebhook),
+        }),
+      })
+      if (!res.ok) {
+        const t = await res.text().catch(() => "")
+        console.error("[v0] peticion_aval failed:", res.status, t.slice(0, 200))
+      }
+    } catch (err) {
+      console.error("[v0] Error calling peticion_aval webhook:", err)
+    }
+  }
+
+  const sendAprobadoWebhook = async (leadForWebhook: any) => {
+    try {
+      const res = await fetch("/api/aprobado", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId: leadForWebhook?.id,
+          lead: pickLeadPersonalData(leadForWebhook),
+        }),
+      })
+      if (!res.ok) {
+        const t = await res.text().catch(() => "")
+        console.error("[v0] aprobado webhook failed:", res.status, t.slice(0, 200))
+      }
+    } catch (err) {
+      console.error("[v0] Error calling aprobado webhook:", err)
+    }
+  }
+
   const executeSingleStatusChange = async () => {
     if (!pendingSingleStatus) return
     const { id, status } = pendingSingleStatus
@@ -2441,6 +2538,12 @@ export default function LeadsPage() {
           timestamp: new Date().toISOString()
         })
       }
+      if (status === "Pedir Aval") {
+        await sendPeticionAvalWebhook(updatedLeadForWebhook)
+      }
+      if (status === "Aceptado") {
+        await sendAprobadoWebhook(updatedLeadForWebhook)
+      }
       // Update local state
       setLeads(leads.map((l) => (String(l.id) === String(id) ? { ...l, ...updateData } : l)))
 
@@ -2459,6 +2562,24 @@ export default function LeadsPage() {
       console.log("[v0] Lead status updated successfully")
     } catch (err) {
       console.error("[v0] Error updating lead status:", err)
+      const code = (err as any)?.code
+      const msg = String((err as any)?.message || "")
+      if (code === "42883" && msg.toLowerCase().includes("http_post")) {
+        toast({
+          title: "Error de base de datos",
+          description: "Falta la función http_post en Supabase (trigger). No se pudo cambiar el estado.",
+          variant: "destructive",
+        })
+        return
+      }
+      if (code === "22P02" && msg.toLowerCase().includes("invalid input syntax for type json")) {
+        toast({
+          title: "Error de base de datos",
+          description: "Trigger http_post recibiendo parámetros en formato incorrecto (JSON inválido). No se pudo cambiar el estado.",
+          variant: "destructive",
+        })
+        return
+      }
       toast({
         title: "Error",
         description: "No se pudo actualizar el estado",
@@ -5444,7 +5565,7 @@ export default function LeadsPage() {
                                   />
                                 ) : (
                                   <div className={`text-sm ${selectedLead.Documento ? "not-italic text-foreground" : "italic text-muted-foreground"} ${isDocumentInvalid(selectedLead.Tipo_Documento, selectedLead.Documento) ? "text-red-600" : ""}`}>
-                                    {selectedLead.Documento || "No proporcionado"}
+                                    {renderBlurredIdentityDoc(selectedLead.Documento, shouldBlurPiiForLead(selectedLead))}
                                   </div>
                                 )}
                                 {(isEditingPersonalInfo
@@ -5747,7 +5868,7 @@ export default function LeadsPage() {
                                   />
                                 ) : (
                                   <div className={`text-sm ${selectedLead.Documento_2 ? "not-italic text-foreground" : "italic text-muted-foreground"} ${isDocumentInvalid(selectedLead.Tipo_Documento_2, selectedLead.Documento_2) ? "text-red-600" : ""}`}>
-                                    {selectedLead.Documento_2 || "No especificado"}
+                                    {renderBlurredIdentityDoc(selectedLead.Documento_2, shouldBlurPiiForLead(selectedLead))}
                                   </div>
                                 )}
                                 {(isEditingPersonalInfo
@@ -6001,7 +6122,7 @@ export default function LeadsPage() {
                                   />
                                 ) : (
                                   <div className={`text-sm ${selectedLead.Documento_4 ? "not-italic text-foreground" : "italic text-muted-foreground"} ${isDocumentInvalid(selectedLead["Tipo_Documento 4"], selectedLead.Documento_4) ? "text-red-600" : ""}`}>
-                                    {selectedLead.Documento_4 || "No especificado"}
+                                    {renderBlurredIdentityDoc(selectedLead.Documento_4, shouldBlurPiiForLead(selectedLead))}
                                   </div>
                                 )}
                                 {(isEditingPersonalInfo
@@ -6253,7 +6374,7 @@ export default function LeadsPage() {
                                   />
                                 ) : (
                                   <div className={`text-sm ${selectedLead.Documento_3 ? "not-italic text-foreground" : "italic text-muted-foreground"} ${isDocumentInvalid(selectedLead.Tipo_Documento_3, selectedLead.Documento_3) ? "text-red-600" : ""}`}>
-                                    {selectedLead.Documento_3 || "No especificado"}
+                                    {renderBlurredIdentityDoc(selectedLead.Documento_3, shouldBlurPiiForLead(selectedLead))}
                                   </div>
                                 )}
                                 {(isEditingPersonalInfo
