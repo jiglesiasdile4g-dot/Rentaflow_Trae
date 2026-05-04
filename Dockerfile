@@ -34,6 +34,7 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.mjs ./
 COPY --from=builder /app/CHANGELOG.md ./CHANGELOG.md
+COPY --from=builder /app/scripts ./scripts
 
 # Exponer el puerto
 EXPOSE 3000
