@@ -3,12 +3,18 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 let client: SupabaseClient | null = null
 
+const sanitizeEnvUrl = (value: string | undefined) => {
+  const raw = String(value || "").trim()
+  const unquoted = raw.replace(/^[`"']+|[`"']+$/g, "").trim()
+  return unquoted.replace(/\/+$/, "")
+}
+
 export function createClient() {
   if (client) {
     return client
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseUrl = sanitizeEnvUrl(process.env.NEXT_PUBLIC_SUPABASE_URL)
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!supabaseUrl || !supabaseAnonKey) {

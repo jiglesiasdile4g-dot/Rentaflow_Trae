@@ -5,7 +5,15 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const id = searchParams.get("id")
 
-  if (!id) return NextResponse.json({ error: "No ID provided" }, { status: 400 })
+  const sanitizeEnvUrl = (value: string | undefined) => {
+    const raw = String(value || "").trim()
+    const unquoted = raw.replace(/^[`"']+|[`"']+$/g, "").trim()
+    return unquoted.replace(/\/+$/, "")
+  }
+  const supabaseUrl = sanitizeEnvUrl(process.env.NEXT_PUBLIC_SUPABASE_URL)
+  if (!id) {
+    return NextResponse.json({ ok: true, supabaseUrl }, { status: 200 })
+  }
 
   const supabase = createAdminClient()
 

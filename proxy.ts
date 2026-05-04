@@ -1,12 +1,18 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
+const sanitizeEnvUrl = (value: string | undefined) => {
+  const raw = String(value || "").trim()
+  const unquoted = raw.replace(/^[`"']+|[`"']+$/g, "").trim()
+  return unquoted.replace(/\/+$/, "")
+}
+
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   })
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseUrl = sanitizeEnvUrl(process.env.NEXT_PUBLIC_SUPABASE_URL)
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   // If environment variables are not set, skip auth check

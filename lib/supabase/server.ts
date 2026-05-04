@@ -1,6 +1,12 @@
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 
+const sanitizeEnvUrl = (value: string | undefined) => {
+  const raw = String(value || "").trim()
+  const unquoted = raw.replace(/^[`"']+|[`"']+$/g, "").trim()
+  return unquoted.replace(/\/+$/, "")
+}
+
 export async function createClient() {
   const cookieStore = await cookies()
 
@@ -25,7 +31,13 @@ export async function createClient() {
     throw lastErr
   }
 
-  return createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+  const supabaseUrl = sanitizeEnvUrl(process.env.NEXT_PUBLIC_SUPABASE_URL)
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error("Missing Supabase environment variables. Please check your environment configuration.")
+  }
+
+  return createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll()
