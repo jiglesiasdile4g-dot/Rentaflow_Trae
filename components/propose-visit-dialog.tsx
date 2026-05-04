@@ -198,7 +198,7 @@ export function ProposeVisitDialog({
                     setAvailableSlots([])
                   }}
                 >
-                  <SelectTrigger className="w-full md:w-[300px]">
+                  <SelectTrigger className="w-full md:w-[300px] bg-background">
                     <SelectValue placeholder="Seleccionar Agente" />
                   </SelectTrigger>
                   <SelectContent>
@@ -216,7 +216,7 @@ export function ProposeVisitDialog({
               {/* Left Column: Dates List */}
             <div className="flex-shrink-0 w-full md:w-[220px] flex flex-col">
               <Label className="mb-2 block">Fechas disponibles</Label>
-              <div className="border rounded-md flex-1 overflow-y-auto p-2 bg-slate-50 space-y-2">
+              <div className="border rounded-md flex-1 overflow-y-auto p-2 bg-muted/30 space-y-2">
                 {loadingDates ? (
                   <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
                     <Loader2 className="h-6 w-6 animate-spin mb-2" />
@@ -259,7 +259,7 @@ export function ProposeVisitDialog({
                 {date ? `Horarios para el ${format(date, "d 'de' MMMM", { locale: es })}` : "Horarios disponibles"}
               </Label>
               
-              <div className="flex-1 border rounded-md p-4 overflow-y-auto bg-slate-50">
+              <div className="flex-1 border rounded-md p-4 overflow-y-auto bg-muted/30">
                 {!date ? (
                   <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-center p-4">
                     <Clock className="h-8 w-8 mb-2 opacity-20" />

@@ -3036,26 +3036,25 @@ export function LeadDetailModal({
                       Lead: {displayLeadName}
                     </Label>
                     <p className="text-sm text-muted-foreground">
-                      Estado: <span className="font-semibold text-blue-600">{lead.Estado || "Desconocido"}</span>
+                      Estado: <span className="font-semibold text-blue-600 dark:text-blue-400">{lead.Estado || "Desconocido"}</span>
                     </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="visit-agent" className="text-sm font-medium">
                       Seleccionar Agente
                     </Label>
-                    <select
-                      id="visit-agent"
-                      value={selectedAgenteId}
-                      onChange={(e) => setSelectedAgenteId(e.target.value)}
-                      className="w-full p-2 border rounded-md text-sm"
-                    >
-                      <option value="">Seleccionar agente</option>
-                      {agentes.map((agente) => (
-                        <option key={agente.idag} value={String(agente.idag)}>
-                          {agente.Nombre || agente.nombre}
-                        </option>
-                      ))}
-                    </select>
+                    <Select value={selectedAgenteId} onValueChange={(value) => setSelectedAgenteId(value)}>
+                      <SelectTrigger id="visit-agent" className="h-10 text-sm bg-background">
+                        <SelectValue placeholder="Seleccionar agente" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {agentes.map((agente) => (
+                          <SelectItem key={agente.idag} value={String(agente.idag)}>
+                            {agente.Nombre || agente.nombre}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="visit-date" className="text-sm font-medium">

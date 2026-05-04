@@ -2045,8 +2045,9 @@ export default function AnunciosPage() {
       const now = new Date()
       const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      // Limit data fetching to 90 days to drastically improve loading performance
-      const maxDataAge = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+      // Lead history affects anuncio stats (emails/whatsapps). Keep leads wider than comms to support anuncios antiguos.
+      const maxLeadDataAge = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
+      const maxCommsDataAge = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
       let cutoffDate = planResetAt ? planResetAt : monthStart
       if (inmobiliariaId) {
@@ -2092,7 +2093,7 @@ export default function AnunciosPage() {
               "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos, Inmueble",
             )
             .eq("usuario", inmobiliariaId)
-            .gte("created_at", maxDataAge.toISOString())
+            .gte("created_at", maxLeadDataAge.toISOString())
         : null
       
       if (qIdi && signal) qIdi = qIdi.abortSignal(signal)
@@ -2106,7 +2107,7 @@ export default function AnunciosPage() {
               "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos, Inmueble",
             )
             .in("Inmueble", propertyIdentifiers)
-            .gte("created_at", maxDataAge.toISOString())
+            .gte("created_at", maxLeadDataAge.toISOString())
         : null
       
       if (qProp && signal) qProp = qProp.abortSignal(signal)
@@ -2143,7 +2144,7 @@ export default function AnunciosPage() {
         }
         for (const chunk of chunks) {
           if (signal?.aborted) break
-          let q = supabase.from("Correos").select("id, created_at, to, Tipo").in("to", chunk).gte("created_at", maxDataAge.toISOString())
+          let q = supabase.from("Correos").select("id, created_at, to, Tipo").in("to", chunk).gte("created_at", maxCommsDataAge.toISOString())
           if (signal) q = q.abortSignal(signal)
           const { data, error } = await q
           if (error) {
@@ -2168,7 +2169,7 @@ export default function AnunciosPage() {
         }
         for (const chunk of chunks) {
           if (signal?.aborted) break
-          let q = supabase.from("Whatsapp").select("id, created_at, IDC, Tipo").in("IDC", chunk).gte("created_at", maxDataAge.toISOString())
+          let q = supabase.from("Whatsapp").select("id, created_at, IDC, Tipo").in("IDC", chunk).gte("created_at", maxCommsDataAge.toISOString())
           if (signal) q = q.abortSignal(signal)
           const { data, error } = await q
           if (error) {
@@ -3313,48 +3314,75 @@ export default function AnunciosPage() {
       let currentEmails: any[] = []
       let currentWhatsapps: any[] = []
 
+      const leadEmails = leads.map((l) => l.Correo).filter(Boolean)
+      const leadIDCs = leads.map((l) => l.IDC).filter((id: any) => Number.isFinite(id))
+
       if (rawDataRef.current) {
-        // Use raw data
-        const leadEmails = leads.map((l) => l.Correo).filter(Boolean)
-        const leadIDCs = leads.map((l) => l.IDC).filter((id: any) => Number.isFinite(id))
-        
-        // Filter emails and whatsapps to only include those from current anuncio leads
         currentEmails = rawDataRef.current.emails?.filter((e) => leadEmails.includes(e.to)) || []
         currentWhatsapps = rawDataRef.current.whatsapp?.filter((w) => leadIDCs.includes(w.IDC)) || []
-      } else {
-        // Fetch from DB
-        const leadEmails = leads.map((l) => l.Correo).filter(Boolean)
-        const leadIDCs = leads.map((l) => l.IDC).filter((id: any) => Number.isFinite(id))
+      }
+
+      try {
+        const now = new Date()
+        const commsSince = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
 
         if (leadEmails.length > 0) {
-           const chunkSize = 50
-           const emailChunks = []
-           for (let i = 0; i < leadEmails.length; i += chunkSize) {
-             emailChunks.push(leadEmails.slice(i, i + chunkSize))
-           }
-           
-           const emailPromises = emailChunks.map((chunk) => 
-             supabase.from('Correos').select('to, Tipo, created_at').in('to', chunk)
-           )
-           
-           const emailResults = await Promise.all(emailPromises)
-           currentEmails = emailResults.flatMap((r) => r.data || [])
+          const chunkSize = 20
+          const emailChunks: any[] = []
+          for (let i = 0; i < leadEmails.length; i += chunkSize) {
+            emailChunks.push(leadEmails.slice(i, i + chunkSize))
+          }
+
+          const emailResults = await Promise.all(
+            emailChunks.map((chunk) =>
+              supabase
+                .from("Correos")
+                .select("id, to, Tipo, created_at")
+                .in("to", chunk)
+                .gte("created_at", commsSince.toISOString())
+            )
+          )
+
+          const fetchedEmails = emailResults.flatMap((r) => r.data || [])
+          const seen = new Set<string>()
+          const merged = [...(currentEmails || []), ...(fetchedEmails || [])].filter((e: any) => {
+            const k = String(e?.id ?? `${e?.to}-${e?.Tipo}-${e?.created_at}`)
+            if (seen.has(k)) return false
+            seen.add(k)
+            return true
+          })
+          currentEmails = merged
         }
 
         if (leadIDCs.length > 0) {
-           const chunkSize = 50
-           const idcChunks = []
-           for (let i = 0; i < leadIDCs.length; i += chunkSize) {
-             idcChunks.push(leadIDCs.slice(i, i + chunkSize))
-           }
-           
-           const waPromises = idcChunks.map((chunk) => 
-             supabase.from('Whatsapp').select('IDC, Tipo, created_at').in('IDC', chunk)
-           )
-           
-           const waResults = await Promise.all(waPromises)
-           currentWhatsapps = waResults.flatMap((r) => r.data || [])
+          const chunkSize = 20
+          const idcChunks: any[] = []
+          for (let i = 0; i < leadIDCs.length; i += chunkSize) {
+            idcChunks.push(leadIDCs.slice(i, i + chunkSize))
+          }
+
+          const waResults = await Promise.all(
+            idcChunks.map((chunk) =>
+              supabase
+                .from("Whatsapp")
+                .select("id, IDC, Tipo, created_at")
+                .in("IDC", chunk)
+                .gte("created_at", commsSince.toISOString())
+            )
+          )
+
+          const fetchedWhatsapps = waResults.flatMap((r) => r.data || [])
+          const seen = new Set<string>()
+          const merged = [...(currentWhatsapps || []), ...(fetchedWhatsapps || [])].filter((w: any) => {
+            const k = String(w?.id ?? `${w?.IDC}-${w?.Tipo}-${w?.created_at}`)
+            if (seen.has(k)) return false
+            seen.add(k)
+            return true
+          })
+          currentWhatsapps = merged
         }
+      } catch (e) {
+        console.log("[v0] Error fetching communications for stats:", e)
       }
 
       setStatsEmails(currentEmails)
