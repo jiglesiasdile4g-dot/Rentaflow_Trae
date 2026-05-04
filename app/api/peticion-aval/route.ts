@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 export const runtime = "nodejs"
 
 const DEFAULT_PETICION_AVAL_URL = "https://acesalquiler-n8n.ibdvf1.easypanel.host/webhook/peticion_aval"
+const DEFAULT_ORIGIN = "https://acesalquiler-n8n.ibdvf1.easypanel.host"
 
 function sanitizeUrl(raw: any) {
   return String(raw || "")
@@ -47,6 +48,20 @@ function toSafeUrlInfo(rawUrl: string) {
   }
 }
 
+function resolvePeticionAvalUrl(envUrlRaw: string) {
+  const envUrl = sanitizeUrl(envUrlRaw)
+  if (!envUrl) {
+    return { url: DEFAULT_PETICION_AVAL_URL, resolvedFrom: "default" as const, envIgnored: false }
+  }
+
+  const info = toSafeUrlInfo(envUrl)
+  if (info.origin && info.origin !== DEFAULT_ORIGIN) {
+    return { url: DEFAULT_PETICION_AVAL_URL, resolvedFrom: "default" as const, envIgnored: true }
+  }
+
+  return { url: envUrl, resolvedFrom: "env" as const, envIgnored: false }
+}
+
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 8000): Promise<Response> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
@@ -77,7 +92,8 @@ export async function POST(req: Request) {
         ""
     )
 
-    const webhookUrl = sanitizeUrl(envUrl) || DEFAULT_PETICION_AVAL_URL
+    const resolved = resolvePeticionAvalUrl(envUrl)
+    const webhookUrl = resolved.url
     const urlInfo = toSafeUrlInfo(webhookUrl)
     const authHeaderValue = buildAuthHeaderValue()
     const authSent = Boolean(authHeaderValue)
@@ -100,16 +116,46 @@ export async function POST(req: Request) {
         const text = await res.text().catch(() => "")
         console.error(`[peticion-aval] Webhook failed with status ${res.status}:`, text.slice(0, 200))
         return NextResponse.json(
-          { ok: false, status: res.status, webhook: urlInfo, authSent, response: text.slice(0, 300) },
+          {
+            ok: false,
+            status: res.status,
+            webhook: urlInfo,
+            webhookOrigin: urlInfo.origin,
+            webhookPathname: urlInfo.pathname,
+            resolvedFrom: resolved.resolvedFrom,
+            envIgnored: resolved.envIgnored,
+            authSent,
+            response: text.slice(0, 300),
+          },
           { status: 502 }
         )
       }
     } catch (err) {
       console.error("[peticion-aval] Error calling webhook:", err)
-      return NextResponse.json({ ok: false, error: "webhook_error", webhook: urlInfo, authSent }, { status: 502 })
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "webhook_error",
+          webhook: urlInfo,
+          webhookOrigin: urlInfo.origin,
+          webhookPathname: urlInfo.pathname,
+          resolvedFrom: resolved.resolvedFrom,
+          envIgnored: resolved.envIgnored,
+          authSent,
+        },
+        { status: 502 }
+      )
     }
 
-    return NextResponse.json({ ok: true, webhook: urlInfo, authSent })
+    return NextResponse.json({
+      ok: true,
+      webhook: urlInfo,
+      webhookOrigin: urlInfo.origin,
+      webhookPathname: urlInfo.pathname,
+      resolvedFrom: resolved.resolvedFrom,
+      envIgnored: resolved.envIgnored,
+      authSent,
+    })
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "error" }, { status: 500 })
   }
