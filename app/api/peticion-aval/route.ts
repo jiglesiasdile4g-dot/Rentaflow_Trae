@@ -11,6 +11,36 @@ function sanitizeUrl(raw: any) {
     .trim()
 }
 
+function sanitizeHeader(raw: any) {
+  return String(raw || "")
+    .trim()
+    .replace(/^[`"']+|[`"']+$/g, "")
+    .trim()
+}
+
+function buildAuthHeaderValue() {
+  const direct =
+    sanitizeHeader(process.env.N8N_WEBHOOK_PETICION_AVAL_AUTH_HEADER) ||
+    sanitizeHeader(process.env.PETICION_AVAL_WEBHOOK_AUTH_HEADER) ||
+    sanitizeHeader(process.env.N8N_WEBHOOK_AUTH_HEADER) ||
+    ""
+  if (direct) return direct
+
+  const user =
+    sanitizeHeader(process.env.N8N_WEBHOOK_PETICION_AVAL_BASIC_USER) ||
+    sanitizeHeader(process.env.PETICION_AVAL_WEBHOOK_BASIC_USER) ||
+    sanitizeHeader(process.env.N8N_WEBHOOK_BASIC_USER) ||
+    ""
+  const pass =
+    sanitizeHeader(process.env.N8N_WEBHOOK_PETICION_AVAL_BASIC_PASSWORD) ||
+    sanitizeHeader(process.env.PETICION_AVAL_WEBHOOK_BASIC_PASSWORD) ||
+    sanitizeHeader(process.env.N8N_WEBHOOK_BASIC_PASSWORD) ||
+    ""
+
+  if (user && pass) return `Basic ${Buffer.from(`${user}:${pass}`).toString("base64")}`
+  return ""
+}
+
 function toSafeUrlInfo(rawUrl: string) {
   try {
     const u = new URL(rawUrl)
@@ -52,13 +82,17 @@ export async function POST(req: Request) {
 
     const webhookUrl = sanitizeUrl(envUrl) || DEFAULT_PETICION_AVAL_URL
     const urlInfo = toSafeUrlInfo(webhookUrl)
+    const authHeaderValue = buildAuthHeaderValue()
 
     try {
       const res = await fetchWithTimeout(
         webhookUrl,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(authHeaderValue ? { Authorization: authHeaderValue } : {}),
+          },
           body: JSON.stringify(body),
         },
         12000
