@@ -64,6 +64,51 @@ function pickLeadPersonalData(lead: any) {
 
   return data
 }
+
+function pickLeadInmuebleData(lead: any, advertisements: any[]) {
+  const leadInmueble = String(lead?.Inmueble || "").trim()
+  const norm = leadInmueble.toLowerCase()
+  const ads = Array.isArray(advertisements) ? advertisements : []
+
+  const ad =
+    norm && ads.length > 0
+      ? ads.find((a) => {
+          const ref = String(a?.Referencia || "").trim().toLowerCase()
+          const dir = String(a?.Direccion || "").trim().toLowerCase()
+          const id = String(a?.ida || "").trim().toLowerCase()
+
+          return (
+            (ref && ref === norm) ||
+            (dir && dir === norm) ||
+            (id && id === norm) ||
+            (dir && norm.includes(dir)) ||
+            (ref && norm.includes(ref)) ||
+            (dir && dir.includes(norm)) ||
+            (ref && ref.includes(norm))
+          )
+        })
+      : null
+
+  if (ad) {
+    return {
+      ida: ad.ida ?? null,
+      Referencia: ad.Referencia ?? null,
+      Direccion: ad.Direccion ?? null,
+      Precio: ad.Precio ?? null,
+      Portal: ad.Portal ?? null,
+      Pais_Aval: ad.Pais_Aval ?? null,
+    }
+  }
+
+  return {
+    ida: null,
+    Referencia: leadInmueble || null,
+    Direccion: null,
+    Precio: null,
+    Portal: null,
+    Pais_Aval: null,
+  }
+}
 import { resolveUserName } from "@/app/actions/get-agents"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
@@ -1200,12 +1245,25 @@ export function LeadDetailModal({
 
       if (newStatus === "Pedir Aval") {
         try {
+          const targetInmoId = inmobiliariaId || (updatedLead as any)?.idi || (updatedLead as any)?.usuario || null
+          let inmobiliaria: any = null
+          if (targetInmoId) {
+            const { data, error } = await supabase.from("Inmobiliarias").select("*").eq("idi", targetInmoId).maybeSingle()
+            if (!error) {
+              inmobiliaria = data || null
+            }
+          }
+
           const res = await fetchWithTimeout("/api/peticion-aval", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               leadId: lead.id,
               lead: pickLeadPersonalData(updatedLead),
+              inmueble: pickLeadInmuebleData(updatedLead, advertisements),
+              inmobiliariaId: targetInmoId,
+              inmobiliariaNombre: inmobiliariaNombre || null,
+              inmobiliaria,
             }),
           })
           if (!res.ok) {

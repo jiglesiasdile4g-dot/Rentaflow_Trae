@@ -4,39 +4,14 @@ export const runtime = "nodejs"
 
 const DEFAULT_PETICION_AVAL_URL = "https://acesalquiler-n8n.ibdvf1.easypanel.host/webhook/peticion_aval"
 const DEFAULT_ORIGIN = "https://acesalquiler-n8n.ibdvf1.easypanel.host"
+const N8N_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 
 function sanitizeUrl(raw: any) {
   return String(raw || "")
     .trim()
     .replace(/^[`"']+|[`"']+$/g, "")
     .trim()
-}
-
-function sanitizeHeader(raw: any) {
-  return String(raw || "")
-    .trim()
-    .replace(/^[`"']+|[`"']+$/g, "")
-    .trim()
-}
-
-function buildAuthHeaderValue() {
-  const direct =
-    sanitizeHeader(process.env.N8N_WEBHOOK_PETICION_AVAL_AUTH_HEADER) ||
-    sanitizeHeader(process.env.PETICION_AVAL_WEBHOOK_AUTH_HEADER) ||
-    ""
-  if (direct) return direct
-
-  const user =
-    sanitizeHeader(process.env.N8N_WEBHOOK_PETICION_AVAL_BASIC_USER) ||
-    sanitizeHeader(process.env.PETICION_AVAL_WEBHOOK_BASIC_USER) ||
-    ""
-  const pass =
-    sanitizeHeader(process.env.N8N_WEBHOOK_PETICION_AVAL_BASIC_PASSWORD) ||
-    sanitizeHeader(process.env.PETICION_AVAL_WEBHOOK_BASIC_PASSWORD) ||
-    ""
-
-  if (user && pass) return `Basic ${Buffer.from(`${user}:${pass}`).toString("base64")}`
-  return ""
 }
 
 function toSafeUrlInfo(rawUrl: string) {
@@ -95,8 +70,7 @@ export async function POST(req: Request) {
     const resolved = resolvePeticionAvalUrl(envUrl)
     const webhookUrl = resolved.url
     const urlInfo = toSafeUrlInfo(webhookUrl)
-    const authHeaderValue = buildAuthHeaderValue()
-    const authSent = Boolean(authHeaderValue)
+    const authSent = false
 
     try {
       const res = await fetchWithTimeout(
@@ -105,7 +79,8 @@ export async function POST(req: Request) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(authHeaderValue ? { Authorization: authHeaderValue } : {}),
+            Accept: "*/*",
+            "User-Agent": N8N_USER_AGENT,
           },
           body: JSON.stringify(body),
         },

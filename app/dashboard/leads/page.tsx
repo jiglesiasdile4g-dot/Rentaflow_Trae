@@ -2446,14 +2446,70 @@ export default function LeadsPage() {
     return data
   }
 
+  const pickLeadInmuebleData = (lead: any) => {
+    const leadInmueble = String(lead?.Inmueble || "").trim()
+    const norm = leadInmueble.toLowerCase()
+    const ad =
+      norm && advertisements && advertisements.length > 0
+        ? advertisements.find((a) => {
+            const ref = String(a.Referencia || "").trim().toLowerCase()
+            const dir = String(a.Direccion || "").trim().toLowerCase()
+            const id = String((a as any).ida || "").trim().toLowerCase()
+
+            return (
+              (ref && ref === norm) ||
+              (dir && dir === norm) ||
+              (id && id === norm) ||
+              (dir && norm.includes(dir)) ||
+              (ref && norm.includes(ref)) ||
+              (dir && dir.includes(norm)) ||
+              (ref && ref.includes(norm))
+            )
+          })
+        : null
+
+    if (ad) {
+      return {
+        ida: (ad as any).ida ?? null,
+        Referencia: ad.Referencia ?? null,
+        Direccion: ad.Direccion ?? null,
+        Precio: ad.Precio ?? null,
+        Portal: ad.Portal ?? null,
+        Pais_Aval: ad.Pais_Aval ?? null,
+      }
+    }
+
+    return {
+      ida: null,
+      Referencia: leadInmueble || null,
+      Direccion: null,
+      Precio: null,
+      Portal: null,
+      Pais_Aval: null,
+    }
+  }
+
   const sendPeticionAvalWebhook = async (leadForWebhook: any) => {
     try {
+      const targetInmoId = inmobiliariaId || leadForWebhook?.idi || leadForWebhook?.usuario || null
+      let inmobiliaria: any = null
+      if (targetInmoId) {
+        const { data, error } = await supabase.from("Inmobiliarias").select("*").eq("idi", targetInmoId).maybeSingle()
+        if (!error) {
+          inmobiliaria = data || null
+        }
+      }
+
       const res = await fetch("/api/peticion-aval", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           leadId: leadForWebhook?.id,
           lead: pickLeadPersonalData(leadForWebhook),
+          inmueble: pickLeadInmuebleData(leadForWebhook),
+          inmobiliariaId: targetInmoId,
+          inmobiliariaNombre: inmobiliariaNombre || null,
+          inmobiliaria,
         }),
       })
       if (!res.ok) {

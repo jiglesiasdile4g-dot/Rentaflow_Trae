@@ -3,6 +3,8 @@ import { NextResponse } from "next/server"
 export const runtime = "nodejs"
 
 const DEFAULT_APROBADO_URL = "https://acesalquiler-n8n.ibdvf1.easypanel.host/webhook/aprobado"
+const N8N_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 8000): Promise<Response> {
   const controller = new AbortController()
@@ -40,7 +42,11 @@ export async function POST(req: Request) {
         webhookUrl,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "*/*",
+            "User-Agent": N8N_USER_AGENT,
+          },
           body: JSON.stringify(body),
         },
         12000
