@@ -185,9 +185,14 @@ function FormularioInner() {
         if (idcParam) params.set("idc", idcParam)
         if (idParam) params.set("id", idParam)
         if (idiParam) params.set("idi", idiParam)
-        const res = await fetch(`/api/formulario/prefill?${params.toString()}`, {
+        let res = await fetch(`/api/formulario/prefill?${params.toString()}`, {
           signal: controller.signal,
         })
+        if (res.status === 404) {
+          res = await fetch(`/api/formulario?${params.toString()}`, {
+            signal: controller.signal,
+          })
+        }
         if (!res.ok) return
         const json = await res.json().catch(() => null)
         const lead = json?.lead

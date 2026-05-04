@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server"
+import { GET as prefillGet } from "./prefill/route"
 
 export const runtime = "nodejs"
+
+export async function GET(req: Request) {
+  return prefillGet(req)
+}
 
 export async function POST(req: Request) {
   try {
