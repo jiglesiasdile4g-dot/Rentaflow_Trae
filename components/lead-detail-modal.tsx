@@ -2491,7 +2491,7 @@ export function LeadDetailModal({
                                                     <Input value={getVal(emailKey)} onChange={e => setVal(emailKey, e.target.value)} className="h-8 text-xs" />
                                                 ) : (
                                                     <div className="flex items-center gap-2 text-sm min-h-[2rem]">
-                                                        <span className="truncate">{lead[emailKey] || "—"}</span>
+                                                        <span className={cn("truncate", shouldBlurPii && "blur-sm select-none")}>{lead[emailKey] || "—"}</span>
                                                         {lead[emailKey] && <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => copyToClipboard(lead[emailKey], "Email")}><Copy className="h-3 w-3" /></Button>}
                                                     </div>
                                                 )}
@@ -2502,7 +2502,7 @@ export function LeadDetailModal({
                                                     <Input value={getVal(phoneKey)} onChange={e => setVal(phoneKey, e.target.value)} className="h-8 text-xs" />
                                                 ) : (
                                                     <div className="flex items-center gap-2 text-sm min-h-[2rem]">
-                                                        <span className="truncate">{lead[phoneKey] || "—"}</span>
+                                                        <span className={cn("truncate", shouldBlurPii && "blur-sm select-none")}>{lead[phoneKey] || "—"}</span>
                                                         {lead[phoneKey] && <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => copyToClipboard(lead[phoneKey], "Teléfono")}><Copy className="h-3 w-3" /></Button>}
                                                     </div>
                                                 )}
