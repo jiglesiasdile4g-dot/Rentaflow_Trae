@@ -29,7 +29,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Eye, Download, UploadCloud, IdCard, Image as ImageIcon, Tag, Trash, Trash2, StickyNote, Calendar as CalendarIcon, History as HistoryIcon, CalendarDays } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
-import { formatDate, formatDateTime, cn, formatWebhookDate, getN8nWebhookUrl, buildBookingLink } from "@/lib/utils"
+import { formatDate, formatDateTime, cn, formatWebhookDate, getN8nWebhookUrl, getPedirAvalWebhookUrl, buildBookingLink } from "@/lib/utils"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import React from "react" // Imported React
@@ -2387,6 +2387,20 @@ export default function LeadsPage() {
     }
   }
 
+  const sendPedirAvalWebhook = async (payload: any) => {
+    try {
+      const webhookUrl = getPedirAvalWebhookUrl()
+      if (!webhookUrl) return
+      await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+    } catch (err) {
+      console.error("[v0] Error calling pedir aval webhook:", err)
+    }
+  }
+
   const executeSingleStatusChange = async () => {
     if (!pendingSingleStatus) return
     const { id, status } = pendingSingleStatus
@@ -2433,6 +2447,15 @@ export default function LeadsPage() {
         await sendDescartadoWebhook({
           leadId: id,
           Estado: "Descartado",
+          lead: updatedLeadForWebhook,
+          source: "leads-single",
+          timestamp: new Date().toISOString()
+        })
+      }
+      if (status === "Pedir Aval") {
+        await sendPedirAvalWebhook({
+          leadId: id,
+          Estado: "Pedir Aval",
           lead: updatedLeadForWebhook,
           source: "leads-single",
           timestamp: new Date().toISOString()

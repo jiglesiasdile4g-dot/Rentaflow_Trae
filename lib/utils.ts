@@ -113,3 +113,10 @@ export function getN8nWebhookUrl(hook: string) {
   if (!cleaned) return null
   return `${base}/webhook/${cleaned}`
 }
+
+export function getPedirAvalWebhookUrl() {
+  const hook = process.env.NEXT_PUBLIC_N8N_PEDIR_AVAL_HOOK || process.env.N8N_PEDIR_AVAL_HOOK || ""
+  const cleaned = String(hook || "").trim()
+  if (!cleaned) return null
+  return getN8nWebhookUrl(cleaned)
+}
