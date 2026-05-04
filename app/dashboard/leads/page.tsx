@@ -2387,20 +2387,6 @@ export default function LeadsPage() {
     }
   }
 
-  const sendPedirAvalWebhook = async (payload: any) => {
-    try {
-      const webhookUrl = getWebhookUrl("pedir_aval")
-      if (!webhookUrl) return
-      await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      })
-    } catch (err) {
-      console.error("[v0] Error calling pedir aval webhook:", err)
-    }
-  }
-
   const executeSingleStatusChange = async () => {
     if (!pendingSingleStatus) return
     const { id, status } = pendingSingleStatus
@@ -2413,6 +2399,9 @@ export default function LeadsPage() {
       }
 
       const updateData: any = { Estado: status }
+      if (status === "Pedir Aval") {
+        updateData["Pedir Aval"] = true
+      }
 
       // History tracking
       const historyEntry: LeadHistoryEntry = {
@@ -2452,16 +2441,6 @@ export default function LeadsPage() {
           timestamp: new Date().toISOString()
         })
       }
-      if (status === "Pedir Aval") {
-        await sendPedirAvalWebhook({
-          leadId: id,
-          Estado: "Pedir Aval",
-          lead: updatedLeadForWebhook,
-          source: "leads-single",
-          timestamp: new Date().toISOString()
-        })
-      }
-
       // Update local state
       setLeads(leads.map((l) => (String(l.id) === String(id) ? { ...l, ...updateData } : l)))
 
