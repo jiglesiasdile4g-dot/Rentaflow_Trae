@@ -5,6 +5,22 @@ export const runtime = "nodejs"
 
 const DEFAULT_PETICION_AVAL_URL = "https://acesalquiler-n8n.ibdvf1.easypanel.host/webhook/peticion_aval"
 
+function sanitizeUrl(raw: any) {
+  return String(raw || "")
+    .trim()
+    .replace(/^[`"']+|[`"']+$/g, "")
+    .trim()
+}
+
+function toSafeUrlInfo(rawUrl: string) {
+  try {
+    const u = new URL(rawUrl)
+    return { origin: u.origin, pathname: u.pathname }
+  } catch {
+    return { origin: null, pathname: null }
+  }
+}
+
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 8000): Promise<Response> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
@@ -45,14 +61,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "payload_invalido" }, { status: 400 })
     }
 
-    const envUrl =
+    const envUrl = sanitizeUrl(
       process.env.N8N_WEBHOOK_PETICION_AVAL ||
-      process.env.NEXT_PUBLIC_N8N_WEBHOOK_PETICION_AVAL ||
-      process.env.PETICION_AVAL_WEBHOOK_URL ||
-      process.env.NEXT_PUBLIC_PETICION_AVAL_WEBHOOK_URL ||
-      ""
+        process.env.NEXT_PUBLIC_N8N_WEBHOOK_PETICION_AVAL ||
+        process.env.PETICION_AVAL_WEBHOOK_URL ||
+        process.env.NEXT_PUBLIC_PETICION_AVAL_WEBHOOK_URL ||
+        ""
+    )
 
-    const webhookUrl = String(envUrl || "").trim() || getWebhookUrl("peticion_aval") || DEFAULT_PETICION_AVAL_URL
+    const webhookUrl = sanitizeUrl(envUrl) || sanitizeUrl(getWebhookUrl("peticion_aval")) || DEFAULT_PETICION_AVAL_URL
+    const urlInfo = toSafeUrlInfo(webhookUrl)
 
     if (!isPeticionAvalConfigured() && webhookUrl !== DEFAULT_PETICION_AVAL_URL) {
       return NextResponse.json({ ok: true, skipped: true, reason: "peticion_aval_not_configured" })
@@ -72,14 +90,17 @@ export async function POST(req: Request) {
       if (!res.ok) {
         const text = await res.text().catch(() => "")
         console.error(`[peticion-aval] Webhook failed with status ${res.status}:`, text.slice(0, 200))
-        return NextResponse.json({ ok: false, status: res.status })
+        return NextResponse.json(
+          { ok: false, status: res.status, webhook: urlInfo, response: text.slice(0, 300) },
+          { status: 502 }
+        )
       }
     } catch (err) {
       console.error("[peticion-aval] Error calling webhook:", err)
-      return NextResponse.json({ ok: false, error: "webhook_error" }, { status: 502 })
+      return NextResponse.json({ ok: false, error: "webhook_error", webhook: urlInfo }, { status: 502 })
     }
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, webhook: urlInfo })
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "error" }, { status: 500 })
   }

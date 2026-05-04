@@ -1211,6 +1211,9 @@ export function LeadDetailModal({
           if (!res.ok) {
             const t = await res.text().catch(() => "")
             console.error("peticion_aval failed:", res.status, t.slice(0, 200))
+          } else {
+            const j = await res.json().catch(() => null)
+            if (j?.webhook) console.log("peticion_aval ok:", j.webhook)
           }
         } catch (webhookErr) {
           console.error("Error calling peticion_aval webhook:", webhookErr)
