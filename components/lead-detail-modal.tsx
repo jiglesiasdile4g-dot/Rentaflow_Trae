@@ -40,7 +40,7 @@ import {
   Trash2, ExternalLink, RefreshCw, Edit, Plus, Upload, Eye, Download, CalendarIcon, StickyNote, CalendarDays
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { cn, formatDateTime, formatWebhookDate } from "@/lib/utils"
+import { cn, formatDateTime, formatWebhookDate, getN8nWebhookUrl, buildBookingLink } from "@/lib/utils"
 import { isDocumentInvalid } from "@/lib/lead-validation"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -1119,17 +1119,20 @@ export function LeadDetailModal({
 
       if (newStatus === "Descartado") {
         try {
-          await fetchWithTimeout("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/descartado", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              leadId: lead.id,
-              Estado: "Descartado",
-              lead: updatedLead,
-              source: "lead-detail-modal",
-              timestamp: new Date().toISOString()
+          const webhookUrl = getN8nWebhookUrl("descartado")
+          if (webhookUrl) {
+            await fetchWithTimeout(webhookUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                leadId: lead.id,
+                Estado: "Descartado",
+                lead: updatedLead,
+                source: "lead-detail-modal",
+                timestamp: new Date().toISOString()
+              })
             })
-          })
+          }
         } catch (webhookErr) {
           console.error("Error calling descartado webhook:", webhookErr)
         }
@@ -1631,7 +1634,7 @@ export function LeadDetailModal({
            (lead.Inmueble && a.Direccion && lead.Inmueble.includes(a.Direccion))
         )
         
-        const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
+        const bookingLink = buildBookingLink(lead.id)
 
         // Fetch Inmobiliaria data
         let inmobiliariaData = null
@@ -1742,7 +1745,7 @@ export function LeadDetailModal({
 
         const { date: formattedDate, time: formattedTime } = formatWebhookDate(lead.fecha_de_visita)
 
-        const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
+        const bookingLink = buildBookingLink(lead.id)
 
         const cancelPayload = {
             "Link de Agendamiento": bookingLink,

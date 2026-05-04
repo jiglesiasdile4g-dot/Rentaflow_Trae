@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { generateSlotCandidates, AgendaSlot, AdData } from "@/lib/agenda-utils"
+import { getN8nWebhookUrl, getPublicAppBaseUrl } from "@/lib/utils"
 
 function getTimeZoneOffsetMinutes(timeZone: string, date: Date) {
   const dtf = new Intl.DateTimeFormat("en-US", {
@@ -183,9 +184,14 @@ export async function createVisitProposal(data: {
 
       console.log("[createVisitProposal] Payload constructed. Size:", JSON.stringify(payload).length)
 
-      const webhookUrl = "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/visita_grupal"
+      const webhookUrl = getN8nWebhookUrl("visita_grupal")
 
       console.log("[createVisitProposal] Sending webhook to:", webhookUrl)
+
+      if (!webhookUrl) {
+        console.log("[createVisitProposal] N8N webhook not configured, skipping.")
+        return { success: true, proposalId: proposal.id, webhookSuccess: false, webhookError: "N8N webhook not configured" }
+      }
 
       const response = await fetch(webhookUrl, {
         method: "POST",
@@ -615,9 +621,11 @@ export async function bookVisitProposal(proposalId: string, leadPhone: string) {
         direccion: proposal.inmueble_direccion || ""
     }
 
+      const baseUrl = getPublicAppBaseUrl()
+      const proposalLink = baseUrl ? `${baseUrl}/oferta-visita/${proposal.id}` : `/oferta-visita/${proposal.id}`
       const payload = {
           proposal_id: proposal.id,
-          link: `http://localhost:3000/oferta-visita/${proposal.id}`,
+          link: proposalLink,
           visita: {
               fecha: visitDate.toISOString().split('T')[0],
               hora: visitDate.toTimeString().split(' ')[0].substring(0, 5), // HH:MM
@@ -637,8 +645,13 @@ export async function bookVisitProposal(proposalId: string, leadPhone: string) {
           leads: [cleanLead]
       }
 
-      const webhookUrl = "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/confirmacion_visita"
+      const webhookUrl = getN8nWebhookUrl("confirmacion_visita")
       console.log("[bookVisitProposal] Sending webhook to:", webhookUrl)
+
+      if (!webhookUrl) {
+        console.log("[bookVisitProposal] N8N webhook not configured, skipping.")
+        return { success: true, message: "Visita confirmada exitosamente.", leadName: lead?.Nombre || "" }
+      }
 
       const response = await fetch(webhookUrl, {
           method: "POST",

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { getN8nWebhookUrl } from "@/lib/utils"
 
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 8000): Promise<Response> {
   const controller = new AbortController()
@@ -20,9 +21,12 @@ export async function POST(req: Request) {
     const body = await req.json()
     console.log("[Webhook Proxy] Received agent cancellation:", body)
 
-    const webhookUrl = "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/cancelacion_visita_por_agente"
+    const webhookUrl = getN8nWebhookUrl("cancelacion_visita_por_agente")
     
     console.log("[Webhook Proxy] Forwarding to:", webhookUrl)
+    if (!webhookUrl) {
+      return NextResponse.json({ success: true })
+    }
 
     const response = await fetchWithTimeout(webhookUrl, {
       method: "POST",

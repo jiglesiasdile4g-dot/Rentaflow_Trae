@@ -29,7 +29,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Users, Search, Filter, Mail, Phone, MessageSquare, CheckCircle, Edit, Building, Euro, Clock, Star, FileText, User, X, Home, XCircle, MoreVertical, Copy, Check, RefreshCw, ShoppingCart, Loader2, Eye, Download, UploadCloud, IdCard, Image as ImageIcon, Tag, Trash, Trash2, StickyNote, Calendar as CalendarIcon, History as HistoryIcon, CalendarDays } from 'lucide-react'
 import { useToast } from "@/hooks/use-toast" // Added useToast hook
-import { formatDate, formatDateTime, cn, formatWebhookDate } from "@/lib/utils"
+import { formatDate, formatDateTime, cn, formatWebhookDate, getN8nWebhookUrl, buildBookingLink } from "@/lib/utils"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import React from "react" // Imported React
@@ -2375,7 +2375,9 @@ export default function LeadsPage() {
 
   const sendDescartadoWebhook = async (payload: any) => {
     try {
-      await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/descartado", {
+      const webhookUrl = getN8nWebhookUrl("descartado")
+      if (!webhookUrl) return
+      await fetch(webhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -3293,7 +3295,7 @@ export default function LeadsPage() {
                     // Calculate future slots
                     const futureSlots = await getFutureAvailability(Number(selectedAgenteId), selectedLeadForVisit)
 
-                    const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${selectedLeadForVisit.id}`
+                    const bookingLink = buildBookingLink(selectedLeadForVisit.id)
                     
                     // Fetch Inmobiliaria data
                     let inmobiliariaData = null
@@ -3410,7 +3412,7 @@ export default function LeadsPage() {
                      adDir.includes(leadInmueble)
             })
 
-            const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${selectedLeadForVisit.id}`
+            const bookingLink = buildBookingLink(selectedLeadForVisit.id)
 
             const cancelPayload = {
                 "Link de Agendamiento": bookingLink,

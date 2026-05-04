@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
 import { getPlanData } from "@/lib/plan-data"
-import { formatWebhookDate } from "@/lib/utils"
+import { formatWebhookDate, getN8nWebhookUrl } from "@/lib/utils"
 import { logAuditEvent } from "@/lib/audit-logger"
 
 async function logAuditAction(admin: any, actionType: string, targetEmail: string, details: any = {}) {
@@ -178,9 +178,10 @@ export async function triggerVisitReminderAction() {
     if (error) {
         redirect(`/dashboard/configuracion?reminder=error&rmsg=${encodeURIComponent(error.message || "Error consultando visitas")}`)
     }
-    const webhookUrl =
-        process.env.RECORDATORIO_VISITA_WEBHOOK_URL ||
-        "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/recordatorio_visita_agente"
+    const webhookUrl = process.env.RECORDATORIO_VISITA_WEBHOOK_URL || getN8nWebhookUrl("recordatorio_visita_agente")
+    if (!webhookUrl) {
+        redirect(`/dashboard/configuracion?reminder=success&rmsg=${encodeURIComponent("Recordatorio omitido: webhook no configurado")}`)
+    }
     const idags = Array.from(
         new Set((visits || []).map((v: any) => v?.idag).filter((v: any) => v !== null && v !== undefined))
     )

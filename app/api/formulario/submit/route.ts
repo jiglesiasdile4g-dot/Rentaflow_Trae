@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { getN8nWebhookUrl } from "@/lib/utils"
 
 export const runtime = "nodejs"
 
@@ -8,7 +9,11 @@ export async function POST(req: Request) {
     if (!payload) {
       return NextResponse.json({ ok: false, error: "payload_invalido" }, { status: 400 })
     }
-    const res = await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/formulario_app", {
+    const webhookUrl = getN8nWebhookUrl("formulario_app")
+    if (!webhookUrl) {
+      return NextResponse.json({ ok: true, skipped: true })
+    }
+    const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

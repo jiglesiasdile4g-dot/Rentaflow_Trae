@@ -40,7 +40,7 @@ import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, E
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { loadStripe, type Stripe as StripeJS } from "@stripe/stripe-js"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
-import { formatDate, cn, formatWebhookDate } from "@/lib/utils"
+import { formatDate, cn, formatWebhookDate, buildBookingLink } from "@/lib/utils"
 import { format, differenceInCalendarDays, addMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, isBefore, isWithinInterval } from "date-fns"
 import { es } from "date-fns/locale"
 import { DateRange } from "react-day-picker"
@@ -4404,7 +4404,7 @@ export default function AnunciosPage() {
              .eq("idag", visitDateDialog.selectedAgenteId)
              .single()
 
-          const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${visitDateDialog.leadId}`
+          const bookingLink = buildBookingLink(visitDateDialog.leadId)
 
           // Fetch Inmobiliaria data
           let inmobiliariaData = null

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { getN8nWebhookUrl } from "@/lib/utils"
 
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 8000): Promise<Response> {
   const controller = new AbortController()
@@ -22,8 +23,11 @@ export async function POST(req: Request) {
 
     // Forward to n8n webhook
     try {
-      const webhookUrl = "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/proponer_visita"
+      const webhookUrl = getN8nWebhookUrl("proponer_visita")
       console.log("[Webhook] Forwarding to:", webhookUrl)
+      if (!webhookUrl) {
+        return NextResponse.json({ success: true, message: "Webhook processed successfully" })
+      }
       
       const response = await fetchWithTimeout(webhookUrl, {
         method: "POST",

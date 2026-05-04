@@ -91,3 +91,25 @@ export function isDemoCookieEnabled(cookieString: string | undefined | null) {
   const s = String(cookieString || "")
   return /(?:^|;\s*)rf_demo=1(?:;|$)/.test(s)
 }
+
+export function getPublicAppBaseUrl() {
+  const raw = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || ""
+  if (raw) return String(raw).replace(/\/$/, "")
+  if (typeof window !== "undefined" && window.location?.origin) return window.location.origin
+  return ""
+}
+
+export function buildBookingLink(leadId: string | number) {
+  const base = getPublicAppBaseUrl()
+  const id = encodeURIComponent(String(leadId ?? ""))
+  return base ? `${base}/agendar-visita?leadId=${id}` : `/agendar-visita?leadId=${id}`
+}
+
+export function getN8nWebhookUrl(hook: string) {
+  const baseRaw = process.env.NEXT_PUBLIC_N8N_BASE_URL || process.env.N8N_BASE_URL || ""
+  const base = String(baseRaw || "").trim().replace(/\/$/, "")
+  if (!base) return null
+  const cleaned = String(hook || "").trim().replace(/^\/+/, "").replace(/^webhook\/+/, "")
+  if (!cleaned) return null
+  return `${base}/webhook/${cleaned}`
+}

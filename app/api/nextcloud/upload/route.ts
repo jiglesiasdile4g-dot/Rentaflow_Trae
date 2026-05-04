@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { getN8nWebhookUrl } from "@/lib/utils"
 
 export const runtime = "nodejs"
 
@@ -207,7 +208,7 @@ export async function POST(req: Request) {
       await cleanupDuplicates(folderUrl, auth, bases)
     }
 
-    const webhookUrl = process.env.N8N_WEBHOOK_URL || "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/subirdoc"
+    const webhookUrl = process.env.N8N_WEBHOOK_URL || getN8nWebhookUrl("subirdoc")
     if (webhookUrl) {
       const fd = new FormData()
       fd.append("referencia", referencia)

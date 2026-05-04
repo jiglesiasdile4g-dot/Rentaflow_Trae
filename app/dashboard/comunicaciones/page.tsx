@@ -11,6 +11,7 @@ import { Mail, Plus, RefreshCw, Save } from "lucide-react"
 import { createComunicacion, listComunicaciones, updateComunicacion } from "@/app/actions/comunicaciones"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { getN8nWebhookUrl } from "@/lib/utils"
 
 type ColumnDef = {
   name: string
@@ -486,7 +487,9 @@ export default function ComunicacionesPage() {
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), 15000)
     try {
-      const res = await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/revision_comunicacion", {
+      const webhookUrl = getN8nWebhookUrl("revision_comunicacion")
+      if (!webhookUrl) throw new Error("Webhook no configurado")
+      const res = await fetch(webhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inmobiliaria, titulo, subject, html }),

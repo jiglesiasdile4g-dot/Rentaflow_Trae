@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { formatWebhookDate } from "@/lib/utils"
+import { formatWebhookDate, getN8nWebhookUrl } from "@/lib/utils"
 
 export const runtime = "nodejs"
 
@@ -54,9 +54,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   }
 
-  const webhookUrl =
-    process.env.RECORDATORIO_VISITA_WEBHOOK_URL ||
-    "https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/recordatorio_visita_agente"
+  const webhookUrl = process.env.RECORDATORIO_VISITA_WEBHOOK_URL || getN8nWebhookUrl("recordatorio_visita_agente")
+  if (!webhookUrl) {
+    return NextResponse.json({ ok: true, skipped: true, reason: "N8N webhook not configured", count: (visits || []).length })
+  }
   const idags = Array.from(
     new Set((visits || []).map((v: any) => v?.idag).filter((v: any) => v !== null && v !== undefined))
   )

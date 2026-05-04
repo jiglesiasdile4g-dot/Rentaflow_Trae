@@ -1,6 +1,7 @@
 "use server"
 
 import { createAdminClient } from "@/lib/supabase/admin"
+import { getN8nWebhookUrl } from "@/lib/utils"
 
 export async function getBookingData(leadId: string) {
   console.log("[Booking Action] getBookingData called with ID:", leadId)
@@ -310,7 +311,11 @@ export async function cancelVisit(leadId: string) {
       }
 
       try {
-        await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/descartado", {
+        const webhookUrl = getN8nWebhookUrl("descartado")
+        if (!webhookUrl) {
+          return { success: true }
+        }
+        await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

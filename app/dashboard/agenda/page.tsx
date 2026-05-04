@@ -26,7 +26,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { cn, formatWebhookDate } from "@/lib/utils"
+import { cn, formatWebhookDate, getN8nWebhookUrl, buildBookingLink } from "@/lib/utils"
 import { fixUserPermissionsAction } from "@/app/actions/user-config"
 import { LeadDetailModal } from "@/components/lead-detail-modal"
 import { generateSlotCandidates, isOverlapping, AgendaSlot, AdData } from "@/lib/agenda-utils"
@@ -1153,7 +1153,7 @@ export default function AgendaPage() {
         )
 
         const { date: formattedDate, time: formattedTime } = formatWebhookDate(newDateTimeIso)
-        const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${actualLeadId}`
+        const bookingLink = buildBookingLink(actualLeadId)
         const leadData = { ...(fullLead || { ...visitToConfirm, id: actualLeadId }) }
         delete (leadData as any).status_history
 
@@ -1195,11 +1195,14 @@ export default function AgendaPage() {
           fecha_de_visita: newDateTimeIso
         }
 
-        await fetch("https://acesalquiler-n8n.igc7oi.easypanel.host/webhook/confirmacion_visita", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        })
+        const webhookUrl = getN8nWebhookUrl("confirmacion_visita")
+        if (webhookUrl) {
+          await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          })
+        }
       } catch (webhookError) {
         console.error("Error calling confirm webhook:", webhookError)
       }
@@ -1467,7 +1470,7 @@ export default function AgendaPage() {
         }
 
         const { date: formattedDate, time: formattedTime } = formatWebhookDate(newDateTimeIso)
-        const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${visitToReschedule.id}`
+        const bookingLink = buildBookingLink(visitToReschedule.id)
         
         // Prepare base lead data excluding status_history
         const leadData = { ...(fullLead || visitToReschedule) }
@@ -1603,7 +1606,7 @@ export default function AgendaPage() {
           }
 
           const { date: formattedDate, time: formattedTime } = formatWebhookDate(visitToCancel.fecha_de_visita)
-          const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${visitToCancel.id}`
+          const bookingLink = buildBookingLink(visitToCancel.id)
           const candidateEmails3 = [
               fullLead?.Correo,
               (fullLead as any)?.["Correo 2"],

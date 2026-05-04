@@ -13,7 +13,10 @@ services:
       - NODE_ENV=production
       - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - NEXT_PUBLIC_N8N_BASE_URL=${NEXT_PUBLIC_N8N_BASE_URL}
       - NEXTCLOUD_URL=${NEXTCLOUD_URL}
       - NEXTCLOUD_USERNAME=${NEXTCLOUD_USERNAME}
       - NEXTCLOUD_PASSWORD=${NEXTCLOUD_PASSWORD}
@@ -38,6 +41,15 @@ variables:
   - name: SUPABASE_SERVICE_ROLE_KEY
     description: Service role key de Supabase
     default: tu-clave-service-role
+  - name: NEXT_PUBLIC_SITE_URL
+    description: URL pública del dashboard/app (ej: https://dashboard.tudominio.com)
+    default: http://localhost:3000
+  - name: NEXT_PUBLIC_APP_URL
+    description: URL pública usada para links (ej: https://app.rentaflow.es)
+    default: http://localhost:3000
+  - name: NEXT_PUBLIC_N8N_BASE_URL
+    description: URL base de n8n (ej: https://acesalquiler-n8n.tudominio.com)
+    default: ""
   - name: NEXTCLOUD_URL
     description: URL base de Nextcloud (ej: https://nextcloud.tudominio.com)
     default: https://nextcloud.local

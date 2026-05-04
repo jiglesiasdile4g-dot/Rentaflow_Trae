@@ -21,7 +21,7 @@ import {
 import { Loader2, Calendar as CalendarIcon, Clock, MapPin, User, CheckCircle, AlertCircle, XCircle, RefreshCw } from "lucide-react"
 import { format, addDays, isSameDay } from "date-fns"
 import { es } from "date-fns/locale"
-import { cn, formatWebhookDate, isDemoCookieEnabled } from "@/lib/utils"
+import { cn, formatWebhookDate, isDemoCookieEnabled, buildBookingLink } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
 import { generateSlotCandidates, isOverlapping } from "@/lib/agenda-utils"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -374,7 +374,7 @@ function AgendarVisitaContent() {
                  const { status_history, ...leadWithoutStatusHistory } = lead as any
                  const { date: formattedDate, time: formattedTime } = formatWebhookDate(lead.fecha_de_visita)
 
-                 const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
+                 const bookingLink = buildBookingLink(lead.id)
 
                  const payload = {
                     "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
@@ -419,7 +419,7 @@ function AgendarVisitaContent() {
             
             const { date: formattedDate, time: formattedTime } = formatWebhookDate(valueWithOffset)
 
-            const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
+            const bookingLink = buildBookingLink(lead.id)
 
             const payload = {
                 "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
@@ -489,7 +489,7 @@ function AgendarVisitaContent() {
              const { status_history, ...leadWithoutStatusHistory } = lead as any
              const { date: formattedDate, time: formattedTime } = formatWebhookDate(lead.fecha_de_visita)
 
-             const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
+             const bookingLink = buildBookingLink(lead.id)
 
              const payload = {
                 "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
@@ -571,7 +571,7 @@ function AgendarVisitaContent() {
             const { status_history, ...leadWithoutStatusHistory } = lead as any
             const { date: formattedDate } = formatWebhookDate(valueWithOffset)
             
-            const bookingLink = `https://app.rentaflow.es/agendar-visita?leadId=${lead.id}`
+            const bookingLink = buildBookingLink(lead.id)
 
             const payload = {
                 "Nombre de lead": `${lead.Nombre || ''} ${lead.Apellidos || ''}`.trim(),
