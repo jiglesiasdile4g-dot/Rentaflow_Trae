@@ -22,19 +22,16 @@ function buildAuthHeaderValue() {
   const direct =
     sanitizeHeader(process.env.N8N_WEBHOOK_PETICION_AVAL_AUTH_HEADER) ||
     sanitizeHeader(process.env.PETICION_AVAL_WEBHOOK_AUTH_HEADER) ||
-    sanitizeHeader(process.env.N8N_WEBHOOK_AUTH_HEADER) ||
     ""
   if (direct) return direct
 
   const user =
     sanitizeHeader(process.env.N8N_WEBHOOK_PETICION_AVAL_BASIC_USER) ||
     sanitizeHeader(process.env.PETICION_AVAL_WEBHOOK_BASIC_USER) ||
-    sanitizeHeader(process.env.N8N_WEBHOOK_BASIC_USER) ||
     ""
   const pass =
     sanitizeHeader(process.env.N8N_WEBHOOK_PETICION_AVAL_BASIC_PASSWORD) ||
     sanitizeHeader(process.env.PETICION_AVAL_WEBHOOK_BASIC_PASSWORD) ||
-    sanitizeHeader(process.env.N8N_WEBHOOK_BASIC_PASSWORD) ||
     ""
 
   if (user && pass) return `Basic ${Buffer.from(`${user}:${pass}`).toString("base64")}`
@@ -83,6 +80,7 @@ export async function POST(req: Request) {
     const webhookUrl = sanitizeUrl(envUrl) || DEFAULT_PETICION_AVAL_URL
     const urlInfo = toSafeUrlInfo(webhookUrl)
     const authHeaderValue = buildAuthHeaderValue()
+    const authSent = Boolean(authHeaderValue)
 
     try {
       const res = await fetchWithTimeout(
@@ -102,16 +100,16 @@ export async function POST(req: Request) {
         const text = await res.text().catch(() => "")
         console.error(`[peticion-aval] Webhook failed with status ${res.status}:`, text.slice(0, 200))
         return NextResponse.json(
-          { ok: false, status: res.status, webhook: urlInfo, response: text.slice(0, 300) },
+          { ok: false, status: res.status, webhook: urlInfo, authSent, response: text.slice(0, 300) },
           { status: 502 }
         )
       }
     } catch (err) {
       console.error("[peticion-aval] Error calling webhook:", err)
-      return NextResponse.json({ ok: false, error: "webhook_error", webhook: urlInfo }, { status: 502 })
+      return NextResponse.json({ ok: false, error: "webhook_error", webhook: urlInfo, authSent }, { status: 502 })
     }
 
-    return NextResponse.json({ ok: true, webhook: urlInfo })
+    return NextResponse.json({ ok: true, webhook: urlInfo, authSent })
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "error" }, { status: 500 })
   }
