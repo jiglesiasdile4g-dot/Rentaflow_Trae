@@ -1210,7 +1210,11 @@ export function LeadDetailModal({
           })
           if (!res.ok) {
             const t = await res.text().catch(() => "")
-            console.error("peticion_aval failed:", res.status, t.slice(0, 200))
+            let parsed: any = null
+            try {
+              parsed = t ? JSON.parse(t) : null
+            } catch {}
+            console.error("peticion_aval failed:", res.status, parsed || t.slice(0, 300))
           } else {
             const j = await res.json().catch(() => null)
             if (j?.webhook) console.log("peticion_aval ok:", j.webhook)

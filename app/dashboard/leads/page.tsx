@@ -2458,7 +2458,11 @@ export default function LeadsPage() {
       })
       if (!res.ok) {
         const t = await res.text().catch(() => "")
-        console.error("[v0] peticion_aval failed:", res.status, t.slice(0, 200))
+        let parsed: any = null
+        try {
+          parsed = t ? JSON.parse(t) : null
+        } catch {}
+        console.error("[v0] peticion_aval failed:", res.status, parsed || t.slice(0, 300))
       } else {
         const j = await res.json().catch(() => null)
         if (j?.webhook) console.log("[v0] peticion_aval ok:", j.webhook)

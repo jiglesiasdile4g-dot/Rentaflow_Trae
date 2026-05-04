@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server"
-import { getWebhookUrl } from "@/lib/utils"
 
 export const runtime = "nodejs"
 
@@ -36,24 +35,6 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
   }
 }
 
-function isPeticionAvalConfigured() {
-  const key = "PETICION_AVAL"
-  const urlKey = `NEXT_PUBLIC_N8N_WEBHOOK_${key}`
-  const hookKey = `NEXT_PUBLIC_N8N_HOOK_${key}`
-  const serverUrlKey = `N8N_WEBHOOK_${key}`
-  const serverHookKey = `N8N_HOOK_${key}`
-  const baseKeyClient = "NEXT_PUBLIC_N8N_BASE_URL"
-  const baseKeyServer = "N8N_BASE_URL"
-  return Boolean(
-    process.env[urlKey] ||
-      process.env[hookKey] ||
-      process.env[serverUrlKey] ||
-      process.env[serverHookKey] ||
-      process.env[baseKeyClient] ||
-      process.env[baseKeyServer]
-  )
-}
-
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => null)
@@ -69,12 +50,8 @@ export async function POST(req: Request) {
         ""
     )
 
-    const webhookUrl = sanitizeUrl(envUrl) || sanitizeUrl(getWebhookUrl("peticion_aval")) || DEFAULT_PETICION_AVAL_URL
+    const webhookUrl = sanitizeUrl(envUrl) || DEFAULT_PETICION_AVAL_URL
     const urlInfo = toSafeUrlInfo(webhookUrl)
-
-    if (!isPeticionAvalConfigured() && webhookUrl !== DEFAULT_PETICION_AVAL_URL) {
-      return NextResponse.json({ ok: true, skipped: true, reason: "peticion_aval_not_configured" })
-    }
 
     try {
       const res = await fetchWithTimeout(
