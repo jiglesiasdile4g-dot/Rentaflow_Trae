@@ -869,6 +869,7 @@ export default function AgendaPage() {
         console.error("Error fetching visits:", visitsError)
       } else {
         const isSuggestion = (visit: ScheduledVisit) => {
+          if (isVisitCompleted(visit.visita_completada)) return false
           // If the visit has been successfully confirmed but state hasn't updated fully,
           // we should NOT treat it as a suggestion if its status is 'Visita Confirmada'
           const estado = visit.Estado ? String(visit.Estado).toLowerCase() : ""
@@ -991,6 +992,7 @@ export default function AgendaPage() {
   }
 
   const isSuggestedVisit = (visit: ScheduledVisit) => {
+    if (isVisitCompleted(visit.visita_completada)) return false
     const status = typeof visit.visita_completada === "string" ? visit.visita_completada.toLowerCase() : ""
     const estado = visit.Estado ? String(visit.Estado).toLowerCase() : ""
     
@@ -1063,10 +1065,53 @@ export default function AgendaPage() {
         })
         return
       }
+
+      const updatedVisit: ScheduledVisit = {
+        ...visitToConfirm,
+        id: actualLeadId,
+        fecha_de_visita: newDateTimeIso,
+        visita_completada: "visita confirmada",
+        Estado: "Visita Confirmada",
+        ...(typeof resolvedAgentId === "number" ? { idag: resolvedAgentId } : {}),
+        proposalLeadId: actualLeadId,
+        proposalId: actualProposalId,
+      }
+
+      setSuggestedVisits((prev) =>
+        prev.filter((v) => {
+          if (v.id !== visitToConfirm.id && v.proposalLeadId !== actualLeadId) return true
+          return false
+        })
+      )
+      setScheduledVisits((prev) => {
+        const next = prev.filter((v) => v.id !== actualLeadId)
+        next.push(updatedVisit)
+        return next
+      })
+      setDaySuggestions((prev) =>
+        prev.filter((v) => {
+          if (v.id !== visitToConfirm.id && v.proposalLeadId !== actualLeadId) return true
+          return false
+        })
+      )
+      setDayVisits((prev) => {
+        const next = prev.filter((v) => v.id !== actualLeadId)
+        const d0 = safeDate(updatedVisit.fecha_de_visita)
+        if (d0 && format(d0, "yyyy-MM-dd") === selectedDateStr) {
+          next.push(updatedVisit)
+          next.sort((a, b) => {
+            const da = safeDate(a.fecha_de_visita)
+            const db = safeDate(b.fecha_de_visita)
+            return (da?.getTime() || 0) - (db?.getTime() || 0)
+          })
+        }
+        return next
+      })
       let confirmResult: any = { error: null }
       try {
         confirmResult = await confirmAgendaProposal({
           leadId: actualLeadId,
+          fechaHora: newDateTimeIso,
           fechaHora: newDateTimeIso,
           agentId: typeof resolvedAgentId === "number" ? resolvedAgentId : null,
           proposalId: actualProposalId ?? undefined,
@@ -1106,25 +1151,6 @@ export default function AgendaPage() {
       if (confirmResult?.error && clientUpdateError) {
          throw new Error(confirmResult.error || clientUpdateError.message)
       }
-
-      const updatedVisit: ScheduledVisit = {
-        ...visitToConfirm,
-        id: actualLeadId,
-        fecha_de_visita: newDateTimeIso,
-        visita_completada: "visita confirmada",
-        Estado: "Visita Confirmada",
-        proposalLeadId: actualLeadId,
-        proposalId: actualProposalId
-      }
-      setSuggestedVisits(prev => prev.filter(v => {
-        if (v.id !== visitToConfirm.id && v.proposalLeadId !== actualLeadId) return true
-        return false
-      }))
-      setScheduledVisits(prev => {
-        const next = prev.filter(v => v.id !== actualLeadId)
-        next.push(updatedVisit)
-        return next
-      })
 
       try {
         const { data: fullLead } = await supabase
@@ -1213,7 +1239,9 @@ export default function AgendaPage() {
       })
 
       setConfirmDialogOpen(false)
-      fetchAgentAndSchedule()
+      setTimeout(() => {
+        fetchAgentAndSchedule(false)
+      }, 2000)
     } catch (err) {
       console.error("Error confirming proposal:", err)
       toast({
@@ -1236,34 +1264,10 @@ export default function AgendaPage() {
     // 1. Optimistic Update (Immediate UI change)
     const updateLocalState = (status: boolean) => {
       const updateVisit = (v: ScheduledVisit) => (v.id === visit.id ? { ...v, visita_completada: status } : v)
-      const allVisits = [
-        ...scheduledVisits.map(updateVisit),
-        ...suggestedVisits.map(updateVisit),
-      ]
-      const nextSuggested = allVisits.filter(isSuggestedVisit)
-      const nextScheduled = allVisits.filter((v) => !isSuggestedVisit(v))
-      setSuggestedVisits(nextSuggested)
-      setScheduledVisits(nextScheduled)
-      const nextDayVisits = nextScheduled.filter(v => {
-        const visitDate = safeDate(v.fecha_de_visita)
-        if (!visitDate) return false
-        return format(visitDate, "yyyy-MM-dd") === selectedDateStr
-      }).sort((a, b) => {
-        const dateA = safeDate(a.fecha_de_visita)
-        const dateB = safeDate(b.fecha_de_visita)
-        return (dateA?.getTime() || 0) - (dateB?.getTime() || 0)
-      })
-      const nextDaySuggestions = nextSuggested.filter(v => {
-        const visitDate = safeDate(v.fecha_de_visita)
-        if (!visitDate) return false
-        return format(visitDate, "yyyy-MM-dd") === selectedDateStr
-      }).sort((a, b) => {
-        const dateA = safeDate(a.fecha_de_visita)
-        const dateB = safeDate(b.fecha_de_visita)
-        return (dateA?.getTime() || 0) - (dateB?.getTime() || 0)
-      })
-      setDayVisits(nextDayVisits)
-      setDaySuggestions(nextDaySuggestions)
+      setScheduledVisits((prev) => prev.map(updateVisit))
+      setSuggestedVisits((prev) => prev.map(updateVisit))
+      setDayVisits((prev) => prev.map(updateVisit))
+      setDaySuggestions((prev) => prev.map(updateVisit))
     }
 
     updateLocalState(newStatus)
@@ -1329,13 +1333,21 @@ export default function AgendaPage() {
 
       if (error) throw error
 
+      const updatedVisit = { ...selectedVisitToComplete, resumen_visita: visitSummary }
+      setScheduledVisits((prev) => prev.map((v) => (v.id === updatedVisit.id ? updatedVisit : v)))
+      setSuggestedVisits((prev) => prev.map((v) => (v.id === updatedVisit.id ? updatedVisit : v)))
+      setDayVisits((prev) => prev.map((v) => (v.id === updatedVisit.id ? updatedVisit : v)))
+      setDaySuggestions((prev) => prev.map((v) => (v.id === updatedVisit.id ? updatedVisit : v)))
+
       toast({
         title: "Resumen guardado",
         description: "El resumen de la visita ha sido actualizado.",
       })
 
       setCompleteDialogOpen(false)
-      fetchAgentAndSchedule()
+      setTimeout(() => {
+        fetchAgentAndSchedule(false)
+      }, 2000)
     } catch (err) {
       console.error("Error saving feedback:", err)
       toast({
@@ -2299,20 +2311,16 @@ export default function AgendaPage() {
             </div>
           </div>
 
-          <div className="mt-4">
-            <Card>
-              <CardHeader className="py-4">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <CalendarDays className="h-4 w-4" />
-                  Sugerencias de visita
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pb-4">
-                {daySuggestions.length === 0 ? (
-                  <div className="text-center py-6 bg-muted/20 rounded-lg">
-                    <p className="text-muted-foreground text-xs">No hay sugerencias de visita para este día.</p>
-                  </div>
-                ) : (
+          {daySuggestions.length > 0 && (
+            <div className="mt-4">
+              <Card>
+                <CardHeader className="py-4">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <CalendarDays className="h-4 w-4" />
+                    Sugerencias de visita
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pb-4">
                   <div className="space-y-2">
                     {daySuggestions.map((visit, visitIndex) => {
                       const completed = isVisitCompleted(visit.visita_completada)
@@ -2400,10 +2408,10 @@ export default function AgendaPage() {
                       )
                     })}
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           <div className="mt-4">
             <Card>
