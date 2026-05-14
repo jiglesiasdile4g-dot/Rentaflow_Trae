@@ -865,12 +865,14 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                                 className={`rounded-sm px-1.5 py-0 text-[10px] font-normal ${
                                   u.is_admin 
                                     ? "bg-violet-100 text-violet-700 hover:bg-violet-200 border-violet-200" 
-                                    : u.role === "supervisor"
+                                    : u.role === "administrador"
+                                      ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border-emerald-200"
+                                      : u.role === "supervisor"
                                       ? "bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200"
                                       : ""
                                 }`}
                               >
-                                {u.is_admin ? "Admin" : u.role === "supervisor" ? "Supervisor" : "Agente"}
+                                {u.is_admin ? "Superusuario" : u.role === "administrador" ? "Administrador" : u.role === "supervisor" ? "Supervisor" : "Agente"}
                               </Badge>
                             </td>
                             <td className="p-2 px-3 align-middle">

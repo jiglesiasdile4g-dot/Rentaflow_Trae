@@ -744,7 +744,7 @@ export async function toggleRoleAction(formData: FormData) {
     const admin = createAdminClient()
     const idi = Number(formData.get("idi"))
     const email = String(formData.get("email"))
-    const targetRole = String(formData.get("role")) // 'admin' | 'supervisor' | 'agente'
+    const targetRole = String(formData.get("role"))
 
     const found = await findProfileAndColumns(admin, email, idi)
     if (!found) return
@@ -766,14 +766,15 @@ export async function toggleRoleAction(formData: FormData) {
         }
     }
 
-    const updates: any = {}
-    if (targetRole === 'admin') {
-        updates.is_admin = true
-        updates.role = 'admin'
-    } else {
-        updates.is_admin = false
-        updates.role = targetRole
-    }
+    const nextRoleNormalized = normalizeRole(targetRole)
+    const roleToSet =
+        nextRoleNormalized === "administrador" || nextRoleNormalized === "admin"
+            ? "administrador"
+            : nextRoleNormalized === "supervisor"
+                ? "supervisor"
+                : "agente"
+
+    const updates: any = { role: roleToSet }
 
     // Handle case sensitivity for columns if needed, but Perfiles seems standard mostly
     const idField = found.profile.id ? "id" : "idp"
@@ -782,7 +783,7 @@ export async function toggleRoleAction(formData: FormData) {
         .update(updates)
         .eq(idField, found.profile[idField])
 
-    await logAuditAction(admin, "CHANGE_ROLE", email, { idi, new_role: targetRole })
+    await logAuditAction(admin, "CHANGE_ROLE", email, { idi, new_role: roleToSet })
 
     revalidatePath("/dashboard/configuracion")
 }

@@ -140,7 +140,7 @@ export function UserActions({
 
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
-              {user.is_admin ? (
+              {user.role === "administrador" ? (
                 <ShieldCheck className="mr-2 h-4 w-4" />
               ) : user.role === "supervisor" ? (
                 <UserCheck className="mr-2 h-4 w-4" />
@@ -151,7 +151,7 @@ export function UserActions({
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <DropdownMenuRadioGroup
-                value={user.is_admin ? "administrador" : user.role || "agente"}
+                value={user.role || "agente"}
                 onValueChange={(value) => {
                   handleAction(toggleRoleAction, { role: value })
                 }}
