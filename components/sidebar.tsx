@@ -57,7 +57,7 @@ const menuItems = [
 
 export default function Sidebar({ user, collapsed = false, onToggle }: SidebarProps) {
   const pathname = usePathname()
-  const { inmobiliariaId, inmobiliariaNombre, loading, isAdmin, role, setAdminSelectedInmobiliaria, demoMode, setDemoMode } = useInmobiliaria()
+  const { inmobiliariaId, inmobiliariaNombre, loading, isAdmin, isSuperAdmin, role, setAdminSelectedInmobiliaria, demoMode, setDemoMode } = useInmobiliaria()
   const supabase = createClient()
   const [inmos, setInmos] = useState<{ idi: number; Nombre: string }[]>([])
   const router = useRouter()
@@ -219,7 +219,7 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
               }}
             >
               <option value={inmobiliariaId ?? undefined}>Actual: {inmobiliariaNombre || "(sin nombre)"}</option>
-              <option value="__ALL__">Todas las inmobiliarias</option>
+              {isSuperAdmin && <option value="__ALL__">Todas las inmobiliarias</option>}
               {inmos.map((i) => (
                 <option key={i.idi} value={i.idi}>
                   {i.Nombre} (IDI {i.idi})

@@ -8,6 +8,7 @@ interface InmobiliariaContextType {
   inmobiliariaId: number | null
   inmobiliariaNombre: string | null
   isAdmin: boolean
+  isSuperAdmin: boolean
   role: string | null
   userEmail: string | null
   demoMode: boolean
@@ -24,6 +25,7 @@ const InmobiliariaContext = createContext<InmobiliariaContextType>({
   inmobiliariaId: null,
   inmobiliariaNombre: null,
   isAdmin: false,
+  isSuperAdmin: false,
   role: null,
   userEmail: null,
   demoMode: false,
@@ -40,6 +42,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
   const [inmobiliariaId, setInmobiliariaId] = useState<number | null>(null)
   const [inmobiliariaNombre, setInmobiliariaNombre] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState<boolean>(false)
+  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false)
   const [role, setRole] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [demoMode, setDemoModeState] = useState<boolean>(false)
@@ -294,16 +297,22 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
       console.log("[v0] Found inmobiliaria ID:", perfilInmobiliariaId)
 
       const roleStr = String(perfil?.role || "").toLowerCase()
-      const adminFlag = perfil?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
+      const superAdminFlag = perfil?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
+      const adminFlag = superAdminFlag || ["administrador", "admin"].includes(roleStr)
       setIsAdmin(adminFlag)
+      setIsSuperAdmin(superAdminFlag)
       // Force "administrador" role if adminFlag is true, ignoring DB role if conflicting
       setRole(adminFlag ? "administrador" : (perfil.role || "agente"))
       const ownId = Number(perfilInmobiliariaId)
       setOwnInmobiliariaId(ownId)
       const savedRaw = adminFlag ? localStorage.getItem("rf_admin_selected_idi") : null
-      const effectiveAll = savedRaw === "all"
+      const effectiveAll = superAdminFlag && savedRaw === "all"
       const savedNum = Number(savedRaw || "")
-      const effectiveId = adminFlag && !effectiveAll && Number.isFinite(savedNum) ? savedNum : (effectiveAll ? null : ownId)
+      const effectiveId = effectiveAll
+        ? null
+        : adminFlag && superAdminFlag && Number.isFinite(savedNum)
+          ? savedNum
+          : ownId
 
       let inmobiliariaNombreFetched: string | null = null
       if (effectiveId !== null) {
@@ -458,6 +467,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
 
   const setAdminSelectedInmobiliaria = async (id: number | null) => {
     if (!isAdmin) return
+    if (id === null && !isSuperAdmin) return
     if (id && Number.isFinite(id)) {
       localStorage.setItem("rf_admin_selected_idi", String(id))
       setInmobiliariaId(id)
@@ -481,6 +491,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
         inmobiliariaId,
         inmobiliariaNombre,
         isAdmin,
+        isSuperAdmin,
         role,
         userEmail,
         demoMode: isAdmin && inmobiliariaId === 1 ? demoMode : false,
