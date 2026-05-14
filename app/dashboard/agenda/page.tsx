@@ -1112,7 +1112,6 @@ export default function AgendaPage() {
         confirmResult = await confirmAgendaProposal({
           leadId: actualLeadId,
           fechaHora: newDateTimeIso,
-          fechaHora: newDateTimeIso,
           agentId: typeof resolvedAgentId === "number" ? resolvedAgentId : null,
           proposalId: actualProposalId ?? undefined,
         })

@@ -147,6 +147,46 @@ async function findProfileAndColumns(admin: any, email: string, idi: number) {
     return null
 }
 
+async function fetchPerfilesByIdiAnyCase(admin: any, idi: number) {
+    const selectFields = "usuario, Usuario, role, Role, is_admin, Is_admin, es_agente, Es_agente, activo, Activo, id, idp"
+    const idiVariants = ["inmobiliaria", "Inmobiliaria"]
+    for (const field of idiVariants) {
+        try {
+            const { data, error } = await admin
+                .from("Perfiles")
+                .select(selectFields)
+                .eq(field, idi)
+                .limit(5000)
+            if (!error) return data || []
+        } catch {}
+    }
+    try {
+        const { data, error } = await admin.from("Perfiles").select(selectFields).limit(5000)
+        if (!error) {
+            return (data || []).filter((p: any) => String(p?.inmobiliaria ?? p?.Inmobiliaria ?? "") === String(idi))
+        }
+    } catch {}
+    return []
+}
+
+function normalizeRole(value: any) {
+    return String(value || "").trim().toLowerCase()
+}
+
+function isPerfilActive(perfil: any) {
+    const v = perfil?.es_agente ?? perfil?.Es_agente ?? perfil?.activo ?? perfil?.Activo
+    if (typeof v === "boolean") return v !== false
+    if (v === null || v === undefined) return true
+    const s = String(v).trim().toLowerCase()
+    if (s === "false" || s === "0" || s === "no") return false
+    return true
+}
+
+function isLocalAdministrador(perfil: any) {
+    const roleStr = normalizeRole(perfil?.role ?? perfil?.Role)
+    return roleStr === "administrador" || roleStr === "admin"
+}
+
 export async function triggerVisitReminderAction() {
     const supabase = await createClient()
     const admin = createAdminClient()
@@ -588,6 +628,23 @@ export async function deleteAgentAction(formData: FormData) {
     const email = String(formData.get("email"))
 
     try {
+        const found = await findProfileAndColumns(admin, email, idi)
+        if (found) {
+            const currentRole = normalizeRole(found.profile?.role ?? found.profile?.Role)
+            const currentIsLocalAdmin = currentRole === "administrador" || currentRole === "admin"
+            if (currentIsLocalAdmin && isPerfilActive(found.profile)) {
+                const perfiles = await fetchPerfilesByIdiAnyCase(admin, idi)
+                const remainingAdmins = perfiles.filter((p: any) => {
+                    const pEmail = String(p?.usuario ?? p?.Usuario ?? "").trim().toLowerCase()
+                    if (pEmail && pEmail === String(email).trim().toLowerCase()) return false
+                    return isPerfilActive(p) && isLocalAdministrador(p)
+                })
+                if (remainingAdmins.length === 0) {
+                    return { error: "No se puede eliminar el último administrador de esta inmobiliaria. Crea otro administrador antes." }
+                }
+            }
+        }
+
         // Delete from Auth (optional, depends on policy. Maybe just deactivate?)
         // For now, let's just remove from Perfiles and Agentes?
         // Or better, just delete from Perfiles. Auth user remains but has no access?
@@ -601,7 +658,6 @@ export async function deleteAgentAction(formData: FormData) {
         }
 
         // Delete from Perfiles
-        const found = await findProfileAndColumns(admin, email, idi)
         if (found) {
             const idField = found.profile.id ? "id" : "idp"
             await admin
@@ -639,6 +695,20 @@ export async function toggleActiveAction(formData: FormData) {
     
     const currentActive = found.profile[activeCol] !== false // Default true if null/undefined
     const newActive = !currentActive
+
+    const currentRole = normalizeRole(found.profile?.role ?? found.profile?.Role)
+    const currentIsLocalAdmin = currentRole === "administrador" || currentRole === "admin"
+    if (currentIsLocalAdmin && currentActive === true && newActive === false) {
+        const perfiles = await fetchPerfilesByIdiAnyCase(admin, idi)
+        const remainingAdmins = perfiles.filter((p: any) => {
+            const pEmail = String(p?.usuario ?? p?.Usuario ?? "").trim().toLowerCase()
+            if (pEmail && pEmail === String(email).trim().toLowerCase()) return false
+            return isPerfilActive(p) && isLocalAdministrador(p)
+        })
+        if (remainingAdmins.length === 0) {
+            return { error: "No se puede desactivar el último administrador de esta inmobiliaria. Crea otro administrador antes." }
+        }
+    }
 
     await admin
         .from("Perfiles")
@@ -678,6 +748,23 @@ export async function toggleRoleAction(formData: FormData) {
 
     const found = await findProfileAndColumns(admin, email, idi)
     if (!found) return
+
+    const currentRole = normalizeRole(found.profile?.role ?? found.profile?.Role)
+    const currentIsLocalAdmin = currentRole === "administrador" || currentRole === "admin"
+    const nextRole = normalizeRole(targetRole)
+    const nextIsLocalAdmin = nextRole === "administrador" || nextRole === "admin"
+
+    if (currentIsLocalAdmin && !nextIsLocalAdmin && isPerfilActive(found.profile)) {
+        const perfiles = await fetchPerfilesByIdiAnyCase(admin, idi)
+        const remainingAdmins = perfiles.filter((p: any) => {
+            const pEmail = String(p?.usuario ?? p?.Usuario ?? "").trim().toLowerCase()
+            if (pEmail && pEmail === String(email).trim().toLowerCase()) return false
+            return isPerfilActive(p) && isLocalAdministrador(p)
+        })
+        if (remainingAdmins.length === 0) {
+            return { error: "No se puede quitar el rol al último administrador de esta inmobiliaria. Crea otro administrador antes." }
+        }
+    }
 
     const updates: any = {}
     if (targetRole === 'admin') {
