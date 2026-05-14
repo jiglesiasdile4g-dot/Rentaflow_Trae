@@ -463,8 +463,10 @@ export function LeadDetailModal({
     const parts = clean.split(" • ")
     const author = parts.length > 1 ? parts[1].trim() : ""
     
-    if (!author) return isAdmin || role === 'super' || role === 'admin'
-    if (isAdmin || role === 'super' || role === 'admin') return true
+    const isLocalAdmin = role === 'super' || role === 'admin' || role === 'administrador'
+    
+    if (!author) return isAdmin || isLocalAdmin
+    if (isAdmin || isLocalAdmin) return true
     
     if (userEmail && author === userEmail) return true
     if (currentUserName && author === currentUserName) return true

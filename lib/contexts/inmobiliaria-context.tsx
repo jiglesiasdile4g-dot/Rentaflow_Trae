@@ -298,19 +298,19 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
 
       const roleStr = String(perfil?.role || "").toLowerCase()
       const superAdminFlag = perfil?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
-      const adminFlag = superAdminFlag || ["administrador", "admin"].includes(roleStr)
+      // "administrador" is just a local role, not a global admin. Only superAdminFlag gives global powers.
+      const adminFlag = superAdminFlag 
       setIsAdmin(adminFlag)
       setIsSuperAdmin(superAdminFlag)
-      // Force "administrador" role if adminFlag is true, ignoring DB role if conflicting
-      setRole(adminFlag ? "administrador" : (perfil.role || "agente"))
+      setRole(perfil?.role || "agente")
       const ownId = Number(perfilInmobiliariaId)
       setOwnInmobiliariaId(ownId)
       const savedRaw = adminFlag ? localStorage.getItem("rf_admin_selected_idi") : null
-      const effectiveAll = superAdminFlag && savedRaw === "all"
+      const effectiveAll = adminFlag && savedRaw === "all"
       const savedNum = Number(savedRaw || "")
       const effectiveId = effectiveAll
         ? null
-        : adminFlag && superAdminFlag && Number.isFinite(savedNum)
+        : adminFlag && Number.isFinite(savedNum)
           ? savedNum
           : ownId
 

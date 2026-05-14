@@ -401,12 +401,13 @@ export async function updateInmobiliariaAction(formData: FormData) {
     }
     const { data: perfil } = await admin
         .from("Perfiles")
-        .select("is_admin, role")
+        .select("is_admin, role, inmobiliaria")
         .ilike("usuario", user.email)
         .limit(1)
         .maybeSingle()
     const roleStr = String(perfil?.role || "").toLowerCase()
-    const isAdmin = perfil?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
+    const isSuperuser = perfil?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
+    const isAdmin = isSuperuser || ["administrador", "admin"].includes(roleStr)
     if (!isAdmin) {
         redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("Sin permisos para editar inmobiliarias")}`)
     }
@@ -414,6 +415,9 @@ export async function updateInmobiliariaAction(formData: FormData) {
     const idi = Number(idiRaw)
     if (!idi || !Number.isFinite(idi)) {
         redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("ID de inmobiliaria inválido")}`)
+    }
+    if (!isSuperuser && String(perfil?.inmobiliaria) !== String(idi)) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("No tienes permiso para editar esta inmobiliaria")}`)
     }
     const nombre = (formData.get("Nombre") ?? formData.get("nombre") ?? "").toString().trim()
     const direccion = (formData.get("Direccion") ?? formData.get("direccion") ?? "").toString().trim()

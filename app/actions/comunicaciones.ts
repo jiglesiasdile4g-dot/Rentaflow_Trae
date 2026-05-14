@@ -122,10 +122,11 @@ export async function updateComunicacion(keyField: string, keyValue: string | nu
     .maybeSingle()
 
   const roleStr = String(profile?.role || "").toLowerCase()
-  const isAdmin = profile?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
+  const isSuperAdmin = profile?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
+  const isAdmin = isSuperAdmin || ["administrador", "admin"].includes(roleStr)
   const inmobiliariaId = profile?.inmobiliaria ?? null
 
-  if (isAdmin) {
+  if (isSuperAdmin) {
     try {
       const admin = createAdminClient()
       const { data, error } = await admin.from("comunicaciones").update(payload).eq(keyField, keyValue).select()

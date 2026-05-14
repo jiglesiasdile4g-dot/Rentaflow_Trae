@@ -50,7 +50,7 @@ export async function createAnuncioAction(anuncioData: any) {
     }
 
     const roleStr = String(profile?.role || "").toLowerCase()
-    const isAdmin = profile?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
+    const isSuperAdmin = profile?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
 
     if (roleStr === "agente") {
       return { error: "No tienes permisos para crear anuncios" }
@@ -61,7 +61,7 @@ export async function createAnuncioAction(anuncioData: any) {
     
     let isAuthorized = false;
     
-    if (isAdmin) {
+    if (isSuperAdmin) {
         isAuthorized = true;
     } else if (profile && String(profile.inmobiliaria) === String(targetInmobiliariaId)) {
         isAuthorized = true;
@@ -155,7 +155,7 @@ export async function updateAnuncioAdjuntosAction(payload: { referencia?: string
     }
 
     const roleStr = String(profile?.role || "").toLowerCase()
-    const isAdmin = profile?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
+    const isSuperAdmin = profile?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
 
     if (roleStr === "agente") {
       return { error: "No tienes permisos para editar anuncios" }
@@ -164,7 +164,7 @@ export async function updateAnuncioAdjuntosAction(payload: { referencia?: string
     const targetInmobiliariaId = payload.usuario
     let isAuthorized = false
 
-    if (isAdmin) {
+    if (isSuperAdmin) {
       isAuthorized = true
     } else if (profile && String(profile.inmobiliaria) === String(targetInmobiliariaId)) {
       isAuthorized = true
