@@ -65,12 +65,21 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
   const [logoVersion, setLogoVersion] = useState<number>(0)
   const [logoError, setLogoError] = useState(false)
   const [hasLogo, setHasLogo] = useState(false)
+  const [dbLogoUrl, setDbLogoUrl] = useState<string | null>(null)
+
+  const withCacheBuster = (url: string, v: number) => {
+    const base = String(url || "").trim()
+    if (!base) return base
+    if (!v) return base
+    return base.includes("?") ? `${base}&v=${v}` : `${base}?v=${v}`
+  }
 
   const logoUrl = useMemo(() => {
     if (!inmobiliariaId || !hasLogo) return null
+    if (dbLogoUrl) return withCacheBuster(dbLogoUrl, logoVersion)
     const { data } = supabase.storage.from('imagenes').getPublicUrl(`logos/${inmobiliariaId}-logo.png`)
     return logoVersion ? `${data.publicUrl}?v=${logoVersion}` : data.publicUrl
-  }, [hasLogo, inmobiliariaId, supabase, logoVersion])
+  }, [dbLogoUrl, hasLogo, inmobiliariaId, supabase, logoVersion])
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -89,8 +98,28 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
         if (active) {
           setHasLogo(false)
           setLogoError(false)
+          setDbLogoUrl(null)
         }
         return
+      }
+
+      try {
+        const { data: inmo } = await supabase
+          .from("Inmobiliarias")
+          .select("logo_url")
+          .eq("idi", inmobiliariaId)
+          .limit(1)
+          .maybeSingle()
+        const url = (inmo as any)?.logo_url ? String((inmo as any).logo_url).trim() : ""
+        if (active) {
+          setDbLogoUrl(url || null)
+          if (url) {
+            setHasLogo(true)
+            return
+          }
+        }
+      } catch {
+        if (active) setDbLogoUrl(null)
       }
 
       const fileName = `${inmobiliariaId}-logo.png`

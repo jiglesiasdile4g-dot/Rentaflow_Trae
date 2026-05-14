@@ -1204,7 +1204,24 @@ export async function uploadLogoAction(formData: FormData) {
     const file = formData.get("file") as File
     if (!idi || !file) return { error: "Faltan datos" }
     
+    const supabase = await createClient()
+    const {
+        data: { user },
+    } = await supabase.auth.getUser()
+    if (!user?.email) return { error: "No autenticado" }
+
     const admin = createAdminClient()
+    const idiNum = Number(idi)
+    const { data: perfil } = await admin
+        .from("Perfiles")
+        .select("is_admin, role, inmobiliaria")
+        .ilike("usuario", user.email)
+        .limit(1)
+        .maybeSingle()
+    const roleStr = String(perfil?.role || "").toLowerCase()
+    const isSuperuser = perfil?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
+    const canEdit = isSuperuser || (String(perfil?.inmobiliaria || "") === String(idiNum) && ["administrador", "admin", "supervisor"].includes(roleStr))
+    if (!canEdit) return { error: "No autorizado" }
     
     // Upload to storage
     const { error: uploadError } = await admin.storage
@@ -1237,11 +1254,64 @@ export async function uploadLogoAction(formData: FormData) {
     return { success: true }
 }
 
+export async function updateLogoUrlAction(formData: FormData) {
+    const idiRaw = String(formData.get("idi") || "").trim()
+    if (!idiRaw) return { error: "Falta ID" }
+    const logoUrlRaw = String(formData.get("logo_url") || "").trim()
+    const logoUrl = logoUrlRaw ? logoUrlRaw : null
+
+    const supabase = await createClient()
+    const {
+        data: { user },
+    } = await supabase.auth.getUser()
+    if (!user?.email) return { error: "No autenticado" }
+
+    const admin = createAdminClient()
+    const idiNum = Number(idiRaw)
+    const { data: perfil } = await admin
+        .from("Perfiles")
+        .select("is_admin, role, inmobiliaria")
+        .ilike("usuario", user.email)
+        .limit(1)
+        .maybeSingle()
+    const roleStr = String(perfil?.role || "").toLowerCase()
+    const isSuperuser = perfil?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
+    const canEdit = isSuperuser || (String(perfil?.inmobiliaria || "") === String(idiNum) && ["administrador", "admin", "supervisor"].includes(roleStr))
+    if (!canEdit) return { error: "No autorizado" }
+
+    const { error } = await admin
+        .from("Inmobiliarias")
+        .update({ logo_url: logoUrl })
+        .eq("idi", idiNum)
+
+    if (error) return { error: error.message || "No se pudo guardar la URL" }
+
+    revalidatePath("/dashboard/configuracion")
+    return { success: true }
+}
+
 export async function deleteLogoAction(formData: FormData) {
     const idi = formData.get("idi")
     if (!idi) return { error: "Falta ID" }
     
+    const supabase = await createClient()
+    const {
+        data: { user },
+    } = await supabase.auth.getUser()
+    if (!user?.email) return { error: "No autenticado" }
+
     const admin = createAdminClient()
+    const idiNum = Number(idi)
+    const { data: perfil } = await admin
+        .from("Perfiles")
+        .select("is_admin, role, inmobiliaria")
+        .ilike("usuario", user.email)
+        .limit(1)
+        .maybeSingle()
+    const roleStr = String(perfil?.role || "").toLowerCase()
+    const isSuperuser = perfil?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
+    const canEdit = isSuperuser || (String(perfil?.inmobiliaria || "") === String(idiNum) && ["administrador", "admin", "supervisor"].includes(roleStr))
+    if (!canEdit) return { error: "No autorizado" }
     
     // Remove from storage
     const { error } = await admin.storage

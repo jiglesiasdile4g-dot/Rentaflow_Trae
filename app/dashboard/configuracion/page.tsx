@@ -344,7 +344,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
   addDebug("agent_count_final", agentCount)
 
   // Check for existing logo
-  let currentLogoUrl = null
+  let currentLogoUrl = (inmobiliariaData as any)?.logo_url ?? null
   if (currentIdi) {
     try {
         const admin = createAdminClient()

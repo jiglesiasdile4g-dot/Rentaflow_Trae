@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2, Upload, Image as ImageIcon, Trash2 } from "lucide-react"
 import Image from "next/image"
-import { uploadLogoAction, deleteLogoAction } from "./actions"
+import { uploadLogoAction, deleteLogoAction, updateLogoUrlAction } from "./actions"
 import { useRouter } from "next/navigation"
 
 // Component for uploading and managing company logos
@@ -20,12 +20,14 @@ interface LogoUploadProps {
 export function LogoUpload({ inmobiliariaId, currentLogoUrl }: LogoUploadProps) {
   const [uploading, setUploading] = useState(false)
   const [preview, setPreview] = useState<string | null>(currentLogoUrl || null)
+  const [logoUrl, setLogoUrl] = useState<string>(currentLogoUrl || "")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const router = useRouter()
 
   useEffect(() => {
     setPreview(currentLogoUrl || null)
+    setLogoUrl(currentLogoUrl || "")
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
@@ -121,6 +123,44 @@ export function LogoUpload({ inmobiliariaId, currentLogoUrl }: LogoUploadProps) 
     }
   }
 
+  const handleSaveUrl = async () => {
+    const value = String(logoUrl || "").trim()
+    if (value && !/^https?:\/\//i.test(value)) {
+      toast({
+        title: "URL inválida",
+        description: "La URL debe empezar por http:// o https://",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append("idi", inmobiliariaId.toString())
+      formData.append("logo_url", value)
+
+      const result = await updateLogoUrlAction(formData)
+      if (result?.error) throw new Error(result.error)
+
+      setPreview(value || null)
+      toast({
+        title: "Logo actualizado",
+        description: value ? "Se guardó la URL del logo." : "Se eliminó la URL del logo.",
+      })
+      router.refresh()
+      window.dispatchEvent(new Event('logo-updated'))
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo guardar la URL.",
+        variant: "destructive",
+      })
+    } finally {
+      setUploading(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-4">
@@ -172,6 +212,23 @@ export function LogoUpload({ inmobiliariaId, currentLogoUrl }: LogoUploadProps) 
         accept="image/jpeg,image/png,image/bmp,image/webp"
         onChange={handleFileChange}
       />
+
+      <div className="space-y-2">
+        <Label htmlFor="logo-url">URL del logo</Label>
+        <div className="flex flex-col md:flex-row gap-2">
+          <Input
+            id="logo-url"
+            value={logoUrl}
+            onChange={(e) => setLogoUrl(e.target.value)}
+            placeholder="https://..."
+            disabled={uploading}
+          />
+          <Button type="button" variant="outline" onClick={handleSaveUrl} disabled={uploading}>
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Guardar URL
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }
