@@ -147,11 +147,128 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
       console.log("[v0] User email:", user.email)
       setUserEmail(user.email || null)
 
-      const { data: perfil, error: perfilError } = await supabase
-        .from("Perfiles")
-        .select("inmobiliaria, is_admin, role")
-        .eq("usuario", user.email)
-        .maybeSingle()
+      const normalizeEmail = (value: any) => String(value || "").trim().toLowerCase()
+      const rawEmail = String(user.email || "").trim()
+      const email = normalizeEmail(rawEmail)
+      const emailLocal = email.includes("@") ? email.split("@")[0] : email
+
+      const getProfile = async () => {
+        const tryQueries: Array<() => Promise<{ data: any; error: any }>> = [
+          async () => {
+            try {
+              return await supabase.from("Perfiles").select("*").eq("user_id", user.id).maybeSingle()
+            } catch (e: any) {
+              return { data: null, error: e }
+            }
+          },
+          async () => supabase.from("Perfiles").select("*").eq("usuario", rawEmail).maybeSingle(),
+          async () => supabase.from("Perfiles").select("*").ilike("usuario", email).maybeSingle(),
+          async () => {
+            try {
+              return await supabase.from("Perfiles").select("*").eq("Usuario", rawEmail).maybeSingle()
+            } catch (e: any) {
+              return { data: null, error: e }
+            }
+          },
+          async () => {
+            try {
+              return await supabase.from("Perfiles").select("*").ilike("Usuario", email).maybeSingle()
+            } catch (e: any) {
+              return { data: null, error: e }
+            }
+          },
+          async () => {
+            if (!emailLocal) return { data: null, error: null }
+            return await supabase.from("Perfiles").select("*").ilike("usuario", `${emailLocal}@%`).maybeSingle()
+          },
+        ]
+
+        for (const run of tryQueries) {
+          const { data, error } = await run()
+          if (!error && data) return { perfil: data, perfilError: null }
+        }
+
+        return { perfil: null, perfilError: null }
+      }
+
+      let { perfil, perfilError } = await getProfile()
+
+      const readInmobiliariaId = (p: any) => {
+        const v = p?.inmobiliaria ?? p?.Inmobiliaria ?? null
+        const n = Number(v)
+        return Number.isFinite(n) && n > 0 ? n : null
+      }
+
+      const inferInmobiliariaId = async () => {
+        const metaValue: any =
+          (user as any)?.user_metadata?.inmobiliaria_id ??
+          (user as any)?.user_metadata?.inmobiliaria ??
+          (user as any)?.raw_user_meta_data?.inmobiliaria_id ??
+          null
+
+        const metaNum = Number(metaValue)
+        if (Number.isFinite(metaNum) && metaNum > 0) return metaNum
+
+        try {
+          const { data: agentRow, error: agentErr } = await supabase
+            .from("Agentes")
+            .select("idi")
+            .ilike("Email", email)
+            .limit(1)
+            .maybeSingle()
+          if (!agentErr) {
+            const idiNum = Number((agentRow as any)?.idi)
+            if (Number.isFinite(idiNum) && idiNum > 0) return idiNum
+          }
+        } catch {}
+
+        return null
+      }
+
+      const ensureProfileExists = async (targetInmobiliariaId: number) => {
+        if (!email) return
+        if (perfil && readInmobiliariaId(perfil)) return
+
+        if (!perfil) {
+          try {
+            const basePayload: any = {
+              usuario: rawEmail || email,
+              inmobiliaria: targetInmobiliariaId,
+              role: "agente",
+              is_admin: false,
+            }
+
+            try {
+              const { error } = await supabase.from("Perfiles").insert([{ ...basePayload, user_id: user.id }])
+              if (!error) return
+              if (String(error?.message || "").toLowerCase().includes("user_id")) {
+                await supabase.from("Perfiles").insert([basePayload])
+                return
+              }
+            } catch {
+              await supabase.from("Perfiles").insert([basePayload])
+              return
+            }
+          } catch (e: any) {
+            console.error("[v0] Error creating Perfiles row:", e)
+          }
+        } else {
+          try {
+            await supabase
+              .from("Perfiles")
+              .update({ inmobiliaria: targetInmobiliariaId })
+              .eq("usuario", (perfil as any)?.usuario || rawEmail || email)
+          } catch {}
+        }
+      }
+
+      if (!perfil || !readInmobiliariaId(perfil)) {
+        const inferredId = await inferInmobiliariaId()
+        if (inferredId) {
+          await ensureProfileExists(inferredId)
+          ;({ perfil, perfilError } = await getProfile())
+        }
+      }
 
       console.log("[v0] Perfil query result:", { perfil, perfilError })
 
@@ -165,7 +282,8 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
         return
       }
 
-      if (!perfil || !perfil.inmobiliaria) {
+      const perfilInmobiliariaId = readInmobiliariaId(perfil)
+      if (!perfil || !perfilInmobiliariaId) {
         console.warn("[v0] No profile found for user:", user.email)
         setInmobiliariaId(null)
         setInmobiliariaNombre(null)
@@ -173,14 +291,14 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
         return
       }
 
-      console.log("[v0] Found inmobiliaria ID:", perfil.inmobiliaria)
+      console.log("[v0] Found inmobiliaria ID:", perfilInmobiliariaId)
 
       const roleStr = String(perfil?.role || "").toLowerCase()
       const adminFlag = perfil?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
       setIsAdmin(adminFlag)
       // Force "administrador" role if adminFlag is true, ignoring DB role if conflicting
       setRole(adminFlag ? "administrador" : (perfil.role || "agente"))
-      const ownId = Number(perfil.inmobiliaria)
+      const ownId = Number(perfilInmobiliariaId)
       setOwnInmobiliariaId(ownId)
       const savedRaw = adminFlag ? localStorage.getItem("rf_admin_selected_idi") : null
       const effectiveAll = savedRaw === "all"
