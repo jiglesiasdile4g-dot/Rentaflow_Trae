@@ -183,22 +183,7 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
                     className="flex flex-col overflow-hidden mr-2 w-full relative items-center cursor-pointer"
                     onClick={onToggle}
                 >
-                    {logoUrl && !logoError ? (
-                        <div className="relative h-12 w-full max-w-[180px]">
-                            <Image 
-                                src={logoUrl} 
-                                alt={APP_NAME} 
-                                fill 
-                                className="object-contain object-center"
-                                onError={() => setLogoError(true)}
-                                unoptimized
-                            />
-                        </div>
-                    ) : (
-                        <>
-                            <h1 className="text-xl font-bold truncate text-primary tracking-tight">{APP_NAME}</h1>
-                        </>
-                    )}
+                    <h1 className="text-xl font-bold truncate text-primary tracking-tight">{APP_NAME}</h1>
                 </div>
                 <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 absolute right-2 top-2 z-10" onClick={onToggle}>
                     <ChevronsLeft className="h-4 w-4" />
@@ -206,23 +191,8 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
               </>
             ) : (
               <div className="flex flex-col items-center gap-1 cursor-pointer w-full" onClick={onToggle}>
-                  {logoUrl && !logoError ? (
-                    <div className="relative h-8 w-8">
-                        <Image 
-                            src={logoUrl} 
-                            alt="RF" 
-                            fill 
-                            className="object-contain"
-                            onError={() => setLogoError(true)}
-                            unoptimized
-                        />
-                    </div>
-                  ) : (
-                    <>
-                        <span className="font-bold text-lg">RF</span>
-                        <Menu className="h-4 w-4 text-muted-foreground" />
-                    </>
-                  )}
+                  <span className="font-bold text-lg">RF</span>
+                  <Menu className="h-4 w-4 text-muted-foreground" />
               </div>
             )}
         </div>
