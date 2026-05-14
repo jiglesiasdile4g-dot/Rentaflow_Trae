@@ -430,6 +430,188 @@ export async function createInmobiliariaAction(formData: FormData) {
     redirect(`/dashboard/configuracion?inmo=success&imsg=${encodeURIComponent("Inmobiliaria creada")}`)
 }
 
+export async function onboardInmobiliariaAction(formData: FormData) {
+    const supabase = await createClient()
+    const admin = createAdminClient()
+    const {
+        data: { user },
+    } = await supabase.auth.getUser()
+    if (!user?.email) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("Usuario no autenticado")}`)
+    }
+
+    const { data: perfil } = await admin
+        .from("Perfiles")
+        .select("is_admin, role")
+        .ilike("usuario", user.email)
+        .limit(1)
+        .maybeSingle()
+    const roleStr = String(perfil?.role || "").toLowerCase()
+    const isSuperuser = perfil?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
+    if (!isSuperuser) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("Sin permisos para crear inmobiliarias")}`)
+    }
+
+    const nombre = String(formData.get("Nombre") || "").trim()
+    const direccion = String(formData.get("Direccion") || "").trim()
+    const telefono = String(formData.get("Telefono") || "").trim()
+    const mailContacto = String(formData.get("Mail contacto") || "").trim()
+    const mailSistema = String(formData.get("Mail sistema") || "").trim()
+    const whatsappEmpresa = String(formData.get("Whatsapp_empresa") || "").trim()
+    const personaContacto = String(formData.get("Persona de Contacto") || "").trim()
+    const planRaw = String(formData.get("Plan") || "").trim()
+    const planResetRaw = String(formData.get("PlanResetAt") || "").trim()
+    const planNextRaw = String(formData.get("PlanNext") || "").trim()
+    const planNextAtRaw = String(formData.get("PlanNextEffectiveAt") || "").trim()
+    const whatsappActivo = formData.get("whatsapp_activo") != null
+    const inmobiliariaAct = String(formData.get("inmobiliaria_act") || "").trim()
+    const firmaHtml = String(formData.get("firma_html") || "").trim()
+    const paginaWeb = String(formData.get("pagina_web") || "").trim()
+    const logoUrl = String(formData.get("logo_url") || "").trim()
+    const colorPrimario = String(formData.get("color_primario") || "").trim()
+    const colorSecundario = String(formData.get("color_secundario") || "").trim()
+
+    const adminEmail = String(formData.get("admin_email") || "").trim().toLowerCase()
+    const adminName = String(formData.get("admin_nombre") || "").trim()
+    const adminPhone = String(formData.get("admin_telefono") || "").trim()
+
+    if (!nombre) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("Falta el nombre")}`)
+    }
+    if (!adminEmail || !adminEmail.includes("@")) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("Email del administrador inválido")}`)
+    }
+
+    const payload: Record<string, any> = { Nombre: nombre }
+    if (direccion) payload.Direccion = direccion
+    if (telefono) payload.Telefono = telefono
+    if (mailContacto) payload["Mail contacto"] = mailContacto
+    if (mailSistema) payload["Mail sistema"] = mailSistema
+    if (whatsappEmpresa) payload.Whatsapp_empresa = whatsappEmpresa
+    if (personaContacto) payload["Persona de Contacto"] = personaContacto
+    if (paginaWeb) payload.pagina_web = paginaWeb
+    if (logoUrl) payload.logo_url = logoUrl
+    if (colorPrimario) payload.color_primario = colorPrimario
+    if (colorSecundario) payload.color_secundario = colorSecundario
+    if (firmaHtml) payload.firma_html = firmaHtml
+    if (inmobiliariaAct) payload.inmobiliaria_act = inmobiliariaAct
+    payload.whatsapp_activo = whatsappActivo
+    if (planRaw) {
+        const planNum = Number(planRaw)
+        if (Number.isFinite(planNum)) payload.Plan = planNum
+    }
+    if (planNextRaw) {
+        const planNextNum = Number(planNextRaw)
+        if (Number.isFinite(planNextNum)) payload.PlanNext = planNextNum
+    }
+    if (planResetRaw) {
+        const date = new Date(planResetRaw)
+        if (!Number.isNaN(date.getTime())) payload.PlanResetAt = date.toISOString()
+    }
+    if (planNextAtRaw) {
+        const date = new Date(planNextAtRaw)
+        if (!Number.isNaN(date.getTime())) payload.PlanNextEffectiveAt = date.toISOString()
+    }
+
+    const { data: insertedInmo, error: inmoError } = await admin.from("Inmobiliarias").insert(payload).select("idi").maybeSingle()
+    if (inmoError) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent(inmoError.message || "Error creando inmobiliaria")}`)
+    }
+
+    const idiNum = Number((insertedInmo as any)?.idi)
+    if (!Number.isFinite(idiNum) || idiNum <= 0) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("No se pudo obtener el ID de la inmobiliaria creada")}`)
+    }
+
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
+    const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`
+
+    let inviteOk = false
+    try {
+        const { error: inviteError } = await admin.auth.admin.inviteUserByEmail(adminEmail, { redirectTo: redirectUrl })
+        if (inviteError) {
+            const msg = String(inviteError.message || "").toLowerCase()
+            if (msg.includes("already registered") || msg.includes("user already")) {
+                const { error: resetError } = await admin.auth.resetPasswordForEmail(adminEmail, { redirectTo: redirectUrl })
+                if (resetError) {
+                    redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent(resetError.message || "No se pudo enviar el correo al administrador")}`)
+                }
+                inviteOk = true
+            } else {
+                redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent(inviteError.message || "No se pudo invitar al administrador")}`)
+            }
+        } else {
+            inviteOk = true
+        }
+    } catch (e: any) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent(e?.message || "No se pudo invitar al administrador")}`)
+    }
+
+    let authUserId: string | null = null
+    try {
+        const { data } = await admin.auth.admin.listUsers({ perPage: 1000 } as any)
+        const users = (data as any)?.users || []
+        const foundUser = users.find((u: any) => String(u?.email || "").toLowerCase() === adminEmail)
+        authUserId = foundUser?.id || null
+    } catch {}
+
+    const displayName = adminName || adminEmail.split("@")[0]
+    const existing = await findProfileAndColumns(admin, adminEmail, idiNum)
+    if (!existing) {
+        const basePayload: any = {
+            usuario: adminEmail,
+            inmobiliaria: idiNum,
+            role: "administrador",
+            is_admin: false,
+            es_agente: true,
+            nombre: displayName,
+            telefono: adminPhone,
+        }
+        if (authUserId) basePayload.user_id = authUserId
+        try {
+            const { error } = await admin.from("Perfiles").insert(basePayload)
+            if (error) {
+                if (error.code === "42703") {
+                    const altPayload: any = {
+                        Usuario: adminEmail,
+                        Inmobiliaria: idiNum,
+                        Role: "administrador",
+                        Is_admin: false,
+                        Es_agente: true,
+                        Nombre: displayName,
+                        Telefono: adminPhone,
+                    }
+                    if (authUserId) altPayload.user_id = authUserId
+                    const retry = await admin.from("Perfiles").insert(altPayload)
+                    if (retry.error) {
+                        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent(retry.error.message || "No se pudo crear el perfil del administrador")}`)
+                    }
+                } else {
+                    redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent(error.message || "No se pudo crear el perfil del administrador")}`)
+                }
+            }
+        } catch (e: any) {
+            redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent(e?.message || "No se pudo crear el perfil del administrador")}`)
+        }
+    } else {
+        const idField = existing.profile.id ? "id" : "idp"
+        const updates: any = {
+            role: "administrador",
+            is_admin: false,
+            es_agente: true,
+            nombre: displayName,
+            telefono: adminPhone,
+        }
+        if (authUserId) updates.user_id = authUserId
+        await admin.from("Perfiles").update(updates).eq(idField, existing.profile[idField])
+    }
+
+    await logAuditAction(admin, "ONBOARD_INMOBILIARIA", adminEmail, { idi: idiNum, inmobiliaria: nombre, invite_sent: inviteOk })
+
+    revalidatePath("/dashboard/configuracion")
+    redirect(`/dashboard/configuracion?inmo=success&imsg=${encodeURIComponent(`Inmobiliaria creada (IDI ${idiNum}) y administrador invitado: ${adminEmail}`)}`)
+}
+
 export async function updateInmobiliariaAction(formData: FormData) {
     const supabase = await createClient()
     const admin = createAdminClient()

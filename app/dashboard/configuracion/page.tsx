@@ -30,6 +30,7 @@ import {
   updateUserDetailsAction,
   triggerVisitReminderAction,
   createInmobiliariaAction,
+  onboardInmobiliariaAction,
   updateInmobiliariaAction,
   syncAgentNamesAction
 } from "./actions"
@@ -462,102 +463,217 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                   <CardTitle>Información de Inmobiliaria</CardTitle>
                 </div>
                 {userRoleLabel === "Superusuario" && (
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button size="sm" className="h-8 text-xs" variant="outline">
-                        <Building2 className="mr-2 h-3 w-3" />
-                        Crear inmobiliaria
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
-                      <DialogHeader>
-                        <DialogTitle>Crear inmobiliaria</DialogTitle>
-                        <DialogDescription>Alta de una nueva inmobiliaria en el sistema</DialogDescription>
-                      </DialogHeader>
-                      <form action={createInmobiliariaAction} className="space-y-4 py-2">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-nombre">Nombre</Label>
-                            <Input id="inmo-nombre" name="Nombre" required />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-direccion">Dirección</Label>
-                            <Input id="inmo-direccion" name="Direccion" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-telefono">Teléfono</Label>
-                            <Input id="inmo-telefono" name="Telefono" type="tel" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-mail-contacto">Mail contacto</Label>
-                            <Input id="inmo-mail-contacto" name="Mail contacto" type="email" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-mail-sistema">Mail sistema</Label>
-                            <Input id="inmo-mail-sistema" name="Mail sistema" type="email" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-whatsapp">Whatsapp empresa</Label>
-                            <Input id="inmo-whatsapp" name="Whatsapp_empresa" type="tel" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-persona-contacto">Persona de contacto</Label>
-                            <Input id="inmo-persona-contacto" name="Persona de Contacto" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-plan">Plan</Label>
-                            <Input id="inmo-plan" name="Plan" type="number" step="1" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-plan-reset">Plan reset at</Label>
-                            <Input id="inmo-plan-reset" name="PlanResetAt" type="datetime-local" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-plan-next">Plan next</Label>
-                            <Input id="inmo-plan-next" name="PlanNext" type="number" step="1" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-plan-next-at">Plan next effective at</Label>
-                            <Input id="inmo-plan-next-at" name="PlanNextEffectiveAt" type="datetime-local" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-whatsapp-activo">Whatsapp activo</Label>
-                            <div className="flex items-center gap-2">
-                              <Input id="inmo-whatsapp-activo" name="whatsapp_activo" type="checkbox" className="h-4 w-4" />
-                              <span className="text-sm text-muted-foreground">Activo</span>
+                  <div className="flex items-center gap-2">
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button size="sm" className="h-8 text-xs" variant="outline">
+                          <Building2 className="mr-2 h-3 w-3" />
+                          Crear inmobiliaria
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>Crear inmobiliaria</DialogTitle>
+                          <DialogDescription>Alta de una nueva inmobiliaria en el sistema</DialogDescription>
+                        </DialogHeader>
+                        <form action={createInmobiliariaAction} className="space-y-4 py-2">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-nombre">Nombre</Label>
+                              <Input id="inmo-nombre" name="Nombre" required />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-direccion">Dirección</Label>
+                              <Input id="inmo-direccion" name="Direccion" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-telefono">Teléfono</Label>
+                              <Input id="inmo-telefono" name="Telefono" type="tel" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-mail-contacto">Mail contacto</Label>
+                              <Input id="inmo-mail-contacto" name="Mail contacto" type="email" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-mail-sistema">Mail sistema</Label>
+                              <Input id="inmo-mail-sistema" name="Mail sistema" type="email" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-whatsapp">Whatsapp empresa</Label>
+                              <Input id="inmo-whatsapp" name="Whatsapp_empresa" type="tel" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-persona-contacto">Persona de contacto</Label>
+                              <Input id="inmo-persona-contacto" name="Persona de Contacto" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-plan">Plan</Label>
+                              <Input id="inmo-plan" name="Plan" type="number" step="1" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-plan-reset">Plan reset at</Label>
+                              <Input id="inmo-plan-reset" name="PlanResetAt" type="datetime-local" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-plan-next">Plan next</Label>
+                              <Input id="inmo-plan-next" name="PlanNext" type="number" step="1" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-plan-next-at">Plan next effective at</Label>
+                              <Input id="inmo-plan-next-at" name="PlanNextEffectiveAt" type="datetime-local" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-whatsapp-activo">Whatsapp activo</Label>
+                              <div className="flex items-center gap-2">
+                                <Input id="inmo-whatsapp-activo" name="whatsapp_activo" type="checkbox" className="h-4 w-4" />
+                                <span className="text-sm text-muted-foreground">Activo</span>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-act">Inmobiliaria act</Label>
+                              <Input id="inmo-act" name="inmobiliaria_act" />
+                            </div>
+                            <div className="space-y-2 md:col-span-2">
+                              <Label htmlFor="inmo-firma">Firma HTML</Label>
+                              <Textarea id="inmo-firma" name="firma_html" className="min-h-[120px]" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-web">Página web</Label>
+                              <Input id="inmo-web" name="pagina_web" type="url" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-logo">Logo URL</Label>
+                              <Input id="inmo-logo" name="logo_url" type="url" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-color-primario">Color primario</Label>
+                              <Input id="inmo-color-primario" name="color_primario" type="color" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="inmo-color-secundario">Color secundario</Label>
+                              <Input id="inmo-color-secundario" name="color_secundario" type="color" />
                             </div>
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-act">Inmobiliaria act</Label>
-                            <Input id="inmo-act" name="inmobiliaria_act" />
+                          <DialogFooter>
+                            <Button type="submit">Crear inmobiliaria</Button>
+                          </DialogFooter>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button size="sm" className="h-8 text-xs" variant="outline">
+                          Alta completa
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>Alta completa</DialogTitle>
+                          <DialogDescription>Crea la inmobiliaria y el administrador inicial</DialogDescription>
+                        </DialogHeader>
+                        <form action={onboardInmobiliariaAction} className="space-y-4 py-2">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2 md:col-span-2">
+                              <Label htmlFor="onb-inmo-nombre">Nombre</Label>
+                              <Input id="onb-inmo-nombre" name="Nombre" required />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-direccion">Dirección</Label>
+                              <Input id="onb-inmo-direccion" name="Direccion" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-telefono">Teléfono</Label>
+                              <Input id="onb-inmo-telefono" name="Telefono" type="tel" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-mail-contacto">Mail contacto</Label>
+                              <Input id="onb-inmo-mail-contacto" name="Mail contacto" type="email" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-mail-sistema">Mail sistema</Label>
+                              <Input id="onb-inmo-mail-sistema" name="Mail sistema" type="email" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-whatsapp">Whatsapp empresa</Label>
+                              <Input id="onb-inmo-whatsapp" name="Whatsapp_empresa" type="tel" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-persona-contacto">Persona de contacto</Label>
+                              <Input id="onb-inmo-persona-contacto" name="Persona de Contacto" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-plan">Plan</Label>
+                              <Input id="onb-inmo-plan" name="Plan" type="number" step="1" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-plan-reset">Plan reset at</Label>
+                              <Input id="onb-inmo-plan-reset" name="PlanResetAt" type="datetime-local" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-plan-next">Plan next</Label>
+                              <Input id="onb-inmo-plan-next" name="PlanNext" type="number" step="1" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-plan-next-at">Plan next effective at</Label>
+                              <Input id="onb-inmo-plan-next-at" name="PlanNextEffectiveAt" type="datetime-local" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-whatsapp-activo">Whatsapp activo</Label>
+                              <div className="flex items-center gap-2">
+                                <Input id="onb-inmo-whatsapp-activo" name="whatsapp_activo" type="checkbox" className="h-4 w-4" />
+                                <span className="text-sm text-muted-foreground">Activo</span>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-act">Inmobiliaria act</Label>
+                              <Input id="onb-inmo-act" name="inmobiliaria_act" />
+                            </div>
+                            <div className="space-y-2 md:col-span-2">
+                              <Label htmlFor="onb-inmo-firma">Firma HTML</Label>
+                              <Textarea id="onb-inmo-firma" name="firma_html" className="min-h-[120px]" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-web">Página web</Label>
+                              <Input id="onb-inmo-web" name="pagina_web" type="url" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-logo">Logo URL</Label>
+                              <Input id="onb-inmo-logo" name="logo_url" type="url" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-color-primario">Color primario</Label>
+                              <Input id="onb-inmo-color-primario" name="color_primario" type="color" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-inmo-color-secundario">Color secundario</Label>
+                              <Input id="onb-inmo-color-secundario" name="color_secundario" type="color" />
+                            </div>
                           </div>
-                          <div className="space-y-2 md:col-span-2">
-                            <Label htmlFor="inmo-firma">Firma HTML</Label>
-                            <Textarea id="inmo-firma" name="firma_html" className="min-h-[120px]" />
+
+                          <Separator />
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2 md:col-span-2">
+                              <Label htmlFor="onb-admin-email">Email administrador</Label>
+                              <Input id="onb-admin-email" name="admin_email" type="email" required />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-admin-nombre">Nombre administrador</Label>
+                              <Input id="onb-admin-nombre" name="admin_nombre" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="onb-admin-telefono">Teléfono administrador</Label>
+                              <Input id="onb-admin-telefono" name="admin_telefono" type="tel" />
+                            </div>
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-web">Página web</Label>
-                            <Input id="inmo-web" name="pagina_web" type="url" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-logo">Logo URL</Label>
-                            <Input id="inmo-logo" name="logo_url" type="url" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-color-primario">Color primario</Label>
-                            <Input id="inmo-color-primario" name="color_primario" type="color" />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="inmo-color-secundario">Color secundario</Label>
-                            <Input id="inmo-color-secundario" name="color_secundario" type="color" />
-                          </div>
-                        </div>
-                        <DialogFooter>
-                          <Button type="submit">Crear inmobiliaria</Button>
-                        </DialogFooter>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
+
+                          <DialogFooter>
+                            <Button type="submit">Crear alta</Button>
+                          </DialogFooter>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
                 )}
                 {isAdmin && inmobiliariaData && (
                   <Dialog>
