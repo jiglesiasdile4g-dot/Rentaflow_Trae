@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
-import { Mail, Plus, RefreshCw, Save } from "lucide-react"
+import { Mail, Pencil, Plus, RefreshCw, Save } from "lucide-react"
 import { createComunicacion, listComunicaciones, updateComunicacion } from "@/app/actions/comunicaciones"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -19,7 +19,7 @@ type ColumnDef = {
 }
 
 const defaultColumns: ColumnDef[] = [
-  { name: "inmobiliaria", dataType: "text" },
+  { name: "idi", dataType: "text" },
   { name: "titulo_comunicacion", dataType: "text" },
   { name: "tipo", dataType: "text" },
   { name: "subject", dataType: "text" },
@@ -101,6 +101,8 @@ export default function ComunicacionesPage() {
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isCreatingNew, setIsCreatingNew] = useState(false)
+  const editorSectionRef = useRef<HTMLDivElement | null>(null)
+  const editorTitleRef = useRef<HTMLInputElement | null>(null)
 
   // Restaurar estado de filtros
   useEffect(() => {
@@ -136,7 +138,7 @@ export default function ComunicacionesPage() {
   const [htmlLineHeight, setHtmlLineHeight] = useState(20)
   const [htmlPaddingTop, setHtmlPaddingTop] = useState(12)
   const [htmlScrollTop, setHtmlScrollTop] = useState(0)
-  const [previewMode, setPreviewMode] = useState<"email" | "wysiwyg">("email")
+  const [previewMode, setPreviewMode] = useState<"email" | "wysiwyg">("wysiwyg")
   const [previewLineHeight, setPreviewLineHeight] = useState(20)
   const [previewPaddingTop, setPreviewPaddingTop] = useState(12)
   const [previewScrollTop, setPreviewScrollTop] = useState(0)
@@ -155,15 +157,51 @@ export default function ComunicacionesPage() {
     [columns]
   )
   const listKeyField = useMemo(() => (rows.length > 0 ? getKeyField(rows[0], columns) : "id"), [rows, columns])
+  const getOrderNumber = useCallback((row: Record<string, any>) => {
+    const candidates = [
+      "numero_orden",
+      "numeroOrden",
+      "num_orden",
+      "n_orden",
+      "orden",
+      "order",
+      "Numero_orden",
+      "NumeroOrden",
+      "Num_orden",
+      "N_orden",
+      "Orden",
+      "Order",
+    ]
+    for (const key of candidates) {
+      const raw = row?.[key]
+      if (raw === null || raw === undefined) continue
+      const n = typeof raw === "number" ? raw : Number(String(raw).trim())
+      if (Number.isFinite(n)) return n
+    }
+    return null
+  }, [])
   const filteredRows = useMemo(() => {
     const query = filterQuery.trim().toLowerCase()
-    if (!query) return rows
-    return rows.filter((row) => {
-      const title = String(row.titulo_comunicacion || "").toLowerCase()
-      const subject = String(row.subject || "").toLowerCase()
-      return title.includes(query) || subject.includes(query)
+    const base = query
+      ? rows.filter((row) => {
+          const title = String(row.titulo_comunicacion || "").toLowerCase()
+          const subject = String(row.subject || "").toLowerCase()
+          return title.includes(query) || subject.includes(query)
+        })
+      : rows
+
+    const next = [...base]
+    next.sort((a, b) => {
+      const aOrder = getOrderNumber(a)
+      const bOrder = getOrderNumber(b)
+      if (aOrder == null && bOrder == null) return 0
+      if (aOrder == null) return 1
+      if (bOrder == null) return -1
+      if (aOrder !== bOrder) return aOrder - bOrder
+      return String(a.titulo_comunicacion || "").localeCompare(String(b.titulo_comunicacion || ""))
     })
-  }, [filterQuery, rows])
+    return next
+  }, [filterQuery, getOrderNumber, rows])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -198,16 +236,6 @@ export default function ComunicacionesPage() {
     if (document.activeElement === el) return
     if (el.innerHTML !== html) {
       el.innerHTML = html
-    }
-  }, [selectedId, editDraft.texto_html, newDraft.texto_html])
-
-  useEffect(() => {
-    const el = htmlEditorRef.current
-    if (!el) return
-    const html = String(selectedId ? editDraft.texto_html || "" : newDraft.texto_html || "")
-    if (document.activeElement === el) return
-    if (el.value !== html) {
-      el.value = html
     }
   }, [selectedId, editDraft.texto_html, newDraft.texto_html])
 
@@ -542,6 +570,19 @@ export default function ComunicacionesPage() {
     )
   }
 
+  const focusEditor = useCallback(() => {
+    window.setTimeout(() => {
+      const target = htmlEditorRef.current || wysiwygRef.current || editorTitleRef.current
+      target?.focus()
+    }, 50)
+  }, [])
+
+  const openEditorInPage = useCallback(() => {
+    setPreviewMode("wysiwyg")
+    editorSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    focusEditor()
+  }, [focusEditor])
+
   const reviewButtonLabel = reviewSent ? "Mandado a revisión" : "Enviar a revisión"
 
   return (
@@ -601,9 +642,17 @@ export default function ComunicacionesPage() {
                     const rowId = row[listKeyField]
                     const title = row.titulo_comunicacion || "Sin título"
                     const subject = row.subject || "Sin asunto"
+                    const orderNumber = getOrderNumber(row)
                     return (
                       <SelectItem key={String(rowId)} value={String(rowId)}>
-                        {title} — {subject}
+                        <span className="flex w-full items-center gap-3">
+                          {orderNumber != null ? (
+                            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{orderNumber}</span>
+                          ) : null}
+                          <span className="min-w-0 truncate">
+                            {title} — {subject}
+                          </span>
+                        </span>
                       </SelectItem>
                     )
                   })}
@@ -612,9 +661,21 @@ export default function ComunicacionesPage() {
             )}
 
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => setIsEditOpen(true)} disabled={!selectedId || saving || loading}>
+              <Button
+                onClick={() => {
+                  setIsEditOpen(false)
+                  if (!selectedId) return
+                  setIsCreatingNew(false)
+                  openEditorInPage()
+                }}
+                disabled={!selectedId || saving || loading}
+              >
+                <Pencil className="h-4 w-4 mr-2" />
+                Editar (en página)
+              </Button>
+              <Button variant="outline" onClick={() => setIsEditOpen(true)} disabled={!selectedId || saving || loading}>
                 <Save className="h-4 w-4 mr-2" />
-                Editar
+                Editar campos
               </Button>
               <Button
                 variant="outline"
@@ -627,6 +688,7 @@ export default function ComunicacionesPage() {
                   setActiveLine(null)
                   setActiveRange(null)
                   setIsCreateOpen(false)
+                  openEditorInPage()
                 }}
                 disabled={saving || loading}
               >
@@ -638,47 +700,49 @@ export default function ComunicacionesPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Editor HTML</CardTitle>
-          <CardDescription>Escribe el HTML y revisa el resultado</CardDescription>
-          <div className="text-sm text-amber-600">
-            Evita modificar las variables entre llaves {"{{ }}"}; si cambian, la comunicación puede dejar de funcionar.
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>Título</Label>
-                <Input
-                  value={selectedId ? editDraft.titulo_comunicacion ?? "" : newDraft.titulo_comunicacion ?? ""}
-                  onChange={(e) => {
-                    if (selectedId) {
-                      setEditDraft({ ...editDraft, titulo_comunicacion: e.target.value })
-                    } else {
-                      setNewDraft({ ...newDraft, titulo_comunicacion: e.target.value })
-                    }
-                  }}
-                  className="border"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Subject</Label>
-                <Input
-                  value={selectedId ? editDraft.subject ?? "" : newDraft.subject ?? ""}
-                  onChange={(e) => {
-                    if (selectedId) {
-                      setEditDraft({ ...editDraft, subject: e.target.value })
-                    } else {
-                      setNewDraft({ ...newDraft, subject: e.target.value })
-                    }
-                  }}
-                  className="border"
-                />
-              </div>
+      <div ref={editorSectionRef}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Editor HTML</CardTitle>
+            <CardDescription>Escribe el HTML y revisa el resultado</CardDescription>
+            <div className="text-sm text-amber-600">
+              Evita modificar las variables entre llaves {"{{ }}"}; si cambian, la comunicación puede dejar de funcionar.
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label>Título</Label>
+                  <Input
+                    ref={editorTitleRef}
+                    value={selectedId ? editDraft.titulo_comunicacion ?? "" : newDraft.titulo_comunicacion ?? ""}
+                    onChange={(e) => {
+                      if (selectedId) {
+                        setEditDraft({ ...editDraft, titulo_comunicacion: e.target.value })
+                      } else {
+                        setNewDraft({ ...newDraft, titulo_comunicacion: e.target.value })
+                      }
+                    }}
+                    className="border"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Subject</Label>
+                  <Input
+                    value={selectedId ? editDraft.subject ?? "" : newDraft.subject ?? ""}
+                    onChange={(e) => {
+                      if (selectedId) {
+                        setEditDraft({ ...editDraft, subject: e.target.value })
+                      } else {
+                        setNewDraft({ ...newDraft, subject: e.target.value })
+                      }
+                    }}
+                    className="border"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>HTML</Label>
               {activeRange ? (
@@ -703,15 +767,15 @@ export default function ComunicacionesPage() {
                 ) : null}
                 <Textarea
                   ref={htmlEditorRef}
-                  defaultValue={selectedId ? editDraft.texto_html ?? "" : newDraft.texto_html ?? ""}
-                  onInput={(e) => {
+                  value={String(selectedId ? editDraft.texto_html || "" : newDraft.texto_html || "")}
+                  onChange={(e) => {
                     const value = (e.currentTarget as HTMLTextAreaElement).value
                     const start = (e.currentTarget as HTMLTextAreaElement).selectionStart ?? value.length
                     const end = (e.currentTarget as HTMLTextAreaElement).selectionEnd ?? start
                     if (selectedId) {
-                      setEditDraft({ ...editDraft, texto_html: value })
+                      setEditDraft((prev) => ({ ...prev, texto_html: value }))
                     } else {
-                      setNewDraft({ ...newDraft, texto_html: value })
+                      setNewDraft((prev) => ({ ...prev, texto_html: value }))
                     }
                     setActivePanel("html")
                     const lineStart = getLineFromPosition(value, start)
@@ -959,15 +1023,16 @@ export default function ComunicacionesPage() {
           </div>
           </div>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[90vh] w-full sm:max-w-5xl flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Editar comunicación</DialogTitle>
             <DialogDescription>{selectedId ? `ID seleccionado: ${selectedId}` : "Selecciona una comunicación"}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto pr-2">
             {(modalFieldColumns.length > 0 ? modalFieldColumns : fallbackModalColumns).map((col) => (
               <div key={`edit-${col.name}`} className="space-y-1">
                 <Label>{col.name}</Label>
@@ -979,7 +1044,7 @@ export default function ComunicacionesPage() {
               <Textarea
                 value={editDraft.texto_html ?? ""}
                 onChange={(e) => setEditDraft({ ...editDraft, texto_html: e.target.value })}
-                className="border min-h-[220px]"
+                className="border min-h-[220px] h-[40vh] resize-y"
               />
             </div>
             <div className="space-y-1">
@@ -994,7 +1059,7 @@ export default function ComunicacionesPage() {
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={handleCancelEdit} disabled={saving}>
               Cancelar
             </Button>
@@ -1010,12 +1075,12 @@ export default function ComunicacionesPage() {
       </Dialog>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[90vh] w-full sm:max-w-5xl flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Crear comunicación</DialogTitle>
             <DialogDescription>Completa los campos y guarda</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto pr-2">
             {(modalFieldColumns.length > 0 ? modalFieldColumns : fallbackModalColumns).map((col) => (
               <div key={`new-${col.name}`} className="space-y-1">
                 <Label>{col.name}</Label>
@@ -1027,7 +1092,7 @@ export default function ComunicacionesPage() {
               <Textarea
                 value={newDraft.texto_html ?? ""}
                 onChange={(e) => setNewDraft({ ...newDraft, texto_html: e.target.value })}
-                className="border min-h-[220px]"
+                className="border min-h-[220px] h-[40vh] resize-y"
               />
             </div>
             <div className="space-y-1">
@@ -1042,7 +1107,7 @@ export default function ComunicacionesPage() {
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={handleCancelCreate} disabled={saving}>
               Cancelar
             </Button>
