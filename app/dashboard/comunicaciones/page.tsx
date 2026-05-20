@@ -12,6 +12,7 @@ import { createComunicacion, listComunicaciones, updateComunicacion } from "@/ap
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getWebhookUrl } from "@/lib/utils"
+import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 
 type ColumnDef = {
   name: string
@@ -86,6 +87,7 @@ const buildDraft = (columns: ColumnDef[], row?: Record<string, any>) => {
 
 export default function ComunicacionesPage() {
   const { toast } = useToast()
+  const { inmobiliariaId, loading: inmobiliariaLoading } = useInmobiliaria()
   const [columns, setColumns] = useState<ColumnDef[]>([])
   const [rows, setRows] = useState<Record<string, any>[]>([])
   const [loading, setLoading] = useState(true)
@@ -203,11 +205,11 @@ export default function ComunicacionesPage() {
     return next
   }, [filterQuery, getOrderNumber, rows])
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (targetIdi: number | null) => {
     setLoading(true)
     setError(null)
     try {
-      const result = await listComunicaciones()
+      const result = await listComunicaciones(targetIdi)
       if (result.error) {
         throw new Error(result.error)
       }
@@ -226,8 +228,9 @@ export default function ComunicacionesPage() {
   }, [])
 
   useEffect(() => {
-    fetchData()
-  }, [fetchData])
+    if (inmobiliariaLoading) return
+    fetchData(inmobiliariaId)
+  }, [fetchData, inmobiliariaId, inmobiliariaLoading])
 
   useEffect(() => {
     const el = wysiwygRef.current
@@ -473,10 +476,10 @@ export default function ComunicacionesPage() {
       const row = rows.find((r) => String(r[getKeyField(r, columns)]) === String(selectedId))
       if (!row) throw new Error("No se encontró el registro")
       const keyField = getKeyField(row, columns)
-      const { error: updateError } = await updateComunicacion(keyField, row[keyField], editDraft)
+      const { error: updateError } = await updateComunicacion(keyField, row[keyField], editDraft, inmobiliariaId)
       if (updateError) throw new Error(updateError)
       toast({ title: "Guardado", description: "Comunicación actualizada" })
-      await fetchData()
+      await fetchData(inmobiliariaId)
       setIsEditOpen(false)
     } catch (err: any) {
       toast({ title: "Error", description: "No se pudo actualizar", variant: "destructive" })
@@ -488,10 +491,10 @@ export default function ComunicacionesPage() {
   const handleCreate = async () => {
     setSaving(true)
     try {
-      const { error: createError } = await createComunicacion(newDraft)
+      const { error: createError } = await createComunicacion(newDraft, inmobiliariaId)
       if (createError) throw new Error(createError)
       toast({ title: "Creada", description: "Comunicación guardada" })
-      await fetchData()
+      await fetchData(inmobiliariaId)
       setIsCreateOpen(false)
     } catch (err: any) {
       toast({ title: "Error", description: "No se pudo crear", variant: "destructive" })
@@ -508,7 +511,7 @@ export default function ComunicacionesPage() {
       selectedId != null
         ? rows.find((r) => String(r[getKeyField(r, columns)]) === String(selectedId))
         : null
-    const inmobiliaria = String((selectedRow?.inmobiliaria ?? draft.inmobiliaria) || "")
+    const inmobiliaria = String((selectedRow?.idi ?? selectedRow?.inmobiliaria ?? draft.idi ?? draft.inmobiliaria) || "")
     const titulo = String(draft.titulo_comunicacion || "")
     const subject = String(draft.subject || "")
     const html = String(draft.texto_html || "")
@@ -592,7 +595,7 @@ export default function ComunicacionesPage() {
           <h2 className="text-3xl font-bold text-foreground">Comunicaciones</h2>
           <p className="text-muted-foreground mt-2">Gestiona plantillas y mensajes de notificación</p>
         </div>
-        <Button variant="outline" onClick={fetchData} disabled={loading}>
+        <Button variant="outline" onClick={() => fetchData(inmobiliariaId)} disabled={loading || inmobiliariaLoading}>
           <RefreshCw className="h-4 w-4 mr-2" />
           Recargar
         </Button>

@@ -934,7 +934,9 @@ export function LeadDetailModal({
         .filter(Boolean)
 
       if (emails.length > 0 || phones.length > 0) {
-        fetchCommunications(emails, phones)
+        const leadIdcRaw = (finalLead as any)?.idc ?? (finalLead as any)?.IDC ?? null
+        const leadIdc = Number.isFinite(Number(leadIdcRaw)) ? Number(leadIdcRaw) : null
+        fetchCommunications(emails, phones, typeof inmobiliariaId === "number" ? inmobiliariaId : null, leadIdc)
       }
       
       // Load docs status (checking file existence logic is complex, assume lead has status fields)
@@ -951,7 +953,12 @@ export function LeadDetailModal({
     }
   }
 
-  const fetchCommunications = async (emails: string[] = [], phones: string[] = []) => {
+  const fetchCommunications = async (
+    emails: string[] = [],
+    phones: string[] = [],
+    targetIdi: number | null = null,
+    leadIdc: number | null = null,
+  ) => {
     if (emails.length === 0 && phones.length === 0) {
       setCommunications([])
       return
@@ -975,15 +982,52 @@ export function LeadDetailModal({
         ),
       )
 
-      const emailsPromise = uniqueEmails.length > 0
-        ? supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"]).or(emailFilter)
-        : Promise.resolve({ data: [], error: null })
+      const isMissingColumnError = (message: string, columnName: string) => {
+        const msg = String(message || "").toLowerCase()
+        const col = String(columnName || "").toLowerCase()
+        return msg.includes("column") && msg.includes(col) && (msg.includes("does not exist") || msg.includes("no existe"))
+      }
 
-      const whatsappPromise = phoneVariants.length > 0
-        ? supabase.from("Whatsapp").select("*").in("Telefono", phoneVariants).in("Tipo", ["Enviado", "Recibido"])
-        : Promise.resolve({ data: [], error: null })
+      const idiColumns = ["idi", "usuario", "inmobiliaria"]
+      const targetIdiValue = targetIdi != null ? String(targetIdi) : null
 
-      const [emailsResult, whatsappResult] = await Promise.all([emailsPromise, whatsappPromise])
+      const runCorreosQuery = async () => {
+        if (uniqueEmails.length === 0) return { data: [], error: null as any }
+        if (targetIdi == null) {
+          return await supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"]).or(emailFilter)
+        }
+        for (const col of idiColumns) {
+          const res = await supabase
+            .from("Correos")
+            .select("*")
+            .in("Tipo", ["enviado", "recibido"])
+            .or(emailFilter)
+            .eq(col as any, targetIdiValue as any)
+          if (!res.error) return res
+          if (!isMissingColumnError(res.error.message || "", col)) return res
+        }
+        return await supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"]).or(emailFilter)
+      }
+
+      const runWhatsappQuery = async () => {
+        if (phoneVariants.length === 0) return { data: [], error: null as any }
+        if (targetIdi == null) {
+          return await supabase.from("Whatsapp").select("*").in("Telefono", phoneVariants).in("Tipo", ["Enviado", "Recibido"])
+        }
+        for (const col of idiColumns) {
+          const res = await supabase
+            .from("Whatsapp")
+            .select("*")
+            .in("Telefono", phoneVariants)
+            .in("Tipo", ["Enviado", "Recibido"])
+            .eq(col as any, targetIdiValue as any)
+          if (!res.error) return res
+          if (!isMissingColumnError(res.error.message || "", col)) return res
+        }
+        return await supabase.from("Whatsapp").select("*").in("Telefono", phoneVariants).in("Tipo", ["Enviado", "Recibido"])
+      }
+
+      const [emailsResult, whatsappResult] = await Promise.all([runCorreosQuery(), runWhatsappQuery()])
 
       if (emailsResult.error) {
         console.error("Error fetching emails:", emailsResult.error)
@@ -1015,8 +1059,25 @@ export function LeadDetailModal({
       const allComms = [...emailComms, ...whatsappComms].sort((a, b) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       )
-      
-      setCommunications(allComms)
+
+      const leadIdcValue = leadIdc != null ? String(leadIdc) : null
+      const byLeadIdc = leadIdcValue
+        ? allComms.filter((comm: any) => {
+            const v = comm?.idc ?? comm?.IDC ?? comm?.Idc ?? null
+            return v != null && String(v) === leadIdcValue
+          })
+        : allComms
+
+      const base = leadIdcValue && byLeadIdc.length > 0 ? byLeadIdc : allComms
+      const targetIdiValueFinal = targetIdi != null ? String(targetIdi) : null
+      const byIdi = targetIdiValueFinal
+        ? base.filter((comm: any) => {
+            const v = comm?.idi ?? comm?.usuario ?? comm?.inmobiliaria ?? comm?.Idi ?? comm?.Usuario ?? comm?.Inmobiliaria ?? null
+            if (v == null) return false
+            return String(v) === targetIdiValueFinal
+          })
+        : base
+      setCommunications(byIdi)
     } catch (error) {
       console.error("Error fetching communications:", error)
     } finally {
@@ -1286,12 +1347,26 @@ export function LeadDetailModal({
 
       if (newStatus === "Aceptado") {
         try {
+          const targetInmoId = inmobiliariaId || (updatedLead as any)?.idi || (updatedLead as any)?.usuario || null
+          let inmobiliaria: any = null
+          if (targetInmoId) {
+            const { data, error } = await supabase.from("Inmobiliarias").select("*").eq("idi", targetInmoId).maybeSingle()
+            if (!error) {
+              inmobiliaria = data || null
+            }
+          }
+
           const res = await fetchWithTimeout("/api/aprobado", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               leadId: lead.id,
               lead: pickLeadPersonalData(updatedLead),
+              idi: targetInmoId,
+              inmobiliariaId: targetInmoId,
+              inmobiliariaNombre: inmobiliariaNombre || null,
+              inmobiliaria,
+              Inmobiliaria: inmobiliaria,
             }),
           })
           if (!res.ok) {

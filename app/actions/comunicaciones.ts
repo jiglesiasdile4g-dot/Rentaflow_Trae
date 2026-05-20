@@ -23,7 +23,7 @@ function isMissingColumnError(message: string, columnName: string) {
   return msg.includes("column") && msg.includes(col) && (msg.includes("does not exist") || msg.includes("no existe"))
 }
 
-export async function listComunicaciones() {
+export async function listComunicaciones(targetIdi?: number | null) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -35,8 +35,11 @@ export async function listComunicaciones() {
   const profile = await fetchPerfil(supabase, user.email)
 
   const roleStr = String(profile?.role || "").toLowerCase()
-  const isAdmin = profile?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
-  const idi = getIdiFromPerfil(profile)
+  const isSuperAdmin = profile?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
+  const isAdmin = isSuperAdmin || ["administrador", "admin"].includes(roleStr)
+  const ownIdi = getIdiFromPerfil(profile)
+  const effectiveIdi =
+    isSuperAdmin && typeof targetIdi === "number" && Number.isFinite(targetIdi) ? targetIdi : isSuperAdmin && targetIdi === null ? null : ownIdi
 
   let adminData: any[] | null = null
   let inferredColumns: string[] = []
@@ -48,19 +51,19 @@ export async function listComunicaciones() {
   } catch {}
 
   let query = supabase.from("comunicaciones").select("*").order("created_at", { ascending: false }).limit(200)
-  if (idi != null) {
-    const idiValue = String(idi)
+  if (effectiveIdi != null) {
+    const idiValue = String(effectiveIdi)
     query = query.eq("idi", idiValue)
   }
 
   let { data, error } = await query
-  if (error && idi != null && isMissingColumnError(error.message || "", "idi")) {
+  if (error && effectiveIdi != null && isMissingColumnError(error.message || "", "idi")) {
     const { data: fallbackData, error: fallbackError } = await supabase
       .from("comunicaciones")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(200)
-      .eq("inmobiliaria", String(idi))
+      .eq("inmobiliaria", String(effectiveIdi))
     data = fallbackData
     error = fallbackError
   }
@@ -68,8 +71,8 @@ export async function listComunicaciones() {
     const message = error.message || "Error al cargar comunicaciones"
     if (message.toLowerCase().includes("permission") || message.toLowerCase().includes("rls")) {
       if (adminData && isAdmin) {
-        if (idi != null) {
-          const idiValue = String(idi)
+        if (effectiveIdi != null) {
+          const idiValue = String(effectiveIdi)
           const filtered = adminData.filter((row: any) => {
             if (row == null) return false
             if (row.idi != null && String(row.idi) === idiValue) return true
@@ -86,8 +89,8 @@ export async function listComunicaciones() {
   }
 
   if (isAdmin && adminData && adminData.length > 0 && (!data || data.length === 0)) {
-    if (idi != null) {
-      const idiValue = String(idi)
+    if (effectiveIdi != null) {
+      const idiValue = String(effectiveIdi)
       const filtered = adminData.filter((row: any) => {
         if (row == null) return false
         if (row.idi != null && String(row.idi) === idiValue) return true
@@ -102,39 +105,7 @@ export async function listComunicaciones() {
   return { data: data || [], columns: [], error: null }
 }
 
-export async function createComunicacion(payload: Record<string, any>) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return { error: "No autenticado" }
-  }
-
-  const profile = await fetchPerfil(supabase, user.email)
-
-  const roleStr = String(profile?.role || "").toLowerCase()
-  const isAdmin = profile?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
-  const idi = getIdiFromPerfil(profile)
-
-  const nextPayload = { ...payload }
-  if (idi != null) {
-    const idiValue = String(idi)
-    if (!nextPayload.idi) nextPayload.idi = idiValue
-  }
-
-  let { error } = await supabase.from("comunicaciones").insert([nextPayload])
-  if (error && idi != null && isMissingColumnError(error.message || "", "idi")) {
-    const fallbackPayload = { ...payload }
-    if (!fallbackPayload.inmobiliaria) fallbackPayload.inmobiliaria = String(idi)
-    ;({ error } = await supabase.from("comunicaciones").insert([fallbackPayload]))
-  }
-  if (error) return { error: error.message }
-  return { error: null }
-}
-
-export async function updateComunicacion(keyField: string, keyValue: string | number, payload: Record<string, any>) {
+export async function createComunicacion(payload: Record<string, any>, targetIdi?: number | null) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -149,7 +120,49 @@ export async function updateComunicacion(keyField: string, keyValue: string | nu
   const roleStr = String(profile?.role || "").toLowerCase()
   const isSuperAdmin = profile?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
   const isAdmin = isSuperAdmin || ["administrador", "admin"].includes(roleStr)
-  const idi = getIdiFromPerfil(profile)
+  const ownIdi = getIdiFromPerfil(profile)
+  const effectiveIdi =
+    isSuperAdmin && typeof targetIdi === "number" && Number.isFinite(targetIdi) ? targetIdi : isSuperAdmin && targetIdi === null ? null : ownIdi
+
+  const nextPayload = { ...payload }
+  if (effectiveIdi != null) {
+    const idiValue = String(effectiveIdi)
+    if (!nextPayload.idi) nextPayload.idi = idiValue
+  }
+
+  let { error } = await supabase.from("comunicaciones").insert([nextPayload])
+  if (error && effectiveIdi != null && isMissingColumnError(error.message || "", "idi")) {
+    const fallbackPayload = { ...payload }
+    if (!fallbackPayload.inmobiliaria) fallbackPayload.inmobiliaria = String(effectiveIdi)
+    ;({ error } = await supabase.from("comunicaciones").insert([fallbackPayload]))
+  }
+  if (error) return { error: error.message }
+  return { error: null }
+}
+
+export async function updateComunicacion(
+  keyField: string,
+  keyValue: string | number,
+  payload: Record<string, any>,
+  targetIdi?: number | null
+) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: "No autenticado" }
+  }
+
+  const profile = await fetchPerfil(supabase, user.email)
+
+  const roleStr = String(profile?.role || "").toLowerCase()
+  const isSuperAdmin = profile?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
+  const isAdmin = isSuperAdmin || ["administrador", "admin"].includes(roleStr)
+  const ownIdi = getIdiFromPerfil(profile)
+  const effectiveIdi =
+    isSuperAdmin && typeof targetIdi === "number" && Number.isFinite(targetIdi) ? targetIdi : isSuperAdmin && targetIdi === null ? null : ownIdi
 
   if (isSuperAdmin) {
     try {
@@ -164,13 +177,13 @@ export async function updateComunicacion(keyField: string, keyValue: string | nu
   }
 
   let query = supabase.from("comunicaciones").update(payload).eq(keyField, keyValue)
-  if (idi != null) {
-    query = query.eq("idi", String(idi))
+  if (effectiveIdi != null) {
+    query = query.eq("idi", String(effectiveIdi))
   }
   let { data, error } = await query.select()
-  if (error && idi != null && isMissingColumnError(error.message || "", "idi")) {
+  if (error && effectiveIdi != null && isMissingColumnError(error.message || "", "idi")) {
     let fallbackQuery = supabase.from("comunicaciones").update(payload).eq(keyField, keyValue)
-    fallbackQuery = fallbackQuery.eq("inmobiliaria", String(idi))
+    fallbackQuery = fallbackQuery.eq("inmobiliaria", String(effectiveIdi))
     ;({ data, error } = await fallbackQuery.select())
   }
   if (error) return { error: error.message }

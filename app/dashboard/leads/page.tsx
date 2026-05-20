@@ -1903,7 +1903,12 @@ export default function LeadsPage() {
     }
   }
 
-  const fetchCommunications = async (leadEmail: string | undefined, leadPhone: string | undefined, leadId?: number) => {
+  const fetchCommunications = async (
+    leadEmail: string | undefined,
+    leadPhone: string | undefined,
+    leadId?: number,
+    targetIdi: number | null = null,
+  ) => {
     try {
       if (!leadEmail && !leadPhone && !leadId) {
         setCommunications([])
@@ -1912,41 +1917,80 @@ export default function LeadsPage() {
 
       console.log("[v0] Fetching communications for Email:", leadEmail, "Phone:", leadPhone, "ID:", leadId)
 
-      // Fetch emails
-      let emailsQuery = supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"])
-      let runEmails = false
+      const isMissingColumnError = (message: string, columnName: string) => {
+        const msg = String(message || "").toLowerCase()
+        const col = String(columnName || "").toLowerCase()
+        return msg.includes("column") && msg.includes(col) && (msg.includes("does not exist") || msg.includes("no existe"))
+      }
 
-      if (leadEmail && leadId) {
-        emailsQuery = emailsQuery.or(`Email.eq.${leadEmail},idc.eq.${leadId}`)
+      const idiColumns = ["idi", "usuario", "inmobiliaria"]
+      const targetIdiValue = targetIdi != null ? String(targetIdi) : null
+
+      // Fetch emails
+      let runEmails = false
+      const buildEmailsQuery = (idiColumn?: string) => {
+        let q = supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"])
+        if (leadId) {
+          q = q.eq("idc", leadId)
+        } else if (leadEmail) {
+          q = q.eq("Email", leadEmail)
+        }
+        if (idiColumn && targetIdi != null) {
+          q = q.eq(idiColumn as any, targetIdiValue as any)
+        }
+        return q
+      }
+
+      if (leadId) {
         runEmails = true
       } else if (leadEmail) {
-        emailsQuery = emailsQuery.eq("Email", leadEmail)
-        runEmails = true
-      } else if (leadId) {
-        emailsQuery = emailsQuery.eq("idc", leadId)
         runEmails = true
       }
 
-      const emailsPromise = runEmails ? emailsQuery : Promise.resolve({ data: [], error: null })
+      const runEmailsQuery = async () => {
+        if (!runEmails) return { data: [], error: null as any }
+        if (targetIdi == null) return await buildEmailsQuery()
+        for (const col of idiColumns) {
+          const res = await buildEmailsQuery(col)
+          if (!res.error) return res
+          if (!isMissingColumnError(res.error.message || "", col)) return res
+        }
+        return await buildEmailsQuery()
+      }
 
       // Fetch WhatsApp
-      let whatsappQuery = supabase.from("Whatsapp").select("*").in("Tipo", ["Enviado", "Recibido"])
       let runWhatsapp = false
+      const buildWhatsappQuery = (idiColumn?: string) => {
+        let q = supabase.from("Whatsapp").select("*").in("Tipo", ["Enviado", "Recibido"])
+        if (leadId) {
+          q = q.or(`IDC.eq.${leadId},idc.eq.${leadId}`)
+        } else if (leadPhone) {
+          q = q.eq("Telefono", leadPhone)
+        }
+        if (idiColumn && targetIdi != null) {
+          q = q.eq(idiColumn as any, targetIdiValue as any)
+        }
+        return q
+      }
 
-      if (leadPhone && leadId) {
-         whatsappQuery = whatsappQuery.or(`Telefono.eq.${leadPhone},IDC.eq.${leadId},idc.eq.${leadId}`)
+      if (leadId) {
          runWhatsapp = true
       } else if (leadPhone) {
-         whatsappQuery = whatsappQuery.eq("Telefono", leadPhone)
-         runWhatsapp = true
-      } else if (leadId) {
-         whatsappQuery = whatsappQuery.or(`IDC.eq.${leadId},idc.eq.${leadId}`)
          runWhatsapp = true
       }
 
-      const whatsappPromise = runWhatsapp ? whatsappQuery : Promise.resolve({ data: [], error: null })
+      const runWhatsappQuery = async () => {
+        if (!runWhatsapp) return { data: [], error: null as any }
+        if (targetIdi == null) return await buildWhatsappQuery()
+        for (const col of idiColumns) {
+          const res = await buildWhatsappQuery(col)
+          if (!res.error) return res
+          if (!isMissingColumnError(res.error.message || "", col)) return res
+        }
+        return await buildWhatsappQuery()
+      }
 
-      const [emailsResult, whatsappResult] = await Promise.all([emailsPromise, whatsappPromise])
+      const [emailsResult, whatsappResult] = await Promise.all([runEmailsQuery(), runWhatsappQuery()])
 
       if (emailsResult.error) {
         console.error("Error fetching emails:", emailsResult.error)
@@ -1983,7 +2027,23 @@ export default function LeadsPage() {
       )
 
       console.log("[v0] Total communications:", allCommunications.length)
-      setCommunications(allCommunications)
+      const leadIdValue = leadId != null ? String(leadId) : null
+      const byLeadIdc = leadIdValue
+        ? allCommunications.filter((comm: any) => {
+            const v = comm?.idc ?? comm?.IDC ?? comm?.Idc ?? null
+            return v != null && String(v) === leadIdValue
+          })
+        : allCommunications
+      const base = leadIdValue && byLeadIdc.length > 0 ? byLeadIdc : allCommunications
+      const targetIdiValueFinal = targetIdi != null ? String(targetIdi) : null
+      const byIdi = targetIdiValueFinal
+        ? base.filter((comm: any) => {
+            const v = comm?.idi ?? comm?.usuario ?? comm?.inmobiliaria ?? comm?.Idi ?? comm?.Usuario ?? comm?.Inmobiliaria ?? null
+            if (v == null) return false
+            return String(v) === targetIdiValueFinal
+          })
+        : base
+      setCommunications(byIdi)
     } catch (err) {
       console.error("[v0] Error fetching communications:", err)
     }
@@ -2164,7 +2224,7 @@ export default function LeadsPage() {
     setSelectedPersona(1)
     if (lead.Correo || lead.Telefono || lead.IDC || lead.idc) {
       // Changed from lead.idc to lead.Telefono
-      await fetchCommunications(lead.Correo, lead.Telefono, lead.IDC || lead.idc) // Changed from lead.idc to lead.Telefono
+      await fetchCommunications(lead.Correo, lead.Telefono, lead.IDC || lead.idc, typeof inmobiliariaId === "number" ? inmobiliariaId : null)
     }
   }
 
@@ -2532,12 +2592,26 @@ export default function LeadsPage() {
 
   const sendAprobadoWebhook = async (leadForWebhook: any) => {
     try {
+      const targetInmoId = inmobiliariaId || leadForWebhook?.idi || leadForWebhook?.usuario || null
+      let inmobiliaria: any = null
+      if (targetInmoId) {
+        const { data, error } = await supabase.from("Inmobiliarias").select("*").eq("idi", targetInmoId).maybeSingle()
+        if (!error) {
+          inmobiliaria = data || null
+        }
+      }
+
       const res = await fetch("/api/aprobado", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           leadId: leadForWebhook?.id,
           lead: pickLeadPersonalData(leadForWebhook),
+          idi: targetInmoId,
+          inmobiliariaId: targetInmoId,
+          inmobiliariaNombre: inmobiliariaNombre || null,
+          inmobiliaria,
+          Inmobiliaria: inmobiliaria,
         }),
       })
       if (!res.ok) {
