@@ -109,6 +109,33 @@ function pickLeadInmuebleData(lead: any, advertisements: any[]) {
     Pais_Aval: null,
   }
 }
+
+function pickLeadAnuncioData(lead: any, advertisements: any[]) {
+  const leadInmueble = String(lead?.Inmueble || "").trim()
+  const norm = leadInmueble.toLowerCase()
+  const ads = Array.isArray(advertisements) ? advertisements : []
+
+  const ad =
+    norm && ads.length > 0
+      ? ads.find((a) => {
+          const ref = String(a?.Referencia || "").trim().toLowerCase()
+          const dir = String(a?.Direccion || "").trim().toLowerCase()
+          const id = String(a?.ida || "").trim().toLowerCase()
+
+          return (
+            (ref && ref === norm) ||
+            (dir && dir === norm) ||
+            (id && id === norm) ||
+            (dir && norm.includes(dir)) ||
+            (ref && norm.includes(ref)) ||
+            (dir && dir.includes(norm)) ||
+            (ref && ref.includes(norm))
+          )
+        })
+      : null
+
+  return ad || null
+}
 import { resolveUserName } from "@/app/actions/get-agents"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
@@ -1289,6 +1316,17 @@ export function LeadDetailModal({
         try {
           const webhookUrl = getWebhookUrl("descartado")
           if (webhookUrl) {
+            const targetInmoId = inmobiliariaId || (updatedLead as any)?.idi || (updatedLead as any)?.usuario || null
+            let inmobiliaria: any = null
+            if (targetInmoId) {
+              const { data, error } = await supabase.from("Inmobiliarias").select("*").eq("idi", targetInmoId).maybeSingle()
+              if (!error) {
+                inmobiliaria = data || null
+              }
+            }
+            const anuncio = pickLeadAnuncioData(updatedLead, advertisements)
+            const inmueble = anuncio || pickLeadInmuebleData(updatedLead, advertisements)
+
             await fetchWithTimeout(webhookUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -1296,6 +1334,14 @@ export function LeadDetailModal({
                 leadId: lead.id,
                 Estado: "Descartado",
                 lead: updatedLead,
+                idi: targetInmoId,
+                inmobiliariaId: targetInmoId,
+                inmobiliariaNombre: inmobiliariaNombre || null,
+                inmobiliaria,
+                Inmobiliaria: inmobiliaria,
+                anuncio,
+                Anuncio: anuncio,
+                inmueble,
                 source: "lead-detail-modal",
                 timestamp: new Date().toISOString()
               })

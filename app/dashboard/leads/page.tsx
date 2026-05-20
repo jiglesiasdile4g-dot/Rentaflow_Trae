@@ -2454,10 +2454,53 @@ export default function LeadsPage() {
     try {
       const webhookUrl = getWebhookUrl("descartado")
       if (!webhookUrl) return
+
+      const leadForWebhook = payload?.lead ?? null
+      const targetInmoId = inmobiliariaId || leadForWebhook?.idi || leadForWebhook?.usuario || null
+      let inmobiliaria: any = null
+      if (targetInmoId) {
+        const { data, error } = await supabase.from("Inmobiliarias").select("*").eq("idi", targetInmoId).maybeSingle()
+        if (!error) {
+          inmobiliaria = data || null
+        }
+      }
+
+      const leadInmueble = String(leadForWebhook?.Inmueble || "").trim()
+      const norm = leadInmueble.toLowerCase()
+      const anuncio =
+        norm && advertisements && advertisements.length > 0
+          ? advertisements.find((a) => {
+              const ref = String(a?.Referencia || "").trim().toLowerCase()
+              const dir = String(a?.Direccion || "").trim().toLowerCase()
+              const id = String(a?.ida || "").trim().toLowerCase()
+              return (
+                (ref && ref === norm) ||
+                (dir && dir === norm) ||
+                (id && id === norm) ||
+                (dir && norm.includes(dir)) ||
+                (ref && norm.includes(ref)) ||
+                (dir && dir.includes(norm)) ||
+                (ref && ref.includes(norm))
+              )
+            })
+          : null
+
+      const enrichedPayload = {
+        ...payload,
+        idi: targetInmoId,
+        inmobiliariaId: targetInmoId,
+        inmobiliariaNombre: inmobiliariaNombre || null,
+        inmobiliaria,
+        Inmobiliaria: inmobiliaria,
+        anuncio: anuncio || null,
+        Anuncio: anuncio || null,
+        inmueble: anuncio || (leadInmueble ? { Referencia: leadInmueble } : null),
+      }
+
       await fetch(webhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(enrichedPayload)
       })
     } catch (err) {
       console.error("[v0] Error calling descartado webhook:", err)

@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
-import { Mail, Pencil, Plus, RefreshCw, Save } from "lucide-react"
+import { Mail, Plus, RefreshCw, Save } from "lucide-react"
 import { createComunicacion, listComunicaciones, updateComunicacion } from "@/app/actions/comunicaciones"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -87,7 +87,7 @@ const buildDraft = (columns: ColumnDef[], row?: Record<string, any>) => {
 
 export default function ComunicacionesPage() {
   const { toast } = useToast()
-  const { inmobiliariaId, loading: inmobiliariaLoading } = useInmobiliaria()
+  const { inmobiliariaId, loading: inmobiliariaLoading, isSuperAdmin } = useInmobiliaria()
   const [columns, setColumns] = useState<ColumnDef[]>([])
   const [rows, setRows] = useState<Record<string, any>[]>([])
   const [loading, setLoading] = useState(true)
@@ -471,6 +471,10 @@ export default function ComunicacionesPage() {
 
   const handleUpdate = async () => {
     if (!selectedId) return
+    if (!isSuperAdmin) {
+      toast({ title: "Sin permisos", description: "Solo un superusuario puede guardar cambios en comunicaciones", variant: "destructive" })
+      return
+    }
     setSaving(true)
     try {
       const row = rows.find((r) => String(r[getKeyField(r, columns)]) === String(selectedId))
@@ -489,6 +493,10 @@ export default function ComunicacionesPage() {
   }
 
   const handleCreate = async () => {
+    if (!isSuperAdmin) {
+      toast({ title: "Sin permisos", description: "Solo un superusuario puede guardar cambios en comunicaciones", variant: "destructive" })
+      return
+    }
     setSaving(true)
     try {
       const { error: createError } = await createComunicacion(newDraft, inmobiliariaId)
@@ -511,10 +519,13 @@ export default function ComunicacionesPage() {
       selectedId != null
         ? rows.find((r) => String(r[getKeyField(r, columns)]) === String(selectedId))
         : null
-    const inmobiliaria = String((selectedRow?.idi ?? selectedRow?.inmobiliaria ?? draft.idi ?? draft.inmobiliaria) || "")
+    const inmobiliaria = String(
+      (selectedRow?.idi ?? selectedRow?.inmobiliaria ?? draft.idi ?? draft.inmobiliaria ?? inmobiliariaId) || ""
+    )
     const titulo = String(draft.titulo_comunicacion || "")
     const subject = String(draft.subject || "")
     const html = String(draft.texto_html || "")
+    const orden = getOrderNumber(selectedRow || draft) ?? null
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), 15000)
     try {
@@ -523,7 +534,13 @@ export default function ComunicacionesPage() {
       const res = await fetch(webhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inmobiliaria, titulo, subject, html }),
+        body: JSON.stringify({
+          "Codigo HTML": html,
+          Titulo: titulo,
+          Subject: subject,
+          Orden: orden,
+          Inmobiliaria: inmobiliaria,
+        }),
         signal: controller.signal,
       })
       if (!res.ok) throw new Error("Webhook no respondió correctamente")
@@ -535,7 +552,7 @@ export default function ComunicacionesPage() {
       window.clearTimeout(timeoutId)
       setSendingReview(false)
     }
-  }, [columns, editDraft, newDraft, rows, selectedId, sendingReview, toast])
+  }, [columns, editDraft, getOrderNumber, inmobiliariaId, newDraft, rows, selectedId, sendingReview, toast])
 
   const handleCancelEdit = useCallback(() => {
     if (!selectedId) {
@@ -664,18 +681,6 @@ export default function ComunicacionesPage() {
             )}
 
             <div className="flex flex-wrap gap-2">
-              <Button
-                onClick={() => {
-                  setIsEditOpen(false)
-                  if (!selectedId) return
-                  setIsCreatingNew(false)
-                  openEditorInPage()
-                }}
-                disabled={!selectedId || saving || loading}
-              >
-                <Pencil className="h-4 w-4 mr-2" />
-                Editar (en página)
-              </Button>
               <Button variant="outline" onClick={() => setIsEditOpen(true)} disabled={!selectedId || saving || loading}>
                 <Save className="h-4 w-4 mr-2" />
                 Editar campos
@@ -693,7 +698,7 @@ export default function ComunicacionesPage() {
                   setIsCreateOpen(false)
                   openEditorInPage()
                 }}
-                disabled={saving || loading}
+                disabled={saving || loading || !isSuperAdmin}
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Crear
@@ -711,6 +716,9 @@ export default function ComunicacionesPage() {
             <div className="text-sm text-amber-600">
               Evita modificar las variables entre llaves {"{{ }}"}; si cambian, la comunicación puede dejar de funcionar.
             </div>
+          {!isSuperAdmin ? (
+            <div className="text-sm text-red-600">Solo un superusuario puede guardar cambios en comunicaciones.</div>
+          ) : null}
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-4">
@@ -998,10 +1006,12 @@ export default function ComunicacionesPage() {
           <div className="flex flex-wrap gap-2">
             {selectedId ? (
               <>
-                <Button onClick={handleUpdate} disabled={saving || !selectedId}>
-                  <Save className="h-4 w-4 mr-2" />
-                  Guardar cambios
-                </Button>
+                {isSuperAdmin ? (
+                  <Button onClick={handleUpdate} disabled={saving || !selectedId || !isSuperAdmin}>
+                    <Save className="h-4 w-4 mr-2" />
+                    Guardar cambios
+                  </Button>
+                ) : null}
                 <Button variant="outline" onClick={handleSendReview} disabled={saving || sendingReview}>
                   {reviewButtonLabel}
                 </Button>
@@ -1011,7 +1021,7 @@ export default function ComunicacionesPage() {
               </>
             ) : (
               <>
-                <Button onClick={handleCreate} disabled={saving || (!newDraft.titulo_comunicacion && !newDraft.subject)}>
+                <Button onClick={handleCreate} disabled={saving || !isSuperAdmin || (!newDraft.titulo_comunicacion && !newDraft.subject)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Crear
                 </Button>
@@ -1069,10 +1079,12 @@ export default function ComunicacionesPage() {
             <Button variant="outline" onClick={handleSendReview} disabled={saving || sendingReview}>
               {reviewButtonLabel}
             </Button>
-            <Button onClick={handleUpdate} disabled={saving || !selectedId}>
-              <Save className="h-4 w-4 mr-2" />
-              Guardar cambios
-            </Button>
+            {isSuperAdmin ? (
+              <Button onClick={handleUpdate} disabled={saving || !selectedId || !isSuperAdmin}>
+                <Save className="h-4 w-4 mr-2" />
+                Guardar cambios
+              </Button>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1117,7 +1129,7 @@ export default function ComunicacionesPage() {
             <Button variant="outline" onClick={handleSendReview} disabled={saving || sendingReview}>
               {reviewButtonLabel}
             </Button>
-            <Button onClick={handleCreate} disabled={saving || (modalFieldColumns.length === 0 && fallbackModalColumns.length === 0)}>
+            <Button onClick={handleCreate} disabled={saving || !isSuperAdmin || (modalFieldColumns.length === 0 && fallbackModalColumns.length === 0)}>
               <Plus className="h-4 w-4 mr-2" />
               Crear
             </Button>

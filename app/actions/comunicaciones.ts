@@ -119,7 +119,9 @@ export async function createComunicacion(payload: Record<string, any>, targetIdi
 
   const roleStr = String(profile?.role || "").toLowerCase()
   const isSuperAdmin = profile?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
-  const isAdmin = isSuperAdmin || ["administrador", "admin"].includes(roleStr)
+  if (!isSuperAdmin) {
+    return { error: "Solo un superusuario puede guardar cambios en comunicaciones" }
+  }
   const ownIdi = getIdiFromPerfil(profile)
   const effectiveIdi =
     isSuperAdmin && typeof targetIdi === "number" && Number.isFinite(targetIdi) ? targetIdi : isSuperAdmin && targetIdi === null ? null : ownIdi
@@ -130,11 +132,12 @@ export async function createComunicacion(payload: Record<string, any>, targetIdi
     if (!nextPayload.idi) nextPayload.idi = idiValue
   }
 
-  let { error } = await supabase.from("comunicaciones").insert([nextPayload])
+  const admin = createAdminClient()
+  let { error } = await admin.from("comunicaciones").insert([nextPayload])
   if (error && effectiveIdi != null && isMissingColumnError(error.message || "", "idi")) {
     const fallbackPayload = { ...payload }
     if (!fallbackPayload.inmobiliaria) fallbackPayload.inmobiliaria = String(effectiveIdi)
-    ;({ error } = await supabase.from("comunicaciones").insert([fallbackPayload]))
+    ;({ error } = await admin.from("comunicaciones").insert([fallbackPayload]))
   }
   if (error) return { error: error.message }
   return { error: null }
@@ -159,34 +162,17 @@ export async function updateComunicacion(
 
   const roleStr = String(profile?.role || "").toLowerCase()
   const isSuperAdmin = profile?.is_admin === true || ["superuser", "superadmin"].includes(roleStr)
-  const isAdmin = isSuperAdmin || ["administrador", "admin"].includes(roleStr)
-  const ownIdi = getIdiFromPerfil(profile)
-  const effectiveIdi =
-    isSuperAdmin && typeof targetIdi === "number" && Number.isFinite(targetIdi) ? targetIdi : isSuperAdmin && targetIdi === null ? null : ownIdi
-
-  if (isSuperAdmin) {
-    try {
-      const admin = createAdminClient()
-      const { data, error } = await admin.from("comunicaciones").update(payload).eq(keyField, keyValue).select()
-      if (error) return { error: error.message }
-      if (!data || data.length === 0) return { error: "No se pudo actualizar la comunicación" }
-      return { error: null }
-    } catch (err: any) {
-      return { error: err?.message || "No se pudo actualizar la comunicación" }
-    }
+  if (!isSuperAdmin) {
+    return { error: "Solo un superusuario puede guardar cambios en comunicaciones" }
   }
 
-  let query = supabase.from("comunicaciones").update(payload).eq(keyField, keyValue)
-  if (effectiveIdi != null) {
-    query = query.eq("idi", String(effectiveIdi))
+  try {
+    const admin = createAdminClient()
+    const { data, error } = await admin.from("comunicaciones").update(payload).eq(keyField, keyValue).select()
+    if (error) return { error: error.message }
+    if (!data || data.length === 0) return { error: "No se pudo actualizar la comunicación" }
+    return { error: null }
+  } catch (err: any) {
+    return { error: err?.message || "No se pudo actualizar la comunicación" }
   }
-  let { data, error } = await query.select()
-  if (error && effectiveIdi != null && isMissingColumnError(error.message || "", "idi")) {
-    let fallbackQuery = supabase.from("comunicaciones").update(payload).eq(keyField, keyValue)
-    fallbackQuery = fallbackQuery.eq("inmobiliaria", String(effectiveIdi))
-    ;({ data, error } = await fallbackQuery.select())
-  }
-  if (error) return { error: error.message }
-  if (!data || data.length === 0) return { error: "No tienes permisos para actualizar esta comunicación" }
-  return { error: null }
 }
