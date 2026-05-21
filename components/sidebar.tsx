@@ -74,9 +74,23 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
     return base.includes("?") ? `${base}&v=${v}` : `${base}?v=${v}`
   }
 
+  const normalizeLogoUrl = (url: string) => {
+    const raw = String(url || "").trim()
+    if (!raw) return raw
+    const marker = "/storage/v1/object/public/"
+    const idx = raw.indexOf(marker)
+    if (idx === -1) return raw
+    const after = raw.slice(idx + marker.length)
+    const [bucket, ...rest] = after.split("/").filter(Boolean)
+    const objectPath = rest.join("/")
+    if (!bucket || !objectPath) return raw
+    const { data } = supabase.storage.from(bucket).getPublicUrl(objectPath)
+    return data.publicUrl || raw
+  }
+
   const logoUrl = useMemo(() => {
     if (!inmobiliariaId || !hasLogo) return null
-    if (dbLogoUrl) return withCacheBuster(dbLogoUrl, logoVersion)
+    if (dbLogoUrl) return withCacheBuster(normalizeLogoUrl(dbLogoUrl), logoVersion)
     const { data } = supabase.storage.from('imagenes').getPublicUrl(`logos/${inmobiliariaId}-logo.png`)
     return logoVersion ? `${data.publicUrl}?v=${logoVersion}` : data.publicUrl
   }, [dbLogoUrl, hasLogo, inmobiliariaId, supabase, logoVersion])
