@@ -2604,6 +2604,18 @@ export default function LeadsPage() {
           inmobiliaria = data || null
         }
       }
+      const color_primario =
+        String(inmobiliaria?.color_primario ?? inmobiliaria?.Color_primario ?? inmobiliaria?.Color_Primario ?? "").trim() || "#000000"
+      const color_secundario =
+        String(inmobiliaria?.color_secundario ?? inmobiliaria?.Color_secundario ?? inmobiliaria?.Color_Secundario ?? "").trim() || "#ffffff"
+      if (inmobiliaria && typeof inmobiliaria === "object") {
+        if (!("color_primario" in inmobiliaria) || !String((inmobiliaria as any).color_primario || "").trim()) {
+          ;(inmobiliaria as any).color_primario = color_primario
+        }
+        if (!("color_secundario" in inmobiliaria) || !String((inmobiliaria as any).color_secundario || "").trim()) {
+          ;(inmobiliaria as any).color_secundario = color_secundario
+        }
+      }
 
       const res = await fetch("/api/peticion-aval", {
         method: "POST",
@@ -2615,6 +2627,9 @@ export default function LeadsPage() {
           inmobiliariaId: targetInmoId,
           inmobiliariaNombre: inmobiliariaNombre || null,
           inmobiliaria,
+          Inmobiliaria: inmobiliaria,
+          color_primario,
+          color_secundario,
         }),
       })
       if (!res.ok) {

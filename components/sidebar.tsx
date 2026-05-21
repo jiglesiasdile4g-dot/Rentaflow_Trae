@@ -7,7 +7,7 @@ import { Home, Megaphone, Users, Info, User, Building2, Settings, Calendar, Chev
 import LogoutButton from "@/components/logout-button"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { APP_VERSION, APP_NAME } from "@/lib/version"
-import { useEffect, useState, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
@@ -58,7 +58,7 @@ const menuItems = [
 export default function Sidebar({ user, collapsed = false, onToggle }: SidebarProps) {
   const pathname = usePathname()
   const { inmobiliariaId, inmobiliariaNombre, loading, isAdmin, isSuperAdmin, role, setAdminSelectedInmobiliaria, demoMode, setDemoMode } = useInmobiliaria()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [inmos, setInmos] = useState<{ idi: number; Nombre: string }[]>([])
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -67,14 +67,14 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
   const [hasLogo, setHasLogo] = useState(false)
   const [dbLogoUrl, setDbLogoUrl] = useState<string | null>(null)
 
-  const withCacheBuster = (url: string, v: number) => {
+  const withCacheBuster = useCallback((url: string, v: number) => {
     const base = String(url || "").trim()
     if (!base) return base
     if (!v) return base
     return base.includes("?") ? `${base}&v=${v}` : `${base}?v=${v}`
-  }
+  }, [])
 
-  const normalizeLogoUrl = (url: string) => {
+  const normalizeLogoUrl = useCallback((url: string) => {
     const raw = String(url || "").trim()
     if (!raw) return raw
     const marker = "/storage/v1/object/public/"
@@ -86,14 +86,14 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
     if (!bucket || !objectPath) return raw
     const { data } = supabase.storage.from(bucket).getPublicUrl(objectPath)
     return data.publicUrl || raw
-  }
+  }, [supabase])
 
   const logoUrl = useMemo(() => {
     if (!inmobiliariaId || !hasLogo) return null
     if (dbLogoUrl) return withCacheBuster(normalizeLogoUrl(dbLogoUrl), logoVersion)
     const { data } = supabase.storage.from('imagenes').getPublicUrl(`logos/${inmobiliariaId}-logo.png`)
     return logoVersion ? `${data.publicUrl}?v=${logoVersion}` : data.publicUrl
-  }, [dbLogoUrl, hasLogo, inmobiliariaId, supabase, logoVersion])
+  }, [dbLogoUrl, hasLogo, inmobiliariaId, logoVersion, normalizeLogoUrl, supabase, withCacheBuster])
 
   useEffect(() => {
     const handleUpdate = () => {

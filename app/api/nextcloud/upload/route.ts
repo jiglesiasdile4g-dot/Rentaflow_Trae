@@ -208,21 +208,27 @@ export async function POST(req: Request) {
       await cleanupDuplicates(folderUrl, auth, bases)
     }
 
-    const webhookUrl = process.env.N8N_WEBHOOK_URL || getWebhookUrl("subirdoc")
-    if (webhookUrl) {
-      const fd = new FormData()
-      fd.append("referencia", referencia)
-      fd.append("inmobiliaria", inmobiliaria)
+    const ragWebhookUrl =
+      process.env.N8N_RAG_WEBHOOK_URL || "https://acesalquiler-n8n.ibdvf1.easypanel.host/webhook-test/alimentar_rag"
+    const legacyWebhookUrl = process.env.N8N_WEBHOOK_URL || getWebhookUrl("subirdoc")
+    const webhookUrls = Array.from(new Set([ragWebhookUrl, legacyWebhookUrl].filter(Boolean)))
+    if (webhookUrls.length > 0) {
       const toSend: File[] = (files && files.length > 0) ? files : (f ? [f] : [])
-      for (const file of toSend) {
-        fd.append("files", file)
+      for (const webhookUrl of webhookUrls) {
+        const fd = new FormData()
+        fd.append("referencia", referencia)
+        fd.append("inmobiliaria", inmobiliaria)
+        fd.append("uploaded", JSON.stringify(results))
+        for (const file of toSend) {
+          fd.append("files", file)
+        }
+        try {
+          const controller = new AbortController()
+          const timeout = setTimeout(() => controller.abort(), 15000)
+          await fetch(webhookUrl, { method: "POST", body: fd, signal: controller.signal })
+          clearTimeout(timeout)
+        } catch {}
       }
-      try {
-        const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 8000)
-        await fetch(webhookUrl, { method: "POST", body: fd, signal: controller.signal })
-        clearTimeout(timeout)
-      } catch {}
     }
 
     return NextResponse.json({ uploaded: results })

@@ -35,6 +35,7 @@ import { TooltipProvider, Tooltip as UITooltip, TooltipContent, TooltipTrigger }
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "@/hooks/use-toast"
 import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink, Copy, History as HistoryIcon, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -231,6 +232,8 @@ export default function AnunciosPage() {
   const [editFilesLoading, setEditFilesLoading] = useState(false)
   const [creationFilesList, setCreationFilesList] = useState<any[]>([])
   const [creationFilesLoading, setCreationFilesLoading] = useState(false)
+  const [editAdjuntosSelected, setEditAdjuntosSelected] = useState<string[] | null>(null)
+  const [creationAdjuntosSelected, setCreationAdjuntosSelected] = useState<string[] | null>(null)
   const [nextcloudDeletingPath, setNextcloudDeletingPath] = useState<string | null>(null)
   const [completosLeads, setCompletosLeads] = useState<any[]>([])
   const [loadingCompletos, setLoadingCompletos] = useState(false)
@@ -831,14 +834,27 @@ export default function AnunciosPage() {
     }
   }
 
-  const buildAdjuntosFromFiles = (files: any[]) =>
-    (files || [])
-      .map((file) => {
-        const raw = String(file?.name || file?.path || file?.href || file?.url || "")
-        const name = raw.split("?")[0].split("/").pop() || ""
-        return name.trim()
-      })
-      .filter((value) => value.length > 0)
+  const fileNameFromNextcloudEntry = (file: any) => {
+    const raw = String(file?.name || file?.path || file?.href || file?.url || "")
+    const name = raw.split("?")[0].split("/").pop() || ""
+    return name.trim()
+  }
+
+  const fileNamesFromNextcloudFiles = (files: any[]) => (files || []).map(fileNameFromNextcloudEntry).filter(Boolean)
+
+  const mergeSelectedAdjuntos = (prevFiles: any[], nextFiles: any[], prevSelected: string[] | null) => {
+    const prevNames = new Set(fileNamesFromNextcloudFiles(prevFiles).map((v) => v.toLowerCase()))
+    const nextNames = fileNamesFromNextcloudFiles(nextFiles)
+    if (prevSelected == null) return nextNames
+
+    const nextLower = new Set(nextNames.map((v) => v.toLowerCase()))
+    const filtered = prevSelected.filter((name) => nextLower.has(String(name).toLowerCase()))
+
+    const existingLower = new Set(filtered.map((v) => String(v).toLowerCase()))
+    const newlyAdded = nextNames.filter((name) => !prevNames.has(name.toLowerCase()) && !existingLower.has(name.toLowerCase()))
+
+    return [...filtered, ...newlyAdded]
+  }
 
   const fetchNextcloudFiles = useCallback(async (referenciaTarget: string) => {
     if (!referenciaTarget) return []
@@ -851,20 +867,21 @@ export default function AnunciosPage() {
     return j.files || []
   }, [inmobiliariaNombre, inmobiliariaId])
 
-  const syncAdjuntosForReferencia = useCallback(async (referenciaTarget: string, filesList?: any[], anuncioId?: number | string) => {
-    if (!referenciaTarget || inmobiliariaId == null) return
-    const effectiveFiles = filesList && filesList.length > 0 ? filesList : await fetchNextcloudFiles(referenciaTarget)
-    const adjuntos = buildAdjuntosFromFiles(effectiveFiles)
-    const result = await updateAnuncioAdjuntosAction({
-      referencia: referenciaTarget,
-      usuario: inmobiliariaId,
-      adjuntos,
-      ida: anuncioId,
-    })
-    if (result?.error) {
-      console.log("[v0] Error updating adjuntos:", result.error)
-    }
-  }, [fetchNextcloudFiles, inmobiliariaId])
+  const persistAdjuntosSelection = useCallback(
+    async (referenciaTarget: string, selected: string[], anuncioId?: number | string) => {
+      if (!referenciaTarget || inmobiliariaId == null) return
+      const result = await updateAnuncioAdjuntosAction({
+        referencia: referenciaTarget,
+        usuario: inmobiliariaId,
+        adjuntos: selected || [],
+        ida: anuncioId,
+      })
+      if (result?.error) {
+        console.log("[v0] Error updating adjuntos:", result.error)
+      }
+    },
+    [inmobiliariaId],
+  )
 
   const uploadFilesForAnuncio = async (files: FileList | null, referenciaTarget: string, mode?: "creation" | "edit") => {
     if (!files || files.length === 0 || !referenciaTarget) return
@@ -892,15 +909,27 @@ export default function AnunciosPage() {
         } catch {}
         toast({ title: "Error", description: errMsg, variant: "destructive" })
       } else {
-        toast({ title: "Éxito", description: "Archivos subidos correctamente. La IA ha sido entrenada" })
+        toast({ title: "Éxito", description: "Archivos subidos correctamente." })
         const filesList = await fetchNextcloudFiles(referenciaTarget)
         if (mode === "creation") {
-          setCreationFilesList(filesList)
-          await syncAdjuntosForReferencia(referenciaTarget, filesList)
+          setCreationFilesList((prev) => {
+            const next = filesList
+            setCreationAdjuntosSelected((prevSelected) => mergeSelectedAdjuntos(prev, next, prevSelected))
+            return next
+          })
         }
         if (mode === "edit") {
-          setEditFilesList(filesList)
-          await syncAdjuntosForReferencia(referenciaTarget, filesList)
+          setEditFilesList((prevFiles) => {
+            const next = filesList
+            setEditAdjuntosSelected((prevSelected) => {
+              const nextSelected = mergeSelectedAdjuntos(prevFiles, next, prevSelected)
+              if (editingAnuncio) {
+                void persistAdjuntosSelection(referenciaTarget, nextSelected, editingAnuncio.id)
+              }
+              return nextSelected
+            })
+            return next
+          })
         }
       }
     } catch {
@@ -916,12 +945,21 @@ export default function AnunciosPage() {
     setEditFilesLoading(true)
     try {
       const filesList = await fetchNextcloudFiles(editFormData.referencia)
-      setEditFilesList(filesList)
-      await syncAdjuntosForReferencia(editFormData.referencia, filesList)
+      setEditFilesList((prev) => {
+        const next = filesList
+        setEditAdjuntosSelected((prevSelected) => {
+          const nextSelected = mergeSelectedAdjuntos(prev, next, prevSelected)
+          if (editingAnuncio) {
+            void persistAdjuntosSelection(editFormData.referencia, nextSelected, editingAnuncio.id)
+          }
+          return nextSelected
+        })
+        return next
+      })
     } finally {
       setEditFilesLoading(false)
     }
-  }, [editFormData.referencia, fetchNextcloudFiles, syncAdjuntosForReferencia])
+  }, [editFormData.referencia, editingAnuncio, fetchNextcloudFiles, mergeSelectedAdjuntos, persistAdjuntosSelection])
 
   useEffect(() => {
     if (editingAnuncio && editFormData.referencia) {
@@ -929,6 +967,7 @@ export default function AnunciosPage() {
       return
     }
     setEditFilesList([])
+    setEditAdjuntosSelected(null)
   }, [editingAnuncio, editFormData.referencia, loadEditFiles])
 
   const loadCreationFiles = async () => {
@@ -936,7 +975,11 @@ export default function AnunciosPage() {
     setCreationFilesLoading(true)
     try {
       const filesList = await fetchNextcloudFiles(creationStep.data.referencia)
-      setCreationFilesList(filesList)
+      setCreationFilesList((prev) => {
+        const next = filesList
+        setCreationAdjuntosSelected((prevSelected) => mergeSelectedAdjuntos(prev, next, prevSelected))
+        return next
+      })
     } finally {
       setCreationFilesLoading(false)
     }
@@ -961,8 +1004,22 @@ export default function AnunciosPage() {
       const params = new URLSearchParams({ path })
       await fetch(`/api/nextcloud/file?${params.toString()}`, { method: "DELETE" })
       const filesList = await refreshNextcloudDialog()
-      if (nextcloudDialog.referencia) {
-        await syncAdjuntosForReferencia(nextcloudDialog.referencia, filesList)
+      if (nextcloudDialog.referencia && inmobiliariaId != null) {
+        try {
+          const { data } = await supabase
+            .from("Anuncios")
+            .select("Adjuntos, adjuntos")
+            .eq("usuario", inmobiliariaId)
+            .eq("Referencia", nextcloudDialog.referencia)
+            .maybeSingle()
+          const currentAdj = Array.isArray((data as any)?.Adjuntos)
+            ? (data as any).Adjuntos
+            : Array.isArray((data as any)?.adjuntos)
+              ? (data as any).adjuntos
+              : null
+          const nextSelected = mergeSelectedAdjuntos(nextcloudDialog.files, filesList, currentAdj)
+          await persistAdjuntosSelection(nextcloudDialog.referencia, nextSelected)
+        } catch {}
       }
       toast({ title: "Archivo eliminado", description: "Archivo eliminado correctamente" })
     } catch {
@@ -998,8 +1055,24 @@ export default function AnunciosPage() {
         toast({ title: "Error", description: errMsg, variant: "destructive" })
       } else {
         const filesList = await refreshNextcloudDialog()
-        await syncAdjuntosForReferencia(nextcloudDialog.referencia, filesList)
-        toast({ title: "Éxito", description: "Archivos subidos correctamente. La IA ha sido entrenada" })
+        if (nextcloudDialog.referencia && inmobiliariaId != null) {
+          try {
+            const { data } = await supabase
+              .from("Anuncios")
+              .select("Adjuntos, adjuntos")
+              .eq("usuario", inmobiliariaId)
+              .eq("Referencia", nextcloudDialog.referencia)
+              .maybeSingle()
+            const currentAdj = Array.isArray((data as any)?.Adjuntos)
+              ? (data as any).Adjuntos
+              : Array.isArray((data as any)?.adjuntos)
+                ? (data as any).adjuntos
+                : null
+            const nextSelected = mergeSelectedAdjuntos(nextcloudDialog.files, filesList, currentAdj)
+            await persistAdjuntosSelection(nextcloudDialog.referencia, nextSelected)
+          } catch {}
+        }
+        toast({ title: "Éxito", description: "Archivos subidos correctamente." })
       }
     } catch {
       toast({ title: "Error", description: "Error al subir archivos", variant: "destructive" })
@@ -2977,6 +3050,14 @@ export default function AnunciosPage() {
 
       // Precargar el formulario con los datos reales de la base de datos
       setEditingAnuncio(anuncio)
+      {
+        const adj = Array.isArray((anuncioData as any)?.Adjuntos)
+          ? (anuncioData as any).Adjuntos
+          : Array.isArray((anuncioData as any)?.adjuntos)
+            ? (anuncioData as any).adjuntos
+            : null
+        setEditAdjuntosSelected(Array.isArray(adj) ? (adj as any[]).map((v) => String(v)) : null)
+      }
       setEditFormData({
         codPortal: anuncioData.CodPortal || "",
         nombre: anuncioData.Nombre || "",
@@ -3545,7 +3626,7 @@ export default function AnunciosPage() {
         Descripcion: creationStep.data.descripcion,
         Precio: Number.parseFloat(creationStep.data.precio) || 0,
         Activacion: creationStep.data.activacion,
-        Adjuntos: buildAdjuntosFromFiles(creationFilesList),
+        Adjuntos: creationAdjuntosSelected ?? fileNamesFromNextcloudFiles(creationFilesList),
         
         usuario: inmobiliariaId, // Assigns the logged-in agency's IDI to this anuncio
         Foto_Url: "", // Empty for now
@@ -3600,10 +3681,15 @@ export default function AnunciosPage() {
       })
 
       const createdId = Array.isArray(data) && data.length > 0 ? (data[0] as any)?.ida : undefined
-      await syncAdjuntosForReferencia(creationStep.data.referencia, undefined, createdId)
+      const selectedAdjuntos = creationAdjuntosSelected ?? fileNamesFromNextcloudFiles(creationFilesList)
+      if (createdId != null) {
+        await persistAdjuntosSelection(creationStep.data.referencia, selectedAdjuntos, createdId)
+      }
 
       // Reset form and close modal
       setShowCreationModal(false)
+      setCreationFilesList([])
+      setCreationAdjuntosSelected(null)
       setCreationStep({
         step: 1,
         data: {
@@ -5519,6 +5605,7 @@ export default function AnunciosPage() {
                             <Button size="sm" variant="outline" onClick={loadCreationFiles}>Refrescar</Button>
                           </div>
                           <h4 className="text-sm font-semibold mt-2">Archivos existentes</h4>
+                          <div className="text-xs text-muted-foreground">Marca los archivos que se adjuntarán en correos.</div>
                           {creationFilesLoading ? (
                             <div className="text-xs text-muted-foreground">Cargando…</div>
                           ) : creationFilesList.length === 0 ? (
@@ -5533,12 +5620,33 @@ export default function AnunciosPage() {
                                 const isPdf = /\.pdf$/.test(lower) || /application\/pdf/.test(ct)
                                 const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(lower) || /image\//.test(ct)
                                 const sizeLabel = typeof f.size === "number" ? (f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)} MB` : f.size >= 1024 ? `${(f.size / 1024).toFixed(1)} KB` : `${f.size} B`) : "-"
+                                const fileName = fileNameFromNextcloudEntry(f)
+                                const selectedList = creationAdjuntosSelected ?? fileNamesFromNextcloudFiles(creationFilesList)
+                                const isSelected = selectedList.some((v) => String(v).toLowerCase() === fileName.toLowerCase())
                                 return (
                                   <div key={`creation-file-${idx}-${f.path || f.name}`} className="flex items-center justify-between gap-2 text-xs">
-                                    <div className="truncate">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <Checkbox
+                                        checked={isSelected}
+                                        onCheckedChange={(checked) => {
+                                          const nextChecked = checked === true
+                                          setCreationAdjuntosSelected((prevSelected) => {
+                                            const base = prevSelected ?? fileNamesFromNextcloudFiles(creationFilesList)
+                                            const needle = fileName.toLowerCase()
+                                            const next = nextChecked
+                                              ? base.some((v) => String(v).toLowerCase() === needle)
+                                                ? base
+                                                : [...base, fileName]
+                                              : base.filter((v) => String(v).toLowerCase() !== needle)
+                                            return next
+                                          })
+                                        }}
+                                      />
+                                      <div className="truncate">
                                       <a href={href} target="_blank" rel="noreferrer" className="hover:underline">
                                         {label}
                                       </a>
+                                    </div>
                                     </div>
                                     <div className="text-muted-foreground">
                                       {isPdf ? "PDF" : isImage ? "Imagen" : "Archivo"} · {sizeLabel}
@@ -5582,6 +5690,8 @@ export default function AnunciosPage() {
                       setCreationStep((prev) => ({ ...prev, step: prev.step - 1 }))
                     } else {
                       setShowCreationModal(false)
+                      setCreationFilesList([])
+                      setCreationAdjuntosSelected(null)
                     }
                   }}
                 >
@@ -5869,6 +5979,7 @@ export default function AnunciosPage() {
                 </div>
                 <div className="col-span-4 space-y-2">
                   <h4 className="text-sm font-semibold">Archivos existentes</h4>
+                  <div className="text-xs text-muted-foreground">Marca los archivos que se adjuntarán en correos.</div>
                   {editFilesLoading ? (
                     <div className="text-xs text-muted-foreground">Cargando…</div>
                   ) : editFilesList.length === 0 ? (
@@ -5880,10 +5991,40 @@ export default function AnunciosPage() {
                           {(() => {
                             const label = f.name || (f.path ? decodeURIComponent(String(f.path).split("/").pop() || "") : "") || "Archivo"
                             const href = f.path ? `/api/nextcloud/file?path=${encodeURIComponent(f.path)}` : "#"
+                            const fileName = fileNameFromNextcloudEntry(f)
+                            const selectedList = editAdjuntosSelected ?? fileNamesFromNextcloudFiles(editFilesList)
+                            const isSelected = selectedList.some((v) => String(v).toLowerCase() === fileName.toLowerCase())
                             return (
-                              <a href={href} className="underline truncate" onClick={(e) => { e.preventDefault(); if (f.path) openAttachmentPreview(href, f.name || label) }}>
-                                {label}
-                              </a>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={(checked) => {
+                                    if (!editingAnuncio) return
+                                    const nextChecked = checked === true
+                                    const needle = fileName.toLowerCase()
+                                    setEditAdjuntosSelected((prevSelected) => {
+                                      const base = prevSelected ?? fileNamesFromNextcloudFiles(editFilesList)
+                                      const next = nextChecked
+                                        ? base.some((v) => String(v).toLowerCase() === needle)
+                                          ? base
+                                          : [...base, fileName]
+                                        : base.filter((v) => String(v).toLowerCase() !== needle)
+                                      void persistAdjuntosSelection(editFormData.referencia, next, editingAnuncio.id)
+                                      return next
+                                    })
+                                  }}
+                                />
+                                <a
+                                  href={href}
+                                  className="underline truncate"
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    if (f.path) openAttachmentPreview(href, f.name || label)
+                                  }}
+                                >
+                                  {label}
+                                </a>
+                              </div>
                             )
                           })()}
                           <div className="flex items-center gap-2">
