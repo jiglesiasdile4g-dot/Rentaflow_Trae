@@ -1961,7 +1961,7 @@ export default function LeadsPage() {
       // Fetch WhatsApp
       let runWhatsapp = false
       const buildWhatsappQuery = (idiColumn?: string) => {
-        let q = supabase.from("Whatsapp").select("*").in("Tipo", ["Enviado", "Recibido"])
+        let q = supabase.from("Whatsapp").select("*").in("Tipo", ["Enviado", "Recibido", "enviado", "recibido"])
         if (leadId) {
           q = q.or(`IDC.eq.${leadId},idc.eq.${leadId}`)
         } else if (leadPhone) {
@@ -2031,18 +2031,18 @@ export default function LeadsPage() {
       const byLeadIdc = leadIdValue
         ? allCommunications.filter((comm: any) => {
             const v = comm?.idc ?? comm?.IDC ?? comm?.Idc ?? null
-            return v != null && String(v) === leadIdValue
+            if (v == null) return true
+            return String(v) === leadIdValue
           })
         : allCommunications
-      const base = leadIdValue && byLeadIdc.length > 0 ? byLeadIdc : allCommunications
       const targetIdiValueFinal = targetIdi != null ? String(targetIdi) : null
       const byIdi = targetIdiValueFinal
-        ? base.filter((comm: any) => {
+        ? byLeadIdc.filter((comm: any) => {
             const v = comm?.idi ?? comm?.usuario ?? comm?.inmobiliaria ?? comm?.Idi ?? comm?.Usuario ?? comm?.Inmobiliaria ?? null
-            if (v == null) return false
+            if (v == null) return true
             return String(v) === targetIdiValueFinal
           })
-        : base
+        : byLeadIdc
       setCommunications(byIdi)
     } catch (err) {
       console.error("[v0] Error fetching communications:", err)

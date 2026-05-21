@@ -1039,19 +1039,27 @@ export function LeadDetailModal({
       const runWhatsappQuery = async () => {
         if (phoneVariants.length === 0) return { data: [], error: null as any }
         if (targetIdi == null) {
-          return await supabase.from("Whatsapp").select("*").in("Telefono", phoneVariants).in("Tipo", ["Enviado", "Recibido"])
+          return await supabase
+            .from("Whatsapp")
+            .select("*")
+            .in("Telefono", phoneVariants)
+            .in("Tipo", ["Enviado", "Recibido", "enviado", "recibido"])
         }
         for (const col of idiColumns) {
           const res = await supabase
             .from("Whatsapp")
             .select("*")
             .in("Telefono", phoneVariants)
-            .in("Tipo", ["Enviado", "Recibido"])
+            .in("Tipo", ["Enviado", "Recibido", "enviado", "recibido"])
             .eq(col as any, targetIdiValue as any)
           if (!res.error) return res
           if (!isMissingColumnError(res.error.message || "", col)) return res
         }
-        return await supabase.from("Whatsapp").select("*").in("Telefono", phoneVariants).in("Tipo", ["Enviado", "Recibido"])
+        return await supabase
+          .from("Whatsapp")
+          .select("*")
+          .in("Telefono", phoneVariants)
+          .in("Tipo", ["Enviado", "Recibido", "enviado", "recibido"])
       }
 
       const [emailsResult, whatsappResult] = await Promise.all([runCorreosQuery(), runWhatsappQuery()])
@@ -1091,19 +1099,18 @@ export function LeadDetailModal({
       const byLeadIdc = leadIdcValue
         ? allComms.filter((comm: any) => {
             const v = comm?.idc ?? comm?.IDC ?? comm?.Idc ?? null
-            return v != null && String(v) === leadIdcValue
+            if (v == null) return true
+            return String(v) === leadIdcValue
           })
         : allComms
-
-      const base = leadIdcValue && byLeadIdc.length > 0 ? byLeadIdc : allComms
       const targetIdiValueFinal = targetIdi != null ? String(targetIdi) : null
       const byIdi = targetIdiValueFinal
-        ? base.filter((comm: any) => {
+        ? byLeadIdc.filter((comm: any) => {
             const v = comm?.idi ?? comm?.usuario ?? comm?.inmobiliaria ?? comm?.Idi ?? comm?.Usuario ?? comm?.Inmobiliaria ?? null
-            if (v == null) return false
+            if (v == null) return true
             return String(v) === targetIdiValueFinal
           })
-        : base
+        : byLeadIdc
       setCommunications(byIdi)
     } catch (error) {
       console.error("Error fetching communications:", error)
