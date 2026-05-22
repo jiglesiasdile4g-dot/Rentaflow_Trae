@@ -834,27 +834,33 @@ export default function AnunciosPage() {
     }
   }
 
-  const fileNameFromNextcloudEntry = (file: any) => {
+  const fileNameFromNextcloudEntry = useCallback((file: any) => {
     const raw = String(file?.name || file?.path || file?.href || file?.url || "")
     const name = raw.split("?")[0].split("/").pop() || ""
     return name.trim()
-  }
+  }, [])
 
-  const fileNamesFromNextcloudFiles = (files: any[]) => (files || []).map(fileNameFromNextcloudEntry).filter(Boolean)
+  const fileNamesFromNextcloudFiles = useCallback(
+    (files: any[]) => (files || []).map(fileNameFromNextcloudEntry).filter(Boolean),
+    [fileNameFromNextcloudEntry],
+  )
 
-  const mergeSelectedAdjuntos = (prevFiles: any[], nextFiles: any[], prevSelected: string[] | null) => {
-    const prevNames = new Set(fileNamesFromNextcloudFiles(prevFiles).map((v) => v.toLowerCase()))
-    const nextNames = fileNamesFromNextcloudFiles(nextFiles)
-    if (prevSelected == null) return nextNames
+  const mergeSelectedAdjuntos = useCallback(
+    (prevFiles: any[], nextFiles: any[], prevSelected: string[] | null) => {
+      const prevNames = new Set(fileNamesFromNextcloudFiles(prevFiles).map((v) => v.toLowerCase()))
+      const nextNames = fileNamesFromNextcloudFiles(nextFiles)
+      if (prevSelected == null) return nextNames
 
-    const nextLower = new Set(nextNames.map((v) => v.toLowerCase()))
-    const filtered = prevSelected.filter((name) => nextLower.has(String(name).toLowerCase()))
+      const nextLower = new Set(nextNames.map((v) => v.toLowerCase()))
+      const filtered = prevSelected.filter((name) => nextLower.has(String(name).toLowerCase()))
 
-    const existingLower = new Set(filtered.map((v) => String(v).toLowerCase()))
-    const newlyAdded = nextNames.filter((name) => !prevNames.has(name.toLowerCase()) && !existingLower.has(name.toLowerCase()))
+      const existingLower = new Set(filtered.map((v) => String(v).toLowerCase()))
+      const newlyAdded = nextNames.filter((name) => !prevNames.has(name.toLowerCase()) && !existingLower.has(name.toLowerCase()))
 
-    return [...filtered, ...newlyAdded]
-  }
+      return [...filtered, ...newlyAdded]
+    },
+    [fileNamesFromNextcloudFiles],
+  )
 
   const fetchNextcloudFiles = useCallback(async (referenciaTarget: string) => {
     if (!referenciaTarget) return []

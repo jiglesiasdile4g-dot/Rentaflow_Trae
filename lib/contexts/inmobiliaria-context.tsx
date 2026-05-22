@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react"
+import { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { createClient } from "@/lib/supabase/client"
 
 interface InmobiliariaContextType {
@@ -56,7 +56,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null)
   const sessionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
     try {
