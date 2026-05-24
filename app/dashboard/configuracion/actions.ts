@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
 import { getPlanData } from "@/lib/plan-data"
-import { formatWebhookDate, getWebhookUrl } from "@/lib/utils"
+import { formatWebhookDate, getWebhookUrl, getPublicAppBaseUrl } from "@/lib/utils"
 import { logAuditEvent } from "@/lib/audit-logger"
 
 async function logAuditAction(admin: any, actionType: string, targetEmail: string, details: any = {}) {
@@ -113,36 +113,113 @@ function getDayRangeIso(dateStr: string) {
     return { startIso: start.toISOString(), endIso: end.toISOString() }
 }
 
+async function findProfilesByEmailAnyCase(admin: any, email: string) {
+    const emailNorm = String(email || "").trim().toLowerCase()
+    const local = emailNorm.includes("@") ? emailNorm.split("@")[0] : emailNorm
+    const patterns = Array.from(new Set([emailNorm, local && local !== emailNorm ? `${local}@%` : null].filter(Boolean) as string[]))
+
+    const whereVariants = [
+        { u: "usuario", i: "inmobiliaria" },
+        { u: "usuario", i: "Inmobiliaria" },
+        { u: "Usuario", i: "inmobiliaria" },
+        { u: "Usuario", i: "Inmobiliaria" },
+    ]
+
+    const acc: Array<{ profile: any; columns: { u: string; i: string } }> = []
+    for (const v of whereVariants) {
+        for (const p of patterns) {
+            try {
+                const { data, error } = await admin
+                    .from("Perfiles")
+                    .select("*")
+                    .ilike(v.u, p)
+                    .limit(100)
+                if (!error && Array.isArray(data) && data.length > 0) {
+                    for (const row of data) acc.push({ profile: row, columns: v })
+                }
+            } catch {}
+        }
+    }
+
+    const seen = new Set<string>()
+    const unique: Array<{ profile: any; columns: { u: string; i: string } }> = []
+    for (const item of acc) {
+        const p = item.profile || {}
+        const key = p.id != null ? `id:${String(p.id)}` : p.idp != null ? `idp:${String(p.idp)}` : JSON.stringify(p)
+        if (seen.has(key)) continue
+        seen.add(key)
+        unique.push(item)
+    }
+
+    return unique
+}
+
+async function assertSingleInmobiliariaPerEmail(admin: any, email: string, targetIdi: number | null) {
+    const matches = await findProfilesByEmailAnyCase(admin, email)
+    const withIdi = matches
+        .map((m) => ({
+            ...m,
+            idi: (() => {
+                const raw = (m.profile as any)?.inmobiliaria ?? (m.profile as any)?.Inmobiliaria ?? null
+                const n = Number(raw)
+                return Number.isFinite(n) && n > 0 ? n : null
+            })(),
+        }))
+        .filter((m) => m.idi != null)
+
+    const distinctIdi = Array.from(new Set(withIdi.map((m) => String(m.idi))))
+
+    if (targetIdi == null) {
+        if (distinctIdi.length > 0) {
+            throw new Error(`Este email ya tiene un perfil asignado a una inmobiliaria (IDI ${distinctIdi.join(", ")}).`)
+        }
+        if (matches.length > 0) {
+            throw new Error("Este email ya tiene un perfil en Perfiles. Elimina duplicados antes de continuar.")
+        }
+        return
+    }
+
+    const sameIdi = withIdi.filter((m) => Number(m.idi) === Number(targetIdi))
+    const otherIdi = withIdi.filter((m) => Number(m.idi) !== Number(targetIdi))
+
+    if (otherIdi.length > 0) {
+        const ids = Array.from(new Set(otherIdi.map((m) => String(m.idi))))
+        throw new Error(`Este email ya está asignado a otra inmobiliaria (IDI ${ids.join(", ")}). Un correo solo puede pertenecer a una inmobiliaria.`)
+    }
+
+    if (sameIdi.length > 1) {
+        throw new Error(`Hay perfiles duplicados para este email en la inmobiliaria ${targetIdi}. Elimina duplicados antes de continuar.`)
+    }
+}
+
 // Helper to find profile and correct column names
 async function findProfileAndColumns(admin: any, email: string, idi: number) {
+    const emailNorm = String(email || "").trim().toLowerCase()
     const whereVariants = [
-        { u: 'usuario', i: 'inmobiliaria' },
-        { u: 'usuario', i: 'Inmobiliaria' },
-        { u: 'Usuario', i: 'inmobiliaria' },
-        { u: 'Usuario', i: 'Inmobiliaria' },
+        { u: "usuario", i: "inmobiliaria" },
+        { u: "usuario", i: "Inmobiliaria" },
+        { u: "Usuario", i: "inmobiliaria" },
+        { u: "Usuario", i: "Inmobiliaria" },
     ]
-    
+
     for (const v of whereVariants) {
-        // Try to find the record
         try {
             const { data, error } = await admin
                 .from("Perfiles")
                 .select("*")
-                .eq(v.u, email)
+                .ilike(v.u, emailNorm)
                 .eq(v.i, idi)
                 .limit(1)
-            
+
             if (!error && data && data.length > 0) {
-                return { 
-                    profile: data[0], 
-                    whereUser: v.u, 
+                return {
+                    profile: data[0],
+                    whereUser: v.u,
                     whereInm: v.i,
-                    columns: v // Pass the found column names
+                    columns: v,
                 }
             }
-        } catch (e) {
-            // Ignore errors (like column not found) and try next variant
-        }
+        } catch {}
     }
     return null
 }
@@ -513,6 +590,12 @@ export async function onboardInmobiliariaAction(formData: FormData) {
         if (!Number.isNaN(date.getTime())) payload.PlanNextEffectiveAt = date.toISOString()
     }
 
+    try {
+        await assertSingleInmobiliariaPerEmail(admin, adminEmail, null)
+    } catch (e: any) {
+        redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent(e?.message || "El email ya está asignado")}`)
+    }
+
     const { data: insertedInmo, error: inmoError } = await admin.from("Inmobiliarias").insert(payload).select("idi").maybeSingle()
     if (inmoError) {
         redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent(inmoError.message || "Error creando inmobiliaria")}`)
@@ -523,7 +606,7 @@ export async function onboardInmobiliariaAction(formData: FormData) {
         redirect(`/dashboard/configuracion?inmo=error&imsg=${encodeURIComponent("No se pudo obtener el ID de la inmobiliaria creada")}`)
     }
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
+    const siteUrl = getPublicAppBaseUrl() || "http://localhost:3000"
     const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`
 
     let inviteOk = false
@@ -725,9 +808,11 @@ export async function createAgentAction(formData: FormData) {
 
     try {
         // 1. Invite user via Supabase Auth
-        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
+        const siteUrl = getPublicAppBaseUrl() || "http://localhost:3000"
         const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`
         
+        await assertSingleInmobiliariaPerEmail(admin, email, idi)
+
         console.log(`[createAgentAction] Inviting ${email} to idi ${idi}`)
 
         const { data: authData, error: authError } = await admin.auth.admin.inviteUserByEmail(email, {
@@ -736,7 +821,19 @@ export async function createAgentAction(formData: FormData) {
 
         if (authError) {
             console.error("Error inviting user:", authError)
-            throw new Error(authError.message)
+            const rawMsg = String((authError as any)?.message || "")
+            const status = (authError as any)?.status
+            const code = (authError as any)?.code
+
+            if (/Error sending invite email/i.test(rawMsg)) {
+                const detail = [code ? `code=${code}` : null, status ? `status=${status}` : null].filter(Boolean).join(" ")
+                throw new Error(
+                    `No se pudo enviar el email de invitación. Revisa la configuración de correo (SMTP) en Supabase Auth/GoTrue.${detail ? ` (${detail})` : ""}`
+                )
+            }
+
+            const detail = [rawMsg, code ? `code=${code}` : null, status ? `status=${status}` : null].filter(Boolean).join(" ")
+            throw new Error(detail || "Error al invitar usuario")
         }
 
         console.log("[createAgentAction] Invite sent successfully")
@@ -975,7 +1072,7 @@ export async function resendUserConfirmationAction(formData: FormData) {
     const email = String(formData.get("email"))
     
     try {
-        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
+        const siteUrl = getPublicAppBaseUrl() || "http://localhost:3000"
         const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`
         
         console.log(`[resendUserConfirmationAction] Processing for ${email}`)

@@ -240,7 +240,7 @@ export default function LeadsPage() {
   const { toast } = useToast()
   const [copiedField, setCopiedField] = React.useState<string | null>(null)
 
-  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading, isAdmin, role, userEmail, demoMode, demoSince } = useInmobiliaria()
+  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading, isAdmin, isSuperAdmin, role, userEmail, demoMode, demoSince } = useInmobiliaria()
   const shouldBlurPiiForLead = useCallback((lead: any) => {
     if (!demoMode) return false
     if (!demoSince) return true
@@ -1424,30 +1424,40 @@ export default function LeadsPage() {
   }, [inmobiliariaId, inmobiliariaLoading])
 
   useEffect(() => {
-    if (!inmobiliariaLoading) {
-      const controller = new AbortController()
-      const run = async () => {
-        try {
-          if (inmobiliariaId !== null) {
-            await fetchLeads(controller.signal)
-          } else {
-            setPlanInactive(false)
-            await Promise.all([
-              fetchAdvertisements(controller.signal),
-              fetchLeads(controller.signal)
-            ])
-          }
-        } catch (err: any) {
-             if (err?.name !== 'AbortError' && !err?.message?.includes('Abort')) {
-               console.error("[v0] Error in leads effect:", err)
-             }
+    if (inmobiliariaLoading) return
+
+    if (!userEmail) {
+      setLeads([])
+      setFilteredLeads([])
+      setAdvertisements([])
+      setPlanInactive(false)
+      setLoading(false)
+      router.replace("/login")
+      return
+    }
+
+    const controller = new AbortController()
+    const run = async () => {
+      try {
+        if (inmobiliariaId !== null || isSuperAdmin) {
+          await fetchLeads(controller.signal)
+        } else {
+          setLeads([])
+          setFilteredLeads([])
+          setAdvertisements([])
+          setPlanInactive(false)
+        }
+      } catch (err: any) {
+        if (err?.name !== "AbortError" && !err?.message?.includes("Abort")) {
+          console.error("[v0] Error in leads effect:", err)
         }
       }
-      run()
-      return () => controller.abort()
     }
+
+    run()
+    return () => controller.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inmobiliariaId, inmobiliariaLoading, currentAgentId])
+  }, [inmobiliariaId, inmobiliariaLoading, currentAgentId, isSuperAdmin, userEmail])
 
   useEffect(() => {
     const adId = searchParams.get("ad")
@@ -1727,6 +1737,21 @@ export default function LeadsPage() {
 
   const fetchLeads = async (signal?: AbortSignal) => {
     try {
+      if (!userEmail) {
+        setLeads([])
+        setFilteredLeads([])
+        setTotalLeads(0)
+        setLoading(false)
+        router.replace("/login")
+        return
+      }
+      if (inmobiliariaId === null && !isSuperAdmin) {
+        setLeads([])
+        setFilteredLeads([])
+        setTotalLeads(0)
+        setLoading(false)
+        return
+      }
       setLoading(true)
       console.log("[leads] fetchLeads:start", {
         inmobiliariaId,

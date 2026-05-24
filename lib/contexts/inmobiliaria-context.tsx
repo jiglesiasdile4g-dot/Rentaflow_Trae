@@ -2,6 +2,7 @@
 
 import type React from "react"
 import { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from "react"
+import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 
 interface InmobiliariaContextType {
@@ -57,6 +58,19 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
   const sessionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const supabase = useMemo(() => createClient(), [])
+  const router = useRouter()
+
+  const clearAuthState = useCallback(() => {
+    setInmobiliariaId(null)
+    setInmobiliariaNombre(null)
+    setIsAdmin(false)
+    setIsSuperAdmin(false)
+    setRole(null)
+    setUserEmail(null)
+    setOwnInmobiliariaId(null)
+    setDemoModeState(false)
+    setDemoSince(null)
+  }, [])
 
   useEffect(() => {
     try {
@@ -130,9 +144,9 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
           return
         }
         if (isMissingSession) {
-          setInmobiliariaId(null)
-          setInmobiliariaNombre(null)
+          clearAuthState()
           setLoading(false)
+          router.replace("/login")
           return
         }
         console.error("[v0] Auth error:", authError)
@@ -141,9 +155,9 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
 
       if (!user) {
         console.log("[v0] No user authenticated")
-        setInmobiliariaId(null)
-        setInmobiliariaNombre(null)
+        clearAuthState()
         setLoading(false)
+        router.replace("/login")
         return
       }
 
@@ -413,7 +427,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
           console.log("[v0] Auth state changed:", event)
           if (event === "SIGNED_OUT") {
             fetchProfile()
-            // Clear timers on sign out
+            router.replace("/login")
             if (inactivityTimerRef.current) {
               clearTimeout(inactivityTimerRef.current)
               inactivityTimerRef.current = null
@@ -423,7 +437,6 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
               sessionTimeoutRef.current = null
             }
           } else if (event === "SIGNED_IN") {
-            // Start session timer on sign in
             resetSessionTimer()
             const cleanup = setupActivityListeners()
             return cleanup
@@ -437,7 +450,7 @@ export function InmobiliariaProvider({ children }: { children: React.ReactNode }
         console.error("[v0] Error setting up auth listener:", error)
       }
     }
-  }, [fetchProfile, supabase, resetSessionTimer, setupActivityListeners])
+  }, [fetchProfile, supabase, resetSessionTimer, setupActivityListeners, router])
 
   if (error && error.includes("conectar con Supabase")) {
     return (
