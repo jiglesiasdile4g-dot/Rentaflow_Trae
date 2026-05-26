@@ -128,8 +128,40 @@ export default function Sidebar({ user, collapsed = false, onToggle }: SidebarPr
         if (active) {
           setDbLogoUrl(url || null)
           if (url) {
-            setHasLogo(true)
-            return
+            const marker = "/storage/v1/object/public/"
+            if (url.includes(marker)) {
+              const idx = url.indexOf(marker)
+              const after = url.slice(idx + marker.length)
+              const [bucket, ...rest] = after.split("/").filter(Boolean)
+              const objectPath = rest.join("/")
+              const parts = objectPath.split("/").filter(Boolean)
+              const fileName = parts.length ? parts[parts.length - 1] : ""
+              const folder = parts.length > 1 ? parts.slice(0, -1).join("/") : ""
+
+              if (bucket && fileName) {
+                try {
+                  const { data: files } = await supabase.storage.from(bucket).list(folder, {
+                    limit: 10,
+                    offset: 0,
+                    search: fileName,
+                  })
+                  const exists = (files || []).some((f: any) => f?.name === fileName)
+                  if (exists) {
+                    setHasLogo(true)
+                    return
+                  } else {
+                    setDbLogoUrl(null)
+                  }
+                } catch {
+                  setDbLogoUrl(null)
+                }
+              } else {
+                setDbLogoUrl(null)
+              }
+            } else {
+              setHasLogo(true)
+              return
+            }
           }
         }
       } catch {
