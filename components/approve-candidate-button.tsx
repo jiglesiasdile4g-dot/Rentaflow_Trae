@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { getMissingPersonalFields } from "@/lib/lead-validation"
+import { getMissingPersonalFields, isDocumentInvalid } from "@/lib/lead-validation"
 import { CheckCircle, AlertCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -29,6 +29,7 @@ export function ApproveCandidateButton({ lead, updateLeadStatus, onLeadUpdated }
   
   // Calcular si está aprobado basado en el estado actual del lead
   const isApproved = lead?.Estado === "Aceptado"
+  const hasDatosIncompletosStatus = lead?.Estado === "Datos Incompletos" || lead?.Estado === "Incompleto"
 
   async function handleClick() {
     console.log("[v0] ApproveCandidateButton clicked")
@@ -47,8 +48,15 @@ export function ApproveCandidateButton({ lead, updateLeadStatus, onLeadUpdated }
     const missing = getMissingPersonalFields(lead)
     console.log("[v0] Missing fields:", missing)
 
-    if (missing.length > 0) {
-      console.log("[v0] Showing alert dialog for missing fields")
+    const docInvalid = [
+      isDocumentInvalid(lead?.Tipo_Documento, lead?.Documento),
+      isDocumentInvalid(lead?.Tipo_Documento_2, lead?.Documento_2),
+      isDocumentInvalid(lead?.Tipo_Documento_3, lead?.Documento_3),
+      isDocumentInvalid(lead?.["Tipo_Documento 4"], lead?.Documento_4),
+    ].some(Boolean)
+
+    if (missing.length > 0 || hasDatosIncompletosStatus || docInvalid) {
+      console.log("[v0] Showing confirm dialog for incomplete data")
       setMissingFields(missing)
       setShowMissingFieldsAlert(true)
       return
@@ -71,6 +79,21 @@ export function ApproveCandidateButton({ lead, updateLeadStatus, onLeadUpdated }
       toast({
         title: "Candidato aprobado",
         description: "El estado ha sido cambiado a Aprobado y se ha enviado un correo de notificación.",
+      })
+    }
+  }
+
+  async function handleConfirmApprovalIncomplete() {
+    console.log("[v0] User confirmed approval with incomplete data")
+    setShowMissingFieldsAlert(false)
+
+    if (lead) {
+      await updateLeadStatus(lead.id, "Aceptado")
+      onLeadUpdated({ ...lead, Estado: "Aceptado" })
+
+      toast({
+        title: "Candidato aprobado",
+        description: "Aviso: se aprobó aunque el lead tiene datos incompletos.",
       })
     }
   }
@@ -116,22 +139,25 @@ export function ApproveCandidateButton({ lead, updateLeadStatus, onLeadUpdated }
               Datos incompletos
             </AlertDialogTitle>
             <AlertDialogDescription className="text-base">
-              No puedes aprobar este candidato sin completar la siguiente información en{" "}
-              <strong>Información Personal</strong>:
+              Este lead tiene datos incompletos.
+              <br />
+              <br />
+              Puedes aprobarlo igualmente, pero quedará marcado como aprobado con datos incompletos.
             </AlertDialogDescription>
-            <div className="mt-3">
-              <ul className="list-disc list-inside space-y-1 text-red-600 font-medium">
-                {missingFields.map((field) => (
-                  <li key={field}>{field}</li>
-                ))}
-              </ul>
-              <p className="mt-4 text-sm text-muted-foreground">
-                Por favor, completa estos campos antes de aprobar al candidato.
-              </p>
-            </div>
+            {missingFields.length > 0 && (
+              <div className="mt-3">
+                <div className="text-sm font-medium text-foreground/80">Campos faltantes:</div>
+                <ul className="list-disc list-inside space-y-1 text-red-600 font-medium mt-2">
+                  {missingFields.map((field) => (
+                    <li key={field}>{field}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setShowMissingFieldsAlert(false)}>Entendido</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setShowMissingFieldsAlert(false)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmApprovalIncomplete}>Aprobar igualmente</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

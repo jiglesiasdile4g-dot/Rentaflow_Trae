@@ -28,6 +28,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "payload_invalido" }, { status: 400 })
     }
 
+    const payload: any = typeof body === "object" && body ? { ...body } : body
+    if (payload && typeof payload === "object") {
+      if ("status_history" in payload) delete payload.status_history
+      if ("statusHistory" in payload) delete payload.statusHistory
+      if (payload.lead && typeof payload.lead === "object") {
+        const leadCopy: any = { ...payload.lead }
+        if ("status_history" in leadCopy) delete leadCopy.status_history
+        if ("statusHistory" in leadCopy) delete leadCopy.statusHistory
+        payload.lead = leadCopy
+      }
+    }
+
     const envUrl =
       process.env.N8N_WEBHOOK_APROBADO ||
       process.env.NEXT_PUBLIC_N8N_WEBHOOK_APROBADO ||
@@ -47,7 +59,7 @@ export async function POST(req: Request) {
             Accept: "*/*",
             "User-Agent": N8N_USER_AGENT,
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(payload),
         },
         12000
       )

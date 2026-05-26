@@ -177,6 +177,7 @@ export type Lead = {
   Telefono?: string
   Inmueble?: string
   Observaciones?: string
+  primer_mensaje?: string
   Ingresos?: number
   "Pedir Aval"?: boolean
   "Tipo de Contrato"?: string
@@ -920,10 +921,44 @@ export function LeadDetailModal({
             return typeof v === "string" ? v.trim() : ""
           })
           .find((v) => v.length > 0) || ""
+      const normalizeKey = (k: string) =>
+        String(k || "")
+          .toLowerCase()
+          .normalize("NFKD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9]+/g, "")
+
+      const extractText = (value: any) => {
+        if (value == null) return ""
+        if (typeof value === "string") return value
+        try {
+          return JSON.stringify(value)
+        } catch {
+          return String(value)
+        }
+      }
+
+      const primerMensajeCandidates = ["primer_mensaje", "Primer_mensaje", "primerMensaje", "PrimerMensaje", "primer mensaje", "Primer mensaje"]
+      const mergedPrimerMensajeDirect =
+        primerMensajeCandidates
+          .map((key) => extractText((data as any)[key]).trim())
+          .find((v) => v.length > 0) || ""
+
+      const mergedPrimerMensaje =
+        mergedPrimerMensajeDirect ||
+        (() => {
+          const keys = Object.keys((data as any) || {})
+          const match = keys.find((k) => {
+            const nk = normalizeKey(k)
+            return nk === "primermensaje" || (nk.includes("primer") && nk.includes("mensaje"))
+          })
+          return match ? extractText((data as any)[match]).trim() : ""
+        })()
       const normalizedLead = {
         ...data,
         Observaciones: mergedObservaciones,
         Obsevaciones: mergedObservaciones,
+        primer_mensaje: mergedPrimerMensaje,
       }
       const hasInvalidDoc = [
         isDocumentInvalid(normalizedLead?.Tipo_Documento, normalizedLead?.Documento),
@@ -960,11 +995,9 @@ export function LeadDetailModal({
         .map((value) => (typeof value === "string" ? value.trim() : ""))
         .filter(Boolean)
 
-      if (emails.length > 0 || phones.length > 0) {
-        const leadIdcRaw = (finalLead as any)?.idc ?? (finalLead as any)?.IDC ?? null
-        const leadIdc = Number.isFinite(Number(leadIdcRaw)) ? Number(leadIdcRaw) : null
-        fetchCommunications(emails, phones, typeof inmobiliariaId === "number" ? inmobiliariaId : null, leadIdc)
-      }
+      const leadIdcRaw = (finalLead as any)?.idc ?? (finalLead as any)?.IDC ?? null
+      const leadIdc = Number.isFinite(Number(leadIdcRaw)) ? Number(leadIdcRaw) : null
+      fetchCommunications(emails, phones, typeof inmobiliariaId === "number" ? inmobiliariaId : null, leadIdc)
       
       // Load docs status (checking file existence logic is complex, assume lead has status fields)
       // Actually we will load the list when needed or if we want to show badges
@@ -986,13 +1019,14 @@ export function LeadDetailModal({
     targetIdi: number | null = null,
     leadIdc: number | null = null,
   ) => {
-    if (emails.length === 0 && phones.length === 0) {
+    if (emails.length === 0 && phones.length === 0 && leadIdc == null) {
       setCommunications([])
       return
     }
     setCommsLoading(true)
     try {
       const uniqueEmails = Array.from(new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean)))
+      const leadIdcValue = leadIdc != null ? String(leadIdc) : null
       const emailFilter = uniqueEmails
         .flatMap((email) => [`Email.ilike.${email}`, `From.ilike.${email}`, `to.ilike.${email}`])
         .join(",")
@@ -1016,10 +1050,47 @@ export function LeadDetailModal({
       }
 
       const idiColumns = ["idi", "usuario", "inmobiliaria"]
+      const idcColumns = ["idc", "IDC", "Idc"]
       const targetIdiValue = targetIdi != null ? String(targetIdi) : null
 
       const runCorreosQuery = async () => {
-        if (uniqueEmails.length === 0) return { data: [], error: null as any }
+        if (uniqueEmails.length === 0) {
+          if (!leadIdcValue) return { data: [], error: null as any }
+          if (targetIdi == null) {
+            for (const idcCol of idcColumns) {
+              const res = await supabase
+                .from("Correos")
+                .select("*")
+                .in("Tipo", ["enviado", "recibido"])
+                .eq(idcCol as any, leadIdcValue as any)
+              if (!res.error) return res
+              if (!isMissingColumnError(res.error.message || "", idcCol)) return res
+            }
+            return { data: [], error: null as any }
+          }
+          for (const idiCol of idiColumns) {
+            for (const idcCol of idcColumns) {
+              const res = await supabase
+                .from("Correos")
+                .select("*")
+                .in("Tipo", ["enviado", "recibido"])
+                .eq(idcCol as any, leadIdcValue as any)
+                .eq(idiCol as any, targetIdiValue as any)
+              if (!res.error) return res
+              if (!isMissingColumnError(res.error.message || "", idcCol) && !isMissingColumnError(res.error.message || "", idiCol)) return res
+            }
+          }
+          for (const idcCol of idcColumns) {
+            const res = await supabase
+              .from("Correos")
+              .select("*")
+              .in("Tipo", ["enviado", "recibido"])
+              .eq(idcCol as any, leadIdcValue as any)
+            if (!res.error) return res
+            if (!isMissingColumnError(res.error.message || "", idcCol)) return res
+          }
+          return { data: [], error: null as any }
+        }
         if (targetIdi == null) {
           return await supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"]).or(emailFilter)
         }
@@ -1037,7 +1108,43 @@ export function LeadDetailModal({
       }
 
       const runWhatsappQuery = async () => {
-        if (phoneVariants.length === 0) return { data: [], error: null as any }
+        if (phoneVariants.length === 0) {
+          if (!leadIdcValue) return { data: [], error: null as any }
+          if (targetIdi == null) {
+            for (const idcCol of idcColumns) {
+              const res = await supabase
+                .from("Whatsapp")
+                .select("*")
+                .in("Tipo", ["Enviado", "Recibido", "enviado", "recibido"])
+                .eq(idcCol as any, leadIdcValue as any)
+              if (!res.error) return res
+              if (!isMissingColumnError(res.error.message || "", idcCol)) return res
+            }
+            return { data: [], error: null as any }
+          }
+          for (const idiCol of idiColumns) {
+            for (const idcCol of idcColumns) {
+              const res = await supabase
+                .from("Whatsapp")
+                .select("*")
+                .in("Tipo", ["Enviado", "Recibido", "enviado", "recibido"])
+                .eq(idcCol as any, leadIdcValue as any)
+                .eq(idiCol as any, targetIdiValue as any)
+              if (!res.error) return res
+              if (!isMissingColumnError(res.error.message || "", idcCol) && !isMissingColumnError(res.error.message || "", idiCol)) return res
+            }
+          }
+          for (const idcCol of idcColumns) {
+            const res = await supabase
+              .from("Whatsapp")
+              .select("*")
+              .in("Tipo", ["Enviado", "Recibido", "enviado", "recibido"])
+              .eq(idcCol as any, leadIdcValue as any)
+            if (!res.error) return res
+            if (!isMissingColumnError(res.error.message || "", idcCol)) return res
+          }
+          return { data: [], error: null as any }
+        }
         if (targetIdi == null) {
           return await supabase
             .from("Whatsapp")
@@ -1095,7 +1202,6 @@ export function LeadDetailModal({
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       )
 
-      const leadIdcValue = leadIdc != null ? String(leadIdc) : null
       const byLeadIdc = leadIdcValue
         ? allComms.filter((comm: any) => {
             const v = comm?.idc ?? comm?.IDC ?? comm?.Idc ?? null
@@ -1258,6 +1364,7 @@ export function LeadDetailModal({
 
   const updateLeadStatus = async (newStatus: string) => {
     if (!lead) return
+    const APPROVED_INCOMPLETE_MARKER = "RF_APROBADO_INCOMPLETO"
 
     // Special handling for "Visita Propuesta" or "Visita Confirmada"
     if (newStatus === "Visita Propuesta" || newStatus === "Visita Confirmada") {
@@ -1273,6 +1380,22 @@ export function LeadDetailModal({
 
     try {
       const updateData: any = { Estado: newStatus };
+
+      const priorStatusRaw = String(lead?.Estado || "").trim()
+      const wasIncomplete = ["Incompleto", "Datos Incompletos"].includes(priorStatusRaw)
+      if (newStatus === "Aceptado" && wasIncomplete) {
+        const existingNotes = String((lead as any)?.Observaciones ?? (lead as any)?.Obsevaciones ?? "").trim()
+        const hasMarker = existingNotes.toUpperCase().includes(APPROVED_INCOMPLETE_MARKER)
+        if (!hasMarker) {
+          const now = new Date()
+          const dateStr = now.toLocaleDateString("es-ES")
+          const timeStr = now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
+          const actor = String(currentUser?.email || "Sistema")
+          const entry = `[${dateStr} ${timeStr} • ${actor}] ${APPROVED_INCOMPLETE_MARKER} Aprobado con datos incompletos (estado previo: ${priorStatusRaw})`
+          const joined = existingNotes ? `${entry}\n\n${existingNotes}` : entry
+          updateData.Obsevaciones = joined
+        }
+      }
 
       // History tracking
       const historyEntry: LeadHistoryEntry = {
@@ -1429,7 +1552,16 @@ export function LeadDetailModal({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               leadId: lead.id,
-              lead: pickLeadPersonalData(updatedLead),
+              lead: (() => {
+                const src: any = updatedLead && typeof updatedLead === "object" ? { ...updatedLead } : updatedLead
+                if (src && typeof src === "object") {
+                  delete src.status_history
+                  delete src.statusHistory
+                }
+                return src
+              })(),
+              anuncio: pickLeadInmuebleData(updatedLead, advertisements),
+              inmueble: pickLeadInmuebleData(updatedLead, advertisements),
               idi: targetInmoId,
               inmobiliariaId: targetInmoId,
               inmobiliariaNombre: inmobiliariaNombre || null,
@@ -2363,6 +2495,12 @@ export function LeadDetailModal({
                         const effectiveStatus = (currentStatus === "Visita Propuesta" && lead.fecha_de_visita) 
                           ? "Visita Confirmada" 
                           : (lead.Estado || "Pendiente")
+                        const approvedWithIncomplete =
+                          effectiveStatus === "Aceptado" &&
+                          String((lead as any)?.Observaciones ?? (lead as any)?.Obsevaciones ?? "")
+                            .toUpperCase()
+                            .includes("RF_APROBADO_INCOMPLETO")
+                        const incompleteColors = getStatusColors("Datos Incompletos")
 
                         return (
                           <Select
@@ -2383,9 +2521,19 @@ export function LeadDetailModal({
                                     color: statusColors.text,
                                   }}
                                 >
-                                   <SelectValue placeholder="Estado">
-                                     {statusColors.label}
-                                   </SelectValue>
+                                   <SelectValue placeholder="Estado" />
+                                   {approvedWithIncomplete && (
+                                     <span
+                                       className="ml-2 px-2 py-0.5 rounded border text-[10px] font-semibold"
+                                       style={{
+                                         backgroundColor: incompleteColors.bg,
+                                         borderColor: incompleteColors.border,
+                                         color: incompleteColors.text,
+                                       }}
+                                     >
+                                       Datos incompletos
+                                     </span>
+                                   )}
                                 </SelectTrigger>
                               )
                             })()}
@@ -2971,7 +3119,8 @@ export function LeadDetailModal({
                                 </h3>
                             </div>
                             <Badge variant="secondary" className="text-[10px] h-5 bg-background border shadow-sm">
-                                {splitNotes(String(lead.Obsevaciones || lead.Observaciones || "").trim()).length}
+                                {splitNotes(String(lead.Obsevaciones || lead.Observaciones || "").trim()).length +
+                                  (String(lead.primer_mensaje || "").trim().length > 0 ? 1 : 0)}
                             </Badge>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
@@ -2994,6 +3143,27 @@ export function LeadDetailModal({
                                     <div className="pl-1">
                                         <p className="whitespace-pre-wrap text-[#16A34A] leading-relaxed font-medium">{lead.resumen_visita}</p>
                                     </div>
+                                </div>
+                             )}
+
+                             {String(lead.primer_mensaje || "").trim().length > 0 && (
+                                <div className="bg-primary/5 border border-primary/30 rounded-xl p-3 text-xs shadow-sm relative">
+                                  <div className="flex justify-between items-start mb-2.5 pb-2 border-b border-primary/20">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 border border-primary/20">
+                                        <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                                      </div>
+                                      <div className="flex flex-col">
+                                        <span className="font-bold text-primary text-[11px]">Primer mensaje</span>
+                                        <span className="text-[10px] font-medium text-muted-foreground">Guardado en el lead</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="pl-1">
+                                    <p className="whitespace-pre-wrap text-foreground leading-relaxed font-medium">
+                                      {String(lead.primer_mensaje || "").trim()}
+                                    </p>
+                                  </div>
                                 </div>
                              )}
 
@@ -3032,12 +3202,18 @@ export function LeadDetailModal({
                                     )
                                 })
                              ) : (
-                                <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-40 space-y-3">
-                                    <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-                                        <StickyNote className="h-6 w-6" />
-                                    </div>
-                                    <p className="text-xs font-medium">No hay anotaciones registradas</p>
-                                </div>
+                                String(lead.primer_mensaje || "").trim().length > 0 ? (
+                                  <div className="py-2 text-center text-[11px] text-muted-foreground/70">
+                                    No hay anotaciones adicionales
+                                  </div>
+                                ) : (
+                                  <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-40 space-y-3">
+                                      <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                                          <StickyNote className="h-6 w-6" />
+                                      </div>
+                                      <p className="text-xs font-medium">No hay anotaciones registradas</p>
+                                  </div>
+                                )
                              )}
                         </div>
                         <div className="p-3 border-t bg-background space-y-2">
@@ -3820,6 +3996,20 @@ export function LeadDetailModal({
                   <AlertDialogTitle>¿Estás seguro de cambiar el estado?</AlertDialogTitle>
                   <AlertDialogDescription>
                     Cambiar el estado a &quot;{pendingStatus === "Aceptado" ? "Aprobado" : pendingStatus}&quot; activará notificaciones automáticas y otros procesos asociados a este lead.
+                    {pendingStatus === "Aceptado" && (() => {
+                      const priorStatus = String(lead?.Estado || "").trim()
+                      const isIncomplete = ["Incompleto", "Datos Incompletos"].includes(priorStatus)
+                      if (!isIncomplete) return null
+                      return (
+                        <>
+                          <br />
+                          <br />
+                          <span className="font-medium text-amber-700">
+                            Aviso: este lead está en estado &quot;{priorStatus}&quot;. Se aprobará igualmente.
+                          </span>
+                        </>
+                      )
+                    })()}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

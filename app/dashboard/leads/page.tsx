@@ -130,6 +130,7 @@ type Lead = {
   status_history?: LeadHistoryEntry[]
   prev_entrada?: string
   fecha_prev_entrada?: string
+  primer_mensaje?: string
 }
 
 export type LeadHistoryEntry = {
@@ -1786,6 +1787,40 @@ export default function LeadsPage() {
       console.log("[leads] leadsData:fetched", leadsData?.length || 0)
 
       let baseRows: any[] = (leadsData || []).map((lead: any) => {
+        const normalizeKey = (k: string) =>
+          String(k || "")
+            .toLowerCase()
+            .normalize("NFKD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-z0-9]+/g, "")
+
+        const extractText = (value: any) => {
+          if (value == null) return ""
+          if (typeof value === "string") return value
+          try {
+            return JSON.stringify(value)
+          } catch {
+            return String(value)
+          }
+        }
+
+        const primerMensajeCandidates = ["primer_mensaje", "Primer_mensaje", "primerMensaje", "PrimerMensaje", "primer mensaje", "Primer mensaje"]
+        const mergedPrimerMensajeDirect =
+          primerMensajeCandidates
+            .map((key) => extractText((lead as any)[key]).trim())
+            .find((v) => v.length > 0) || ""
+
+        const mergedPrimerMensaje =
+          mergedPrimerMensajeDirect ||
+          (() => {
+            const keys = Object.keys((lead as any) || {})
+            const match = keys.find((k) => {
+              const nk = normalizeKey(k)
+              return nk === "primermensaje" || (nk.includes("primer") && nk.includes("mensaje"))
+            })
+            return match ? extractText((lead as any)[match]).trim() : ""
+          })()
+
         // Normalize virtual statuses
         const currentStatus = String(lead?.Estado || "").trim()
         const hasDate = Boolean(lead?.fecha_de_visita)
@@ -1807,6 +1842,7 @@ export default function LeadsPage() {
           ...lead,
           Estado: effectiveStatus,
           origen: lead?.origen ?? lead?.Origen ?? lead?.origin ?? null,
+          primer_mensaje: mergedPrimerMensaje,
         }
       })
       
@@ -2684,12 +2720,24 @@ export default function LeadsPage() {
         }
       }
 
+      const leadClean = (() => {
+        if (!leadForWebhook || typeof leadForWebhook !== "object") return leadForWebhook
+        const copy: any = { ...leadForWebhook }
+        delete copy.status_history
+        delete copy.statusHistory
+        return copy
+      })()
+
+      const anuncio = pickLeadInmuebleData(leadClean)
+
       const res = await fetch("/api/aprobado", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           leadId: leadForWebhook?.id,
-          lead: pickLeadPersonalData(leadForWebhook),
+          lead: leadClean,
+          anuncio,
+          inmueble: anuncio,
           idi: targetInmoId,
           inmobiliariaId: targetInmoId,
           inmobiliariaNombre: inmobiliariaNombre || null,
@@ -2711,6 +2759,7 @@ export default function LeadsPage() {
     const { id, status } = pendingSingleStatus
 
     try {
+      const APPROVED_INCOMPLETE_MARKER = "RF_APROBADO_INCOMPLETO"
       let lead = leads.find(l => String(l.id) === String(id))
       // Fallback to selectedLead if not found in list
       if (!lead && selectedLead && String(selectedLead.id) === String(id)) {
@@ -2720,6 +2769,22 @@ export default function LeadsPage() {
       const updateData: any = { Estado: status }
       if (status === "Pedir Aval") {
         updateData["Pedir Aval"] = true
+      }
+
+      const priorStatusRaw = String((lead as any)?.Estado || "").trim()
+      const wasIncomplete = ["Incompleto", "Datos Incompletos"].includes(priorStatusRaw)
+      if (status === "Aceptado" && lead && wasIncomplete) {
+        const existingNotes = String((lead as any)?.Observaciones ?? (lead as any)?.Obsevaciones ?? "").trim()
+        const hasMarker = existingNotes.toUpperCase().includes(APPROVED_INCOMPLETE_MARKER)
+        if (!hasMarker) {
+          const now = new Date()
+          const dateStr = now.toLocaleDateString("es-ES")
+          const timeStr = now.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
+          const actor = String(currentUser?.email || "Sistema")
+          const entry = `[${dateStr} ${timeStr} • ${actor}] ${APPROVED_INCOMPLETE_MARKER} Aprobado con datos incompletos (estado previo: ${priorStatusRaw})`
+          const joined = existingNotes ? `${entry}\n\n${existingNotes}` : entry
+          updateData.Obsevaciones = joined
+        }
       }
 
       // History tracking
@@ -4436,13 +4501,19 @@ export default function LeadsPage() {
                                             {(() => {
                                               const currentStatus = String(lead.Estado || "").trim()
                                               const hasDate = Boolean(lead.fecha_de_visita)
-                                              const statusForDisplay = docInvalid
-                                                ? "Datos Incompletos"
-                                                : (currentStatus === "Visita Propuesta" && hasDate)
+                                              const baseStatus =
+                                                currentStatus === "Visita Propuesta" && hasDate
                                                   ? "Visita Confirmada"
                                                   : (currentStatus || "Pendiente")
+                                              const statusForDisplay = docInvalid && !isAceptado ? "Datos Incompletos" : baseStatus
+                                              const approvedWithIncomplete =
+                                                isAceptado &&
+                                                String((lead as any)?.Observaciones ?? (lead as any)?.Obsevaciones ?? "")
+                                                  .toUpperCase()
+                                                  .includes("RF_APROBADO_INCOMPLETO")
 
                                               const statusColors = getStatusColors(statusForDisplay)
+                                              const incompleteColors = getStatusColors("Datos Incompletos")
                                               const showEstadoBadge = Boolean(statusForDisplay) && statusForDisplay !== "Completo"
 
                                             if (showEstadoBadge) {
@@ -4514,6 +4585,18 @@ export default function LeadsPage() {
                                                         statusColors.label
                                                       )}
                                                     </span>
+                                                    {approvedWithIncomplete && (
+                                                      <span
+                                                        className="px-1.5 py-0.5 rounded border text-[10px] font-semibold"
+                                                        style={{
+                                                          backgroundColor: incompleteColors.bg,
+                                                          borderColor: incompleteColors.border,
+                                                          color: incompleteColors.text,
+                                                        }}
+                                                      >
+                                                        Datos incompletos
+                                                      </span>
+                                                    )}
                                                     <div
                                                       className="h-3 w-px"
                                                       style={{ backgroundColor: statusColors.border }}
@@ -4911,12 +4994,18 @@ export default function LeadsPage() {
                                           {(() => {
                                             const currentStatus = String(lead.Estado || "").trim()
                                             const hasDate = Boolean(lead.fecha_de_visita)
-                                            const statusForDisplay = docInvalid
-                                              ? "Datos Incompletos"
-                                              : (currentStatus === "Visita Propuesta" && hasDate)
+                                            const baseStatus =
+                                              currentStatus === "Visita Propuesta" && hasDate
                                                 ? "Visita Confirmada"
                                                 : (currentStatus || "Pendiente")
+                                            const statusForDisplay = docInvalid && !isAceptado ? "Datos Incompletos" : baseStatus
+                                            const approvedWithIncomplete =
+                                              isAceptado &&
+                                              String((lead as any)?.Observaciones ?? (lead as any)?.Obsevaciones ?? "")
+                                                .toUpperCase()
+                                                .includes("RF_APROBADO_INCOMPLETO")
                                             const statusColors = getStatusColors(statusForDisplay)
+                                            const incompleteColors = getStatusColors("Datos Incompletos")
                                             const showEstadoBadge = Boolean(statusForDisplay) && statusForDisplay !== "Completo"
 
                                             if (showEstadoBadge) {
@@ -4991,6 +5080,18 @@ export default function LeadsPage() {
                                                       statusColors.label
                                                     )}
                                                   </span>
+                                                  {approvedWithIncomplete && (
+                                                    <span
+                                                      className="px-1.5 py-0.5 rounded border text-[10px] font-semibold"
+                                                      style={{
+                                                        backgroundColor: incompleteColors.bg,
+                                                        borderColor: incompleteColors.border,
+                                                        color: incompleteColors.text,
+                                                      }}
+                                                    >
+                                                      Datos incompletos
+                                                    </span>
+                                                  )}
                                                   <div
                                                     className="h-3 w-px"
                                                     style={{ backgroundColor: statusColors.border }}
@@ -6621,11 +6722,21 @@ export default function LeadsPage() {
                                 ? "Visita Confirmada" 
                                 : selectedLead.Estado
                               const colors = getStatusColors(effectiveStatus)
+                              const incompleteColors = getStatusColors("Datos Incompletos")
+                              const approvedWithIncomplete =
+                                effectiveStatus === "Aceptado" &&
+                                String(selectedLead.Observaciones ?? selectedLead.Obsevaciones ?? "")
+                                  .toUpperCase()
+                                  .includes("RF_APROBADO_INCOMPLETO")
 
                               return (
                                 <Select
                                   value={String(selectedLead.Estado || "Pendiente")}
-                                  onValueChange={(value) => updateLeadStatus(Number(selectedLead.id), value)}
+                                  onValueChange={(value) => {
+                                    if (!value || String(value) === String(selectedLead.Estado || "")) return
+                                    setPendingSingleStatus({ id: Number(selectedLead.id), status: value })
+                                    setSingleStatusConfirmOpen(true)
+                                  }}
                                 >
                                   <SelectTrigger 
                                     className="w-full h-auto flex-1 p-4 border-2 rounded-lg flex flex-col items-center justify-center gap-2 hover:opacity-90 transition-all focus:ring-0 shadow-sm outline-none [&>svg]:hidden"
@@ -6646,6 +6757,19 @@ export default function LeadsPage() {
                                         effectiveStatus === "Aceptado" ? "Aprobado" : (effectiveStatus || "Pendiente")
                                       )}
                                     </div>
+
+                                    {approvedWithIncomplete && (
+                                      <div
+                                        className="px-2 py-1 rounded border text-[11px] font-semibold"
+                                        style={{
+                                          backgroundColor: incompleteColors.bg,
+                                          borderColor: incompleteColors.border,
+                                          color: incompleteColors.text,
+                                        }}
+                                      >
+                                        Datos incompletos
+                                      </div>
+                                    )}
                                     
                                     {((effectiveStatus === "Visita Propuesta" || effectiveStatus === "Visita Confirmada") && selectedLead.fecha_de_visita) && (
                                       <div 
@@ -7104,7 +7228,8 @@ export default function LeadsPage() {
                             <h3 className="font-semibold text-sm">Anotaciones</h3>
                           </div>
                           <Badge variant="secondary" className="text-[10px] h-5 bg-background border shadow-sm">
-                            {splitNotes((selectedLead.Observaciones ?? selectedLead.Obsevaciones ?? "").trim()).length}
+                            {splitNotes((selectedLead.Observaciones ?? selectedLead.Obsevaciones ?? "").trim()).length +
+                              (String((selectedLead as any)?.primer_mensaje || "").trim().length > 0 ? 1 : 0)}
                           </Badge>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-muted/10">
@@ -7128,6 +7253,27 @@ export default function LeadsPage() {
                                      <p className="whitespace-pre-wrap text-[#16A34A] leading-relaxed font-medium">{selectedLead.resumen_visita}</p>
                                  </div>
                              </div>
+                          )}
+
+                          {String((selectedLead as any)?.primer_mensaje || "").trim().length > 0 && (
+                            <div className="bg-primary/5 border border-primary/30 rounded-xl p-3 text-xs shadow-sm relative">
+                              <div className="flex justify-between items-start mb-2.5 pb-2 border-b border-primary/20">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 border border-primary/20">
+                                    <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="font-bold text-primary text-[11px]">Primer mensaje</span>
+                                    <span className="text-[10px] font-medium text-muted-foreground">Guardado en el lead</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="pl-1">
+                                <p className="whitespace-pre-wrap text-foreground leading-relaxed font-medium">
+                                  {String((selectedLead as any)?.primer_mensaje || "").trim()}
+                                </p>
+                              </div>
+                            </div>
                           )}
 
                           {splitNotes((selectedLead.Observaciones ?? selectedLead.Obsevaciones ?? "").trim()).length > 0 ? (
@@ -7164,12 +7310,16 @@ export default function LeadsPage() {
                               )
                             })
                           ) : (
-                            <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-40 space-y-3">
-                              <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-                                <StickyNote className="h-6 w-6" />
+                            String((selectedLead as any)?.primer_mensaje || "").trim().length > 0 ? (
+                              <div className="py-2 text-center text-[11px] text-muted-foreground/70">No hay anotaciones adicionales</div>
+                            ) : (
+                              <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-40 space-y-3">
+                                <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                                  <StickyNote className="h-6 w-6" />
+                                </div>
+                                <p className="text-xs font-medium">No hay anotaciones registradas</p>
                               </div>
-                              <p className="text-xs font-medium">No hay anotaciones registradas</p>
-                            </div>
+                            )
                           )}
                         </div>
                         <div className="p-3 border-t bg-background space-y-2">
@@ -8323,6 +8473,24 @@ export default function LeadsPage() {
             <DialogDescription>{noteDialog.leadName ? `Lead: ${noteDialog.leadName}` : ""}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {(() => {
+              const idStr = String(noteDialog.leadId)
+              const lead = leads.find((l) => String(l.id) === idStr) || (selectedLead && String(selectedLead.id) === idStr ? selectedLead : null)
+              const primer = lead ? String((lead as any)?.primer_mensaje || "").trim() : ""
+              if (!primer) return null
+              return (
+                <div className="bg-primary/5 border border-primary/30 rounded-lg p-3 text-xs">
+                  <div className="flex items-center gap-2 pb-2 mb-2 border-b border-primary/20">
+                    <MessageSquare className="h-4 w-4 text-primary" />
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-primary text-[11px]">Primer mensaje</span>
+                      <span className="text-[10px] text-muted-foreground">Guardado en el lead</span>
+                    </div>
+                  </div>
+                  <div className="whitespace-pre-wrap text-foreground font-medium">{primer}</div>
+                </div>
+              )
+            })()}
             <Textarea
               rows={6}
               value={noteDialog.value}
@@ -8413,6 +8581,25 @@ export default function LeadsPage() {
             <AlertDialogTitle>¿Estás seguro de cambiar el estado?</AlertDialogTitle>
             <AlertDialogDescription>
               Cambiar el estado a &quot;{pendingSingleStatus?.status === "Aceptado" ? "Aprobado" : pendingSingleStatus?.status}&quot; activará notificaciones automáticas y otros procesos asociados a este lead.
+              {pendingSingleStatus?.status === "Aceptado" && (() => {
+                const idStr = String(pendingSingleStatus?.id ?? "")
+                const target = (selectedLead && String(selectedLead.id) === idStr)
+                  ? selectedLead
+                  : leads.find((l) => String(l.id) === idStr)
+                if (!target) return null
+                const priorStatus = String((target as any)?.Estado || "").trim()
+                const isIncomplete = ["Incompleto", "Datos Incompletos"].includes(priorStatus)
+                if (!isIncomplete) return null
+                return (
+                  <>
+                    <br />
+                    <br />
+                    <span className="font-medium text-amber-700">
+                      Aviso: este lead está en estado &quot;{priorStatus}&quot;. Se aprobará igualmente.
+                    </span>
+                  </>
+                )
+              })()}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

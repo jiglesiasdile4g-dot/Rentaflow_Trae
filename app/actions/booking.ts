@@ -315,13 +315,31 @@ export async function cancelVisit(leadId: string) {
         if (!webhookUrl) {
           return { success: true }
         }
+        const lead = (data[0] ?? null) as any
+        const targetInmoIdRaw = lead?.usuario ?? lead?.idi ?? null
+        const targetInmoId = Number(targetInmoIdRaw)
+        let inmobiliaria: any = null
+        if (Number.isFinite(targetInmoId) && targetInmoId > 0) {
+          const { data: inmoData, error: inmoError } = await supabase
+            .from("Inmobiliarias")
+            .select("*")
+            .eq("idi", targetInmoId)
+            .maybeSingle()
+          if (!inmoError) {
+            inmobiliaria = inmoData || null
+          }
+        }
         await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             leadId,
             Estado: "Descartado",
-            lead: data[0] ?? null,
+            lead,
+            idi: Number.isFinite(targetInmoId) && targetInmoId > 0 ? targetInmoId : null,
+            inmobiliariaId: Number.isFinite(targetInmoId) && targetInmoId > 0 ? targetInmoId : null,
+            inmobiliaria,
+            Inmobiliaria: inmobiliaria,
             source: "cancelVisit",
             timestamp: new Date().toISOString()
           })

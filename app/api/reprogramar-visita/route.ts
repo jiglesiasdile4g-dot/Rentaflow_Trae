@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { getWebhookUrl } from "@/lib/utils"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 8000): Promise<Response> {
   const controller = new AbortController()
@@ -21,6 +22,44 @@ export async function POST(req: Request) {
     const body = await req.json()
     console.log("[Webhook] Received visit reschedule:", body)
 
+    const payload: any = typeof body === "object" && body ? { ...body } : body
+    if (payload && typeof payload === "object") {
+      const lead = payload.lead && typeof payload.lead === "object" ? payload.lead : null
+      const targetInmoId =
+        payload.inmobiliariaId ??
+        payload.idi ??
+        payload.usuario ??
+        lead?.inmobiliariaId ??
+        lead?.idi ??
+        lead?.usuario ??
+        payload?.inmobiliaria?.idi ??
+        payload?.Inmobiliaria?.idi ??
+        null
+
+      if (targetInmoId != null && !payload.inmobiliaria && !payload.Inmobiliaria) {
+        try {
+          const admin = createAdminClient()
+          const { data: inmo, error } = await admin.from("Inmobiliarias").select("*").eq("idi", String(targetInmoId)).maybeSingle()
+          if (!error && inmo) {
+            payload.inmobiliaria = inmo
+            payload.Inmobiliaria = inmo
+            payload.inmobiliariaId = targetInmoId
+            payload.idi = targetInmoId
+            payload.inmobiliariaNombre = (inmo as any)?.Nombre ?? null
+          }
+        } catch (e) {
+          console.error("[Webhook] Could not fetch inmobiliaria for reschedule payload:", e)
+        }
+      }
+
+      if (payload.lead && typeof payload.lead === "object") {
+        const leadCopy: any = { ...payload.lead }
+        delete leadCopy.status_history
+        delete leadCopy.statusHistory
+        payload.lead = leadCopy
+      }
+    }
+
     // Forward to n8n webhook
     try {
       const webhookUrl = getWebhookUrl("reprogramar_visita_por_cliente")
@@ -34,7 +73,7 @@ export async function POST(req: Request) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {
