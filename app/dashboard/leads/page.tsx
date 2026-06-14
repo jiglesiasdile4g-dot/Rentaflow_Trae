@@ -21,7 +21,7 @@ import Image from "next/image"
 import { useInmobiliaria } from "@/lib/contexts/inmobiliaria-context"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { createLeadAction } from "@/app/actions/leads"
+import { createLeadAction, mergeLeadsAction } from "@/app/actions/leads"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -133,6 +133,8 @@ type Lead = {
   primer_mensaje?: string
 }
 
+const MERGED_LEAD_NOTE_PREFIX = "Lead fusionado a partir de:"
+
 export type LeadHistoryEntry = {
   status: string
   timestamp: string
@@ -173,6 +175,61 @@ interface Communication {
   Mensaje?: string // WhatsApp message content
   source: "email" | "whatsapp" // To distinguish between email and WhatsApp
 }
+
+type MergeTargetPersona = 1 | 2 | 3 | 4
+type MergeMode = "same_person" | "different_people"
+type MergeSourceChoice = string | "custom"
+type MergePrimaryFieldKey =
+  | "Nombre"
+  | "Apellidos"
+  | "Correo"
+  | "Telefono"
+  | "Pais"
+  | "Tipo_Documento"
+  | "Documento"
+  | "Ingresos"
+  | "Codigo_Postal"
+  | "situacion_laboral"
+
+type MergeCommonFieldKey =
+  | "Inmueble"
+  | "Estado"
+  | "Fecha_Entrada"
+  | "prev_entrada"
+  | "fecha_prev_entrada"
+  | "origen"
+  | "primer_mensaje"
+  | "Observaciones"
+
+type MergeFieldConfig = {
+  key: MergePrimaryFieldKey | MergeCommonFieldKey
+  label: string
+  multiline?: boolean
+}
+
+const MERGE_PRIMARY_FIELDS: MergeFieldConfig[] = [
+  { key: "Nombre", label: "Nombre" },
+  { key: "Apellidos", label: "Apellidos" },
+  { key: "Correo", label: "Correo" },
+  { key: "Telefono", label: "Telefono" },
+  { key: "Pais", label: "Pais" },
+  { key: "Tipo_Documento", label: "Tipo de documento" },
+  { key: "Documento", label: "Documento" },
+  { key: "Ingresos", label: "Ingresos" },
+  { key: "Codigo_Postal", label: "Codigo postal" },
+  { key: "situacion_laboral", label: "Situacion laboral" },
+]
+
+const MERGE_COMMON_FIELDS: MergeFieldConfig[] = [
+  { key: "Inmueble", label: "Inmueble" },
+  { key: "Estado", label: "Estado" },
+  { key: "Fecha_Entrada", label: "Fecha de entrada" },
+  { key: "prev_entrada", label: "Preferencia de entrada" },
+  { key: "fecha_prev_entrada", label: "Fecha prevista de entrada" },
+  { key: "origen", label: "Origen" },
+  { key: "primer_mensaje", label: "Primer mensaje", multiline: true },
+  { key: "Observaciones", label: "Observaciones", multiline: true },
+]
 
 export default function LeadsPage() {
   const [mounted, setMounted] = useState(false)
@@ -302,6 +359,55 @@ export default function LeadsPage() {
   const [isBulkSelectionMode, setIsBulkSelectionMode] = useState(false)
   const [bulkConfirmationOpen, setBulkConfirmationOpen] = useState(false)
   const [pendingBulkStatus, setPendingBulkStatus] = useState<Lead["Estado"] | null>(null)
+  const [isMergeDialogOpen, setIsMergeDialogOpen] = useState(false)
+  const [mergeMode, setMergeMode] = useState<MergeMode>("different_people")
+  const [mergeSourceLeadIds, setMergeSourceLeadIds] = useState<string[]>([])
+  const [mergePersonaAssignments, setMergePersonaAssignments] = useState<Record<string, MergeTargetPersona>>({})
+  const [mergePrimaryFieldSources, setMergePrimaryFieldSources] = useState<Record<MergePrimaryFieldKey, MergeSourceChoice>>({
+    Nombre: "custom",
+    Apellidos: "custom",
+    Correo: "custom",
+    Telefono: "custom",
+    Pais: "custom",
+    Tipo_Documento: "custom",
+    Documento: "custom",
+    Ingresos: "custom",
+    Codigo_Postal: "custom",
+    situacion_laboral: "custom",
+  })
+  const [mergePrimaryCustomValues, setMergePrimaryCustomValues] = useState<Record<MergePrimaryFieldKey, string>>({
+    Nombre: "",
+    Apellidos: "",
+    Correo: "",
+    Telefono: "",
+    Pais: "",
+    Tipo_Documento: "",
+    Documento: "",
+    Ingresos: "",
+    Codigo_Postal: "",
+    situacion_laboral: "",
+  })
+  const [mergeCommonFieldSources, setMergeCommonFieldSources] = useState<Record<MergeCommonFieldKey, MergeSourceChoice>>({
+    Inmueble: "custom",
+    Estado: "custom",
+    Fecha_Entrada: "custom",
+    prev_entrada: "custom",
+    fecha_prev_entrada: "custom",
+    origen: "custom",
+    primer_mensaje: "custom",
+    Observaciones: "custom",
+  })
+  const [mergeCommonCustomValues, setMergeCommonCustomValues] = useState<Record<MergeCommonFieldKey, string>>({
+    Inmueble: "",
+    Estado: "",
+    Fecha_Entrada: "",
+    prev_entrada: "",
+    fecha_prev_entrada: "",
+    origen: "",
+    primer_mensaje: "",
+    Observaciones: "",
+  })
+  const [isMergingLeads, setIsMergingLeads] = useState(false)
   
   // Entry Date Editing State
   const [isEditingEntryDate, setIsEditingEntryDate] = useState(false)
@@ -1905,10 +2011,14 @@ export default function LeadsPage() {
       let rows = baseRows
       if (planInactive) {
         const processed = new Set([
+          "Pendiente",
+          "Incompleto",
+          "Datos Incompletos",
           "Datos Completos",
           "Validado",
           "Completado",
           "Aceptado",
+          "Necesidad de Aval",
           "Descartado",
           "Rechazado",
           "Visita Propuesta",
@@ -1965,18 +2075,28 @@ export default function LeadsPage() {
   }
 
   const fetchCommunications = async (
-    leadEmail: string | undefined,
-    leadPhone: string | undefined,
-    leadId?: number,
+    leadEmails: string[] = [],
+    leadPhones: string[] = [],
+    leadIds: Array<string | number> = [],
     targetIdi: number | null = null,
   ) => {
     try {
-      if (!leadEmail && !leadPhone && !leadId) {
+      if (leadEmails.length === 0 && leadPhones.length === 0 && leadIds.length === 0) {
         setCommunications([])
         return
       }
 
-      console.log("[v0] Fetching communications for Email:", leadEmail, "Phone:", leadPhone, "ID:", leadId)
+      const uniqueEmails = Array.from(new Set(leadEmails.map((email) => String(email || "").trim().toLowerCase()).filter(Boolean)))
+      const uniquePhones = Array.from(new Set(leadPhones.map((phone) => String(phone || "").trim()).filter(Boolean)))
+      const leadIdValues = Array.from(
+        new Set(
+          leadIds
+            .map((value) => String(value ?? "").trim())
+            .filter(Boolean),
+        ),
+      )
+
+      console.log("[v0] Fetching communications for Emails:", uniqueEmails, "Phones:", uniquePhones, "IDs:", leadIdValues)
 
       const isMissingColumnError = (message: string, columnName: string) => {
         const msg = String(message || "").toLowerCase()
@@ -1986,91 +2106,135 @@ export default function LeadsPage() {
 
       const idiColumns = ["idi", "usuario", "inmobiliaria"]
       const targetIdiValue = targetIdi != null ? String(targetIdi) : null
+      const dedupeRows = (rows: any[]) => {
+        const seen = new Set<string>()
+        return rows.filter((row) => {
+          const key = `${row?.source || ""}:${row?.id ?? ""}:${row?.created_at ?? ""}:${row?.Tipo ?? ""}:${row?.Mensaje ?? ""}`
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+      }
 
       // Fetch emails
-      let runEmails = false
-      const buildEmailsQuery = (idiColumn?: string) => {
-        let q = supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"])
-        if (leadId) {
-          q = q.eq("idc", leadId)
-        } else if (leadEmail) {
-          q = q.eq("Email", leadEmail)
+      const runEmailsByIdQuery = async () => {
+        if (leadIdValues.length === 0) return { data: [], error: null as any }
+        if (targetIdi == null) {
+          const res = await supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"]).in("idc", leadIdValues as any)
+          return res
         }
-        if (idiColumn && targetIdi != null) {
-          q = q.eq(idiColumn as any, targetIdiValue as any)
-        }
-        return q
-      }
-
-      if (leadId) {
-        runEmails = true
-      } else if (leadEmail) {
-        runEmails = true
-      }
-
-      const runEmailsQuery = async () => {
-        if (!runEmails) return { data: [], error: null as any }
-        if (targetIdi == null) return await buildEmailsQuery()
         for (const col of idiColumns) {
-          const res = await buildEmailsQuery(col)
+          const res = await supabase
+            .from("Correos")
+            .select("*")
+            .in("Tipo", ["enviado", "recibido"])
+            .in("idc", leadIdValues as any)
+            .eq(col as any, targetIdiValue as any)
           if (!res.error) return res
           if (!isMissingColumnError(res.error.message || "", col)) return res
         }
-        return await buildEmailsQuery()
+        return await supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"]).in("idc", leadIdValues as any)
+      }
+
+      const runEmailsByEmailQuery = async () => {
+        if (uniqueEmails.length === 0) return { data: [], error: null as any }
+        const emailFilter = uniqueEmails
+          .flatMap((email) => [`Email.ilike.${email}`, `From.ilike.${email}`, `to.ilike.${email}`])
+          .join(",")
+        if (targetIdi == null) {
+          return await supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"]).or(emailFilter)
+        }
+        for (const col of idiColumns) {
+          const res = await supabase
+            .from("Correos")
+            .select("*")
+            .in("Tipo", ["enviado", "recibido"])
+            .or(emailFilter)
+            .eq(col as any, targetIdiValue as any)
+          if (!res.error) return res
+          if (!isMissingColumnError(res.error.message || "", col)) return res
+        }
+        return await supabase.from("Correos").select("*").in("Tipo", ["enviado", "recibido"]).or(emailFilter)
       }
 
       // Fetch WhatsApp
-      let runWhatsapp = false
-      const buildWhatsappQuery = (idiColumn?: string) => {
-        let q = supabase.from("Whatsapp").select("*").in("Tipo", ["Enviado", "Recibido", "enviado", "recibido"])
-        if (leadId) {
-          q = q.or(`IDC.eq.${leadId},idc.eq.${leadId}`)
-        } else if (leadPhone) {
-          q = q.eq("Telefono", leadPhone)
-        }
-        if (idiColumn && targetIdi != null) {
-          q = q.eq(idiColumn as any, targetIdiValue as any)
-        }
-        return q
-      }
+      const phoneVariants = Array.from(
+        new Set(
+          uniquePhones
+            .flatMap((phone) => {
+              const digits = phone.replace(/\D/g, "")
+              return [phone, digits, digits ? `+${digits}` : ""]
+            })
+            .filter(Boolean),
+        ),
+      )
 
-      if (leadId) {
-         runWhatsapp = true
-      } else if (leadPhone) {
-         runWhatsapp = true
-      }
-
-      const runWhatsappQuery = async () => {
-        if (!runWhatsapp) return { data: [], error: null as any }
-        if (targetIdi == null) return await buildWhatsappQuery()
+      const runWhatsappByIdQuery = async () => {
+        if (leadIdValues.length === 0) return { data: [], error: null as any }
+        const buildIdQuery = (idiColumn?: string) => {
+          let q = supabase.from("Whatsapp").select("*").in("Tipo", ["Enviado", "Recibido", "enviado", "recibido"]).or(
+            leadIdValues.map((id) => `IDC.eq.${id},idc.eq.${id}`).join(","),
+          )
+          if (idiColumn && targetIdi != null) {
+            q = q.eq(idiColumn as any, targetIdiValue as any)
+          }
+          return q
+        }
+        if (targetIdi == null) return await buildIdQuery()
         for (const col of idiColumns) {
-          const res = await buildWhatsappQuery(col)
+          const res = await buildIdQuery(col)
           if (!res.error) return res
           if (!isMissingColumnError(res.error.message || "", col)) return res
         }
-        return await buildWhatsappQuery()
+        return await buildIdQuery()
       }
 
-      const [emailsResult, whatsappResult] = await Promise.all([runEmailsQuery(), runWhatsappQuery()])
-
-      if (emailsResult.error) {
-        console.error("Error fetching emails:", emailsResult.error)
+      const runWhatsappByPhoneQuery = async () => {
+        if (phoneVariants.length === 0) return { data: [], error: null as any }
+        if (targetIdi == null) {
+          return await supabase.from("Whatsapp").select("*").in("Telefono", phoneVariants).in("Tipo", ["Enviado", "Recibido", "enviado", "recibido"])
+        }
+        for (const col of idiColumns) {
+          const res = await supabase
+            .from("Whatsapp")
+            .select("*")
+            .in("Telefono", phoneVariants)
+            .in("Tipo", ["Enviado", "Recibido", "enviado", "recibido"])
+            .eq(col as any, targetIdiValue as any)
+          if (!res.error) return res
+          if (!isMissingColumnError(res.error.message || "", col)) return res
+        }
+        return await supabase.from("Whatsapp").select("*").in("Telefono", phoneVariants).in("Tipo", ["Enviado", "Recibido", "enviado", "recibido"])
       }
 
-      if (whatsappResult.error) {
-        console.error("Error fetching WhatsApp messages:", whatsappResult.error)
+      const [emailsByIdResult, emailsByEmailResult, whatsappByIdResult, whatsappByPhoneResult] = await Promise.all([
+        runEmailsByIdQuery(),
+        runEmailsByEmailQuery(),
+        runWhatsappByIdQuery(),
+        runWhatsappByPhoneQuery(),
+      ])
+
+      if (emailsByIdResult.error || emailsByEmailResult.error) {
+        console.error("Error fetching emails:", emailsByIdResult.error || emailsByEmailResult.error)
       }
 
-      console.log("[v0] Emails fetched:", emailsResult.data?.length || 0)
-      console.log("[v0] WhatsApp messages fetched:", whatsappResult.data?.length || 0)
+      if (whatsappByIdResult.error || whatsappByPhoneResult.error) {
+        console.error("Error fetching WhatsApp messages:", whatsappByIdResult.error || whatsappByPhoneResult.error)
+      }
+
+      const mergedEmailRows = dedupeRows([...(emailsByIdResult.data || []), ...(emailsByEmailResult.data || [])])
+      const mergedWhatsappRows = dedupeRows([...(whatsappByIdResult.data || []), ...(whatsappByPhoneResult.data || [])])
+
+      console.log("[v0] Emails fetched:", mergedEmailRows.length)
+      console.log("[v0] WhatsApp messages fetched:", mergedWhatsappRows.length)
 
       // Add source field to distinguish between emails and WhatsApp
-      const emails = (emailsResult.data || []).map((item) => ({
+      const emails = mergedEmailRows.map((item) => ({
         ...item,
         source: "email" as const,
       }))
 
-      const whatsapps = (whatsappResult.data || []).map((item) => ({
+      const whatsapps = mergedWhatsappRows.map((item) => ({
         ...item,
         source: "whatsapp" as const,
         // Map WhatsApp fields to Communication interface fields
@@ -2088,12 +2252,12 @@ export default function LeadsPage() {
       )
 
       console.log("[v0] Total communications:", allCommunications.length)
-      const leadIdValue = leadId != null ? String(leadId) : null
-      const byLeadIdc = leadIdValue
+      const leadIdSet = new Set(leadIdValues.map(String))
+      const byLeadIdc = leadIdSet.size > 0
         ? allCommunications.filter((comm: any) => {
             const v = comm?.idc ?? comm?.IDC ?? comm?.Idc ?? null
             if (v == null) return true
-            return String(v) === leadIdValue
+            return leadIdSet.has(String(v))
           })
         : allCommunications
       const targetIdiValueFinal = targetIdi != null ? String(targetIdi) : null
@@ -2104,6 +2268,7 @@ export default function LeadsPage() {
             return String(v) === targetIdiValueFinal
           })
         : byLeadIdc
+
       setCommunications(byIdi)
     } catch (err) {
       console.error("[v0] Error fetching communications:", err)
@@ -2256,10 +2421,14 @@ export default function LeadsPage() {
 
     if (planInactive) {
       const processed = new Set([
+        "Pendiente",
+        "Incompleto",
+        "Datos Incompletos",
         "Datos Completos",
         "Validado",
         "Completado",
         "Aceptado",
+        "Necesidad de Aval",
         "Descartado",
         "Rechazado",
         "Visita Propuesta",
@@ -2278,14 +2447,72 @@ export default function LeadsPage() {
   }
 
   const openLeadDetail = async (lead: Lead) => {
+    const sourceLeadIds = (String(lead?.Observaciones ?? lead?.Obsevaciones ?? "").match(/Lead fusionado a partir de:\s*([0-9,\s]+)/i)?.[1] || "")
+      .split(",")
+      .map((v: string) => v.trim())
+      .filter(Boolean)
+    const uniqueLeadIds = Array.from(new Set([String(lead.id || "").trim(), ...sourceLeadIds].filter(Boolean)))
+
     setSelectedLead(lead)
     setEditFormData(lead)
     setIsEditingPersonalInfo(false)
     // Reset selected persona to 1 when opening a new lead
     setSelectedPersona(1)
-    if (lead.Correo || lead.Telefono || lead.IDC || lead.idc) {
-      // Changed from lead.idc to lead.Telefono
-      await fetchCommunications(lead.Correo, lead.Telefono, lead.IDC || lead.idc, typeof inmobiliariaId === "number" ? inmobiliariaId : null)
+    if (lead.Correo || lead.Telefono || lead.IDC || lead.idc || uniqueLeadIds.length > 0) {
+      const collectedEmails = new Set<string>(
+        [
+          lead.Correo,
+          (lead as any)["Correo 2"],
+          (lead as any)["Correo 3"],
+          (lead as any)["Correo 4"],
+        ]
+          .map((value) => String(value || "").trim().toLowerCase())
+          .filter(Boolean),
+      )
+      const collectedPhones = new Set<string>(
+        [
+          lead.Telefono,
+          (lead as any)["Telefono 2"],
+          (lead as any)["Telefono 3"],
+          (lead as any)["Telefono 4"],
+        ]
+          .map((value) => String(value || "").trim())
+          .filter(Boolean),
+      )
+      const collectedIds = new Set<string>(
+        [lead.IDC, lead.idc, lead.id]
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      )
+
+      if (uniqueLeadIds.length > 1) {
+        const { data: sourceLeads } = await supabase
+          .from("Clientes")
+          .select('id, IDC, idc, Correo, Telefono, "Correo 2", "Telefono 2", "Correo 3", "Telefono 3", "Correo 4", "Telefono 4"')
+          .in("id", uniqueLeadIds as any[])
+
+        ;(sourceLeads || []).forEach((item: any) => {
+          ;[item?.Correo, item?.["Correo 2"], item?.["Correo 3"], item?.["Correo 4"]]
+            .map((value) => String(value || "").trim().toLowerCase())
+            .filter(Boolean)
+            .forEach((value) => collectedEmails.add(value))
+          ;[item?.Telefono, item?.["Telefono 2"], item?.["Telefono 3"], item?.["Telefono 4"]]
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)
+            .forEach((value) => collectedPhones.add(value))
+          ;[item?.id, item?.IDC, item?.idc]
+            .map((value) => String(value ?? "").trim())
+            .filter(Boolean)
+            .forEach((value) => collectedIds.add(value))
+        })
+      }
+
+      await fetchCommunications(
+        Array.from(collectedEmails),
+        Array.from(collectedPhones),
+        Array.from(collectedIds),
+        typeof inmobiliariaId === "number" ? inmobiliariaId : null,
+      )
     }
   }
 
@@ -2513,10 +2740,27 @@ export default function LeadsPage() {
 
   const sendDescartadoWebhook = async (payload: any) => {
     try {
+      const leadForWebhook = payload?.lead ?? null
+      const leadNotes = String(leadForWebhook?.Observaciones ?? leadForWebhook?.Obsevaciones ?? "").toLowerCase()
+      const leadHistory = Array.isArray(leadForWebhook?.status_history) ? leadForWebhook.status_history : []
+      const mergeDiscardInHistory = leadHistory.some((entry: any) => {
+        const status = String(entry?.status || "").toLowerCase()
+        const source = String(entry?.source || "").toLowerCase()
+        const reason = String(entry?.reason || "").toLowerCase()
+        return status === "descartado" && (source === "merge" || reason === "merge")
+      })
+      const shouldSkipMergeDiscard =
+        payload?.skipDescartadoWebhook === true ||
+        String(payload?.source || "").toLowerCase() === "merge" ||
+        String(payload?.reason || "").toLowerCase() === "merge" ||
+        leadNotes.includes("fusionado en el lead #") ||
+        mergeDiscardInHistory
+
+      if (shouldSkipMergeDiscard) return
+
       const webhookUrl = getWebhookUrl("descartado")
       if (!webhookUrl) return
 
-      const leadForWebhook = payload?.lead ?? null
       const targetInmoId = inmobiliariaId || leadForWebhook?.idi || leadForWebhook?.usuario || null
       let inmobiliaria: any = null
       if (targetInmoId) {
@@ -2894,7 +3138,7 @@ export default function LeadsPage() {
   }
 
   // Added "Datos Completos" and "Datos Incompletos" cases with appropriate colors.
-  const getStatusColors = (estado: string | null | undefined) => {
+  const getStatusColors = (estado: string | null | undefined, options?: { mergeDiscard?: boolean }) => {
     switch (estado) {
       case "Datos Completos":
       case "Completo":
@@ -2978,7 +3222,7 @@ export default function LeadsPage() {
             bg: "#f3f4f6",
             border: "#9ca3af",
             text: "#6b7280",
-            label: estado,
+            label: options?.mergeDiscard ? "Descartado por fusion" : estado,
           }
         default:
           // For any other Estado value, use neutral colors but display the actual value
@@ -3303,6 +3547,334 @@ export default function LeadsPage() {
       }
     }
 
+    const getMergeSourceLeads = useCallback(() => {
+      return leads.filter((lead) => mergeSourceLeadIds.includes(String(lead.id)))
+    }, [leads, mergeSourceLeadIds])
+
+    const getMergeLeadLabel = (lead: Lead) => {
+      const name = [String(lead.Nombre || "").trim(), String(lead.Apellidos || "").trim()].filter(Boolean).join(" ").trim()
+      return `#${lead.id} ${name || "Sin nombre"}`
+    }
+
+    const getMergeFieldValue = (lead: Lead, key: MergePrimaryFieldKey | MergeCommonFieldKey) => {
+      if (key === "Observaciones") return String(lead.Observaciones ?? lead.Obsevaciones ?? "").trim()
+      return String((lead as any)?.[key] ?? "").trim()
+    }
+
+    const formatMergePreviewValue = (value: any) => {
+      const text = String(value ?? "").trim()
+      if (!text) return "Sin valor"
+      return text.length > 80 ? `${text.slice(0, 80)}...` : text
+    }
+
+    const leadToFullName = (lead: Lead) =>
+      [String(lead.Nombre || "").trim(), String(lead.Apellidos || "").trim()].filter(Boolean).join(" ").trim()
+
+    const areLikelySamePerson = (selectedLeadsList: Lead[]) => {
+      if (selectedLeadsList.length !== 2) return false
+      const [a, b] = selectedLeadsList
+      const normalized = (value: any) => String(value || "").trim().toLowerCase()
+      const emailMatch = normalized(a.Correo) && normalized(a.Correo) === normalized(b.Correo)
+      const phoneMatch = normalized(a.Telefono) && normalized(a.Telefono) === normalized(b.Telefono)
+      const docMatch = normalized(a.Documento) && normalized(a.Documento) === normalized(b.Documento)
+      const nameMatch =
+        normalized(leadToFullName(a)) &&
+        normalized(leadToFullName(a)) === normalized(leadToFullName(b))
+      return Boolean(emailMatch || phoneMatch || docMatch || nameMatch)
+    }
+
+    const buildDefaultMergedObservaciones = (selectedLeadsList: Lead[]) => {
+      const sections = selectedLeadsList
+        .map((lead) => {
+          const notes = String(lead.Observaciones ?? lead.Obsevaciones ?? "").trim()
+          if (!notes) return null
+          return `[Lead #${lead.id} - ${lead.Nombre || "Sin nombre"}]\n${notes}`
+        })
+        .filter(Boolean)
+
+      return sections.join("\n\n")
+    }
+
+    const isMergedLead = (lead: Lead) =>
+      String(lead.Observaciones ?? lead.Obsevaciones ?? "")
+        .toLowerCase()
+        .includes(MERGED_LEAD_NOTE_PREFIX.toLowerCase())
+
+    const isMergeDiscardLead = (lead: Lead) => {
+      const notes = String(lead.Observaciones ?? lead.Obsevaciones ?? "").toLowerCase()
+      const history = Array.isArray((lead as any)?.status_history) ? (lead as any).status_history : []
+      const hasMergeDiscardInHistory = history.some((entry: any) => {
+        const status = String(entry?.status || "").toLowerCase()
+        const source = String(entry?.source || "").toLowerCase()
+        const reason = String(entry?.reason || "").toLowerCase()
+        return status === "descartado" && (source === "merge" || reason === "merge")
+      })
+      return notes.includes("fusionado en el lead #") || hasMergeDiscardInHistory
+    }
+
+    const openMergeLeadsDialog = () => {
+      const selectedLeadsList = leads.filter((lead) => selectedLeadIds.includes(String(lead.id)))
+
+      if (selectedLeadsList.length < 2) {
+        toast({
+          title: "Seleccion insuficiente",
+          description: "Selecciona al menos 2 leads para fusionarlos.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      if (selectedLeadsList.length > 4) {
+        toast({
+          title: "Demasiados leads",
+          description: "La fusion actual admite un maximo de 4 leads porque el lead destino tiene hasta 4 personas.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const nextMode: MergeMode = areLikelySamePerson(selectedLeadsList) ? "same_person" : "different_people"
+      const assignments: Record<string, MergeTargetPersona> = {}
+      selectedLeadsList.forEach((lead, index) => {
+        assignments[String(lead.id)] = Math.min(index + 1, 4) as MergeTargetPersona
+      })
+
+      const initialPrimarySources = {} as Record<MergePrimaryFieldKey, MergeSourceChoice>
+      const initialPrimaryCustomValues = {} as Record<MergePrimaryFieldKey, string>
+      const initialCommonSources = {} as Record<MergeCommonFieldKey, MergeSourceChoice>
+      const initialCommonCustomValues = {} as Record<MergeCommonFieldKey, string>
+
+      MERGE_PRIMARY_FIELDS.forEach((field) => {
+        const firstLeadWithValue = selectedLeadsList.find((lead) => getMergeFieldValue(lead, field.key))
+        initialPrimarySources[field.key] = firstLeadWithValue ? String(firstLeadWithValue.id) : "custom"
+        initialPrimaryCustomValues[field.key] = ""
+      })
+
+      MERGE_COMMON_FIELDS.forEach((field) => {
+        const firstLeadWithValue = selectedLeadsList.find((lead) => getMergeFieldValue(lead, field.key))
+        initialCommonSources[field.key] = firstLeadWithValue ? String(firstLeadWithValue.id) : "custom"
+        initialCommonCustomValues[field.key] =
+          field.key === "Observaciones"
+            ? buildDefaultMergedObservaciones(selectedLeadsList)
+            : ""
+      })
+
+      setMergeMode(nextMode)
+      setMergeSourceLeadIds(selectedLeadsList.map((lead) => String(lead.id)))
+      setMergePersonaAssignments(assignments)
+      setMergePrimaryFieldSources(initialPrimarySources)
+      setMergePrimaryCustomValues(initialPrimaryCustomValues)
+      setMergeCommonFieldSources(initialCommonSources)
+      setMergeCommonCustomValues(initialCommonCustomValues)
+      setIsMergeDialogOpen(true)
+    }
+
+    const updateMergePrimaryCustomValue = (field: MergePrimaryFieldKey, value: string) => {
+      setMergePrimaryCustomValues((prev) => ({ ...prev, [field]: value }))
+    }
+
+    const updateMergePrimaryFieldSource = (field: MergePrimaryFieldKey, value: MergeSourceChoice) => {
+      setMergePrimaryFieldSources((prev) => ({ ...prev, [field]: value }))
+    }
+
+    const updateMergeCommonCustomValue = (field: MergeCommonFieldKey, value: string) => {
+      setMergeCommonCustomValues((prev) => ({ ...prev, [field]: value }))
+    }
+
+    const updateMergeCommonFieldSource = (field: MergeCommonFieldKey, value: MergeSourceChoice) => {
+      setMergeCommonFieldSources((prev) => ({ ...prev, [field]: value }))
+    }
+
+    const resolveMergeValue = (
+      field: MergePrimaryFieldKey | MergeCommonFieldKey,
+      sourceChoice: MergeSourceChoice,
+      customValue: string,
+      sourceMap: Map<string, Lead>,
+    ) => {
+      if (sourceChoice === "custom") return String(customValue || "").trim()
+      const sourceLead = sourceMap.get(String(sourceChoice))
+      return sourceLead ? getMergeFieldValue(sourceLead, field) : ""
+    }
+
+    const buildMergedLeadPayload = (selectedLeadsList: Lead[]) => {
+      const sourceMap = new Map(selectedLeadsList.map((lead) => [String(lead.id), lead]))
+
+      let payload: Record<string, any> = {
+        usuario: inmobiliariaId,
+        created_at: new Date().toISOString(),
+        "Pedir Aval": selectedLeadsList.some((lead) => Boolean(lead["Pedir Aval"])),
+      }
+
+      if (mergeMode === "different_people") {
+        const assignedSlots = selectedLeadsList.map((lead) => mergePersonaAssignments[String(lead.id)])
+        const uniqueAssignedSlots = new Set(assignedSlots)
+
+        if (assignedSlots.some((slot) => !slot) || uniqueAssignedSlots.size !== assignedSlots.length) {
+          throw new Error("Cada lead debe ocupar una persona distinta.")
+        }
+
+        const persona1Lead = selectedLeadsList.find((lead) => mergePersonaAssignments[String(lead.id)] === 1)
+        if (!persona1Lead) {
+          throw new Error("Debes asignar un lead a Persona 1.")
+        }
+
+        payload = {
+          ...payload,
+          Nombre: persona1Lead.Nombre || "",
+          Apellidos: persona1Lead.Apellidos || "",
+          Correo: persona1Lead.Correo || "",
+          Telefono: persona1Lead.Telefono || "",
+          Pais: persona1Lead.Pais || "",
+          Tipo_Documento: persona1Lead.Tipo_Documento || "",
+          Documento: persona1Lead.Documento || "",
+          Ingresos: persona1Lead.Ingresos || null,
+          Codigo_Postal: persona1Lead.Codigo_Postal || "",
+          situacion_laboral: persona1Lead.situacion_laboral || "",
+        }
+
+        selectedLeadsList.forEach((lead) => {
+          const slot = mergePersonaAssignments[String(lead.id)]
+          if (slot === 2) {
+            payload.Persona_2 = leadToFullName(lead)
+            payload["Correo 2"] = lead.Correo || ""
+            payload["Telefono 2"] = lead.Telefono || ""
+            payload.Pais_2 = lead.Pais || ""
+            payload.Tipo_Documento_2 = lead.Tipo_Documento || ""
+            payload.Documento_2 = lead.Documento || ""
+            payload.Ingresos_2 = lead.Ingresos || null
+            payload["Codigo_Postal 2"] = lead.Codigo_Postal || ""
+            payload.tipo2 = lead.situacion_laboral || ""
+          }
+          if (slot === 3) {
+            payload.Persona_3 = leadToFullName(lead)
+            payload["Correo 3"] = lead.Correo || ""
+            payload["Telefono 3"] = lead.Telefono || ""
+            payload["Pais 3"] = lead.Pais || ""
+            payload.Tipo_Documento_3 = lead.Tipo_Documento || ""
+            payload.Documento_3 = lead.Documento || ""
+            payload.Ingresos_3 = lead.Ingresos || null
+            payload["Codigo_Postal 3"] = lead.Codigo_Postal || ""
+            payload.tipo3 = lead.situacion_laboral || ""
+          }
+          if (slot === 4) {
+            payload.Persona_4 = leadToFullName(lead)
+            payload["Correo 4"] = lead.Correo || ""
+            payload["Telefono 4"] = lead.Telefono || ""
+            payload["Pais 4"] = lead.Pais || ""
+            payload["Tipo_Documento 4"] = lead.Tipo_Documento || ""
+            payload.Documento_4 = lead.Documento || ""
+            payload.Ingresos_4 = lead.Ingresos || null
+            payload["Codigo_Postal 4"] = lead.Codigo_Postal || ""
+            payload.tipo4 = lead.situacion_laboral || ""
+          }
+        })
+      } else {
+        MERGE_PRIMARY_FIELDS.forEach((field) => {
+          const value = resolveMergeValue(
+            field.key,
+            mergePrimaryFieldSources[field.key],
+            mergePrimaryCustomValues[field.key],
+            sourceMap,
+          )
+          if (!value) return
+          payload[field.key] = field.key === "Ingresos" ? Number(value) || 0 : value
+        })
+      }
+
+      MERGE_COMMON_FIELDS.forEach((field) => {
+        const value = resolveMergeValue(
+          field.key,
+          mergeCommonFieldSources[field.key],
+          mergeCommonCustomValues[field.key],
+          sourceMap,
+        )
+        if (!value) return
+        if (field.key === "Observaciones") {
+          payload.Obsevaciones = value
+        } else {
+          payload[field.key] = value
+        }
+      })
+
+      const docInvalid = isDocumentInvalid(payload.Tipo_Documento, payload.Documento)
+      const chosenStatus = String(payload.Estado || "").trim()
+      const initialStatus = (docInvalid ? "Datos Incompletos" : chosenStatus || "Pendiente") as Lead["Estado"]
+
+      payload.Estado = initialStatus
+      payload.status_history = [
+        {
+          status: initialStatus,
+          timestamp: new Date().toISOString(),
+          agent_id: currentUser?.id,
+          agent_name: userEmail || currentUser?.email,
+        },
+      ]
+
+      return payload
+    }
+
+    const handleMergeSelectedLeads = async () => {
+      const selectedLeadsList = getMergeSourceLeads()
+
+      try {
+        if (!inmobiliariaId) {
+          throw new Error("No hay una inmobiliaria activa seleccionada.")
+        }
+
+        const mergedLeadPayload = buildMergedLeadPayload(selectedLeadsList)
+        setIsMergingLeads(true)
+
+        const result = await mergeLeadsAction({
+          mergedLeadData: mergedLeadPayload,
+          sourceLeadIds: selectedLeadsList.map((lead) => lead.id),
+        })
+
+        if (result?.error) {
+          throw new Error(typeof result.error === "string" ? result.error : "No se pudo fusionar los leads.")
+        }
+
+        toast({
+          title: result?.warning ? "Fusion completada con avisos" : "Leads fusionados",
+          description:
+            result?.warning ||
+            `La fusion se guardó en el lead #${result?.data?.id} y los demas leads originales quedaron marcados como descartados.`,
+        })
+
+        const mergedLeadId = String(result?.data?.id || "").trim()
+        const mergedLead = result?.data ? (result.data as Lead) : null
+
+        setIsMergeDialogOpen(false)
+        setSelectedLeadIds([])
+        setIsBulkSelectionMode(false)
+        setMergeSourceLeadIds([])
+        setStatusFilter([])
+        setSelectedAdvertisement(null)
+        if (mergedLeadId) {
+          setSearchTerm(mergedLeadId)
+          setDebouncedSearchTerm(mergedLeadId)
+        }
+        if (mergedLead) {
+          setLeads((prev) => {
+            const exists = prev.some((lead) => String(lead.id) === String(mergedLead.id))
+            if (exists) {
+              return prev.map((lead) => (String(lead.id) === String(mergedLead.id) ? mergedLead : lead))
+            }
+            return [mergedLead, ...prev]
+          })
+          setSelectedLead(mergedLead)
+        }
+        await fetchLeads()
+      } catch (err: any) {
+        toast({
+          title: "Error al fusionar",
+          description: err?.message || "No se pudo completar la fusion de leads.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsMergingLeads(false)
+      }
+    }
+
     const updateBulkLeadStatus = async (newStatus: Lead["Estado"]) => {
       setPendingBulkStatus(newStatus)
       setBulkConfirmationOpen(true)
@@ -3413,18 +3985,24 @@ export default function LeadsPage() {
     }
 
     const toggleLeadInConfirmation = (leadId: string) => {
-      setSelectedLeadIds((prev) => (prev.includes(leadId) ? prev.filter((id) => id !== leadId) : [...prev, leadId]))
+      const normalizedLeadId = String(leadId)
+      setSelectedLeadIds((prev) =>
+        prev.includes(normalizedLeadId) ? prev.filter((id) => id !== normalizedLeadId) : [...prev, normalizedLeadId],
+      )
     }
 
     const toggleLeadSelection = (leadId: string) => {
-      setSelectedLeadIds((prev) => (prev.includes(leadId) ? prev.filter((id) => id !== leadId) : [...prev, leadId]))
+      const normalizedLeadId = String(leadId)
+      setSelectedLeadIds((prev) =>
+        prev.includes(normalizedLeadId) ? prev.filter((id) => id !== normalizedLeadId) : [...prev, normalizedLeadId],
+      )
     }
 
     const toggleSelectAll = () => {
       if (selectedLeadIds.length === filteredLeads.length) {
         setSelectedLeadIds([])
       } else {
-        setSelectedLeadIds(filteredLeads.map((lead) => lead.id))
+        setSelectedLeadIds(filteredLeads.map((lead) => String(lead.id)))
       }
     }
 
@@ -4353,12 +4931,20 @@ export default function LeadsPage() {
                             {selectedLeadIds.length} lead{selectedLeadIds.length > 1 ? "s" : ""} seleccionado
                             {selectedLeadIds.length > 1 ? "s" : ""}
                           </span>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={openMergeLeadsDialog}
+                            disabled={selectedLeadIds.length < 2}
+                          >
+                            Fusionar leads
+                          </Button>
                           <Button 
                             size="sm" 
                             variant="default"
                             className="ml-2 bg-blue-600 hover:bg-blue-700 text-white"
                             onClick={() => {
-                              const selectedLeadsList = leads.filter(lead => selectedLeadIds.includes(lead.id))
+                              const selectedLeadsList = leads.filter(lead => selectedLeadIds.includes(String(lead.id)))
                               const invalidLeads = selectedLeadsList.filter(lead => 
                                 lead.Estado !== "Aceptado" && lead.Estado !== "Visita Propuesta"
                               )
@@ -4440,9 +5026,10 @@ export default function LeadsPage() {
                             const isDataComplete = completionPercentage >= 80 && !docInvalid
                             const personaCount = countPersonas(lead)
                             const shouldBlurPii = shouldBlurPiiForLead(lead)
+                            const isMerged = isMergedLead(lead)
 
                             // Add checkbox for individual selection
-                            const isSelected = selectedLeadIds.includes(lead.id)
+                            const isSelected = selectedLeadIds.includes(String(lead.id))
 
                             return (
                               <Card
@@ -4511,8 +5098,8 @@ export default function LeadsPage() {
                                                 String((lead as any)?.Observaciones ?? (lead as any)?.Obsevaciones ?? "")
                                                   .toUpperCase()
                                                   .includes("RF_APROBADO_INCOMPLETO")
-
-                                              const statusColors = getStatusColors(statusForDisplay)
+                                              const mergeDiscard = statusForDisplay === "Descartado" && isMergeDiscardLead(lead)
+                                              const statusColors = getStatusColors(statusForDisplay, { mergeDiscard })
                                               const incompleteColors = getStatusColors("Datos Incompletos")
                                               const showEstadoBadge = Boolean(statusForDisplay) && statusForDisplay !== "Completo"
 
@@ -4671,6 +5258,11 @@ export default function LeadsPage() {
                                           <Badge variant="secondary" className="text-xs flex items-center gap-1">
                                             <Tag className="h-3 w-3" />
                                             Origen: {lead.origen}
+                                          </Badge>
+                                        )}
+                                        {isMerged && (
+                                          <Badge variant="outline" className="text-xs border-violet-300 bg-violet-50 text-violet-700">
+                                            Fusionado
                                           </Badge>
                                         )}
 
@@ -4941,7 +5533,7 @@ export default function LeadsPage() {
                           ].some(Boolean)
                           const isDataComplete = completionPercentage >= 80 && !docInvalid
                           const personaCount = countPersonas(lead)
-                          const isSelected = selectedLeadIds.includes(lead.id)
+                          const isSelected = selectedLeadIds.includes(String(lead.id))
 
                           return (
                             <Card
@@ -5004,7 +5596,8 @@ export default function LeadsPage() {
                                               String((lead as any)?.Observaciones ?? (lead as any)?.Obsevaciones ?? "")
                                                 .toUpperCase()
                                                 .includes("RF_APROBADO_INCOMPLETO")
-                                            const statusColors = getStatusColors(statusForDisplay)
+                                            const mergeDiscard = statusForDisplay === "Descartado" && isMergeDiscardLead(lead)
+                                            const statusColors = getStatusColors(statusForDisplay, { mergeDiscard })
                                             const incompleteColors = getStatusColors("Datos Incompletos")
                                             const showEstadoBadge = Boolean(statusForDisplay) && statusForDisplay !== "Completo"
 
@@ -8554,6 +9147,253 @@ export default function LeadsPage() {
         </DialogContent>
       </Dialog>
       
+      {(() => {
+        const selectedMergeLeads = getMergeSourceLeads()
+
+        return (
+          <Dialog open={isMergeDialogOpen} onOpenChange={(open) => !isMergingLeads && setIsMergeDialogOpen(open)}>
+            <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto z-[30000]">
+              <DialogHeader>
+                <DialogTitle>Fusionar leads</DialogTitle>
+                <DialogDescription>
+                  Crea un lead nuevo combinando los datos seleccionados. Los leads origen quedaran marcados como descartados.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-6 py-2">
+                <div className="space-y-3">
+                  <div className="text-sm font-semibold">Tipo de fusion</div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={mergeMode === "same_person" ? "default" : "outline"}
+                      onClick={() => setMergeMode("same_person")}
+                    >
+                      Misma persona
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={mergeMode === "different_people" ? "default" : "outline"}
+                      onClick={() => setMergeMode("different_people")}
+                    >
+                      Personas distintas
+                    </Button>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Usa <span className="font-medium">Misma persona</span> cuando dos leads sean duplicados del mismo inquilino.
+                  </div>
+                </div>
+
+                {mergeMode === "different_people" ? (
+                <div className="space-y-3">
+                  <div className="text-sm font-semibold">Asignacion de personas</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {selectedMergeLeads.map((lead) => (
+                      <div key={lead.id} className="rounded-lg border p-3 space-y-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="font-medium">{getMergeLeadLabel(lead)}</div>
+                            <div className="text-xs text-muted-foreground break-all">
+                              {lead.Correo || lead.Telefono || "Sin contacto principal"}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1 justify-end">
+                            {[1, 2, 3, 4].map((slot) => (
+                              <Button
+                                key={`${lead.id}-${slot}`}
+                                type="button"
+                                size="sm"
+                                variant={mergePersonaAssignments[String(lead.id)] === slot ? "default" : "outline"}
+                                onClick={() =>
+                                  setMergePersonaAssignments((prev) => ({
+                                    ...prev,
+                                    [String(lead.id)]: slot as MergeTargetPersona,
+                                  }))
+                                }
+                              >
+                                P{slot}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Estado actual: {lead.Estado || "Sin estado"} | Inmueble: {lead.Inmueble || "Sin inmueble"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                ) : (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                    Estos leads se fusionaran como una sola persona. Podras combinar los datos de contacto, documento,
+                    ingresos y el resto de campos en un unico perfil.
+                  </div>
+                )}
+
+                {mergeMode === "same_person" && (
+                  <div className="space-y-3">
+                    <div className="text-sm font-semibold">Datos de la persona final</div>
+                    <div className="grid gap-3">
+                      {MERGE_PRIMARY_FIELDS.map((field) => {
+                        const selectedSource = mergePrimaryFieldSources[field.key]
+                        const previewLead =
+                          selectedSource !== "custom"
+                            ? selectedMergeLeads.find((lead) => String(lead.id) === String(selectedSource))
+                            : null
+
+                        return (
+                          <div key={field.key} className="rounded-lg border p-3 space-y-3">
+                            <div className="flex flex-col gap-1">
+                              <div className="text-sm font-medium">{field.label}</div>
+                              <div className="text-xs text-muted-foreground">Elige de que lead sale este dato.</div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              {selectedMergeLeads.map((lead) => (
+                                <Button
+                                  key={`${field.key}-${lead.id}`}
+                                  type="button"
+                                  size="sm"
+                                  variant={selectedSource === String(lead.id) ? "default" : "outline"}
+                                  onClick={() => updateMergePrimaryFieldSource(field.key, String(lead.id))}
+                                >
+                                  {getMergeLeadLabel(lead)}
+                                </Button>
+                              ))}
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={selectedSource === "custom" ? "default" : "outline"}
+                                onClick={() => updateMergePrimaryFieldSource(field.key, "custom")}
+                              >
+                                Valor manual
+                              </Button>
+                            </div>
+
+                            {selectedSource === "custom" ? (
+                              <Input
+                                value={mergePrimaryCustomValues[field.key] || ""}
+                                onChange={(e) => updateMergePrimaryCustomValue(field.key, e.target.value)}
+                                className="h-9"
+                                placeholder={`Introduce el valor final de ${field.label.toLowerCase()}`}
+                              />
+                            ) : (
+                              <div className="rounded-md bg-muted/50 border p-3 text-sm whitespace-pre-wrap">
+                                {previewLead ? getMergeFieldValue(previewLead, field.key) || "Sin valor" : "Sin valor"}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <div className="text-sm font-semibold">Campos comunes</div>
+                  <div className="grid gap-3">
+                    {MERGE_COMMON_FIELDS.map((field) => {
+                      const selectedSource = mergeCommonFieldSources[field.key]
+                      const previewLead =
+                        selectedSource !== "custom"
+                          ? selectedMergeLeads.find((lead) => String(lead.id) === String(selectedSource))
+                          : null
+
+                      return (
+                        <div key={field.key} className="rounded-lg border p-3 space-y-3">
+                          <div className="flex flex-col gap-1">
+                            <div className="text-sm font-medium">{field.label}</div>
+                            <div className="text-xs text-muted-foreground">
+                              Elige de que lead sale este dato o escribe un valor manual.
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            {selectedMergeLeads.map((lead) => (
+                              <Button
+                                key={`${field.key}-${lead.id}`}
+                                type="button"
+                                size="sm"
+                                variant={selectedSource === String(lead.id) ? "default" : "outline"}
+                                onClick={() => updateMergeCommonFieldSource(field.key, String(lead.id))}
+                              >
+                                {getMergeLeadLabel(lead)}: {formatMergePreviewValue(getMergeFieldValue(lead, field.key))}
+                              </Button>
+                            ))}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={selectedSource === "custom" ? "default" : "outline"}
+                              onClick={() => updateMergeCommonFieldSource(field.key, "custom")}
+                            >
+                              Valor manual
+                            </Button>
+                          </div>
+
+                          {selectedSource === "custom" ? (
+                            field.multiline ? (
+                              <Textarea
+                                value={mergeCommonCustomValues[field.key] || ""}
+                                onChange={(e) => updateMergeCommonCustomValue(field.key, e.target.value)}
+                                className="min-h-[110px]"
+                                placeholder={`Introduce el valor final de ${field.label.toLowerCase()}`}
+                              />
+                            ) : (
+                              <Input
+                                value={mergeCommonCustomValues[field.key] || ""}
+                                onChange={(e) => updateMergeCommonCustomValue(field.key, e.target.value)}
+                                className="h-9"
+                                placeholder={`Introduce el valor final de ${field.label.toLowerCase()}`}
+                              />
+                            )
+                          ) : (
+                            <div className="rounded-md bg-muted/50 border p-3 text-sm whitespace-pre-wrap">
+                              {previewLead ? getMergeFieldValue(previewLead, field.key) || "Sin valor" : "Sin valor"}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  Esta fusion crea un lead nuevo. Los leads originales se conservaran para historico, pero pasaran a estado
+                  &nbsp;<span className="font-semibold">Descartado</span>.
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1 bg-transparent"
+                  onClick={() => setIsMergeDialogOpen(false)}
+                  disabled={isMergingLeads}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={handleMergeSelectedLeads}
+                  disabled={isMergingLeads || selectedMergeLeads.length < 2}
+                >
+                  {isMergingLeads ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Fusionando...
+                    </>
+                  ) : (
+                    "Crear lead fusionado"
+                  )}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
+
       <AlertDialog open={bulkConfirmationOpen} onOpenChange={setBulkConfirmationOpen}>
         <AlertDialogContent className="z-[30000]">
           <AlertDialogHeader>
@@ -8635,7 +9475,7 @@ export default function LeadsPage() {
 
       {
         (() => {
-          const firstSelectedLead = leads.find(l => selectedLeadIds.includes(l.id))
+          const firstSelectedLead = leads.find(l => selectedLeadIds.includes(String(l.id)))
           const leadInmueble = firstSelectedLead?.Inmueble
           const inferredAdvertisement = leadInmueble ? advertisements.find(a => 
             a.Referencia === leadInmueble || 

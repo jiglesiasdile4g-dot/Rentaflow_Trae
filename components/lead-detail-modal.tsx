@@ -1444,6 +1444,21 @@ export function LeadDetailModal({
 
       if (newStatus === "Descartado") {
         try {
+          const leadNotes = String((updatedLead as any)?.Observaciones ?? (updatedLead as any)?.Obsevaciones ?? "").toLowerCase()
+          const leadHistory = Array.isArray((updatedLead as any)?.status_history) ? (updatedLead as any).status_history : []
+          const mergeDiscardInHistory = leadHistory.some((entry: any) => {
+            const status = String(entry?.status || "").toLowerCase()
+            const source = String(entry?.source || "").toLowerCase()
+            const reason = String(entry?.reason || "").toLowerCase()
+            return status === "descartado" && (source === "merge" || reason === "merge")
+          })
+          const shouldSkipMergeDiscard =
+            leadNotes.includes("fusionado en el lead #") || mergeDiscardInHistory
+
+          if (shouldSkipMergeDiscard) {
+            return
+          }
+
           const webhookUrl = getWebhookUrl("descartado")
           if (webhookUrl) {
             const targetInmoId = inmobiliariaId || (updatedLead as any)?.idi || (updatedLead as any)?.usuario || null
