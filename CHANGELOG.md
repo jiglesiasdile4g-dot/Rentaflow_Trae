@@ -1,3 +1,46 @@
+## [0.9.27](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.22...v0.9.27) (2026-06-14)
+
+
+### Bug Fixes
+
+* add /api/formulario GET prefill fallback ([28e8448](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/28e8448ac5bf5cb8c56c1b30a55740530d34306c))
+* adjuntos anuncios, RAG y colores aval ([b9e0601](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/b9e0601febc936fe4a560c48e30e65754d16b6d6))
+* **agenda:** prevent completed/confirmed visits from becoming suggestions ([b1dfa07](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/b1dfa07019fb5172c3520cbd0233eee9656853b5))
+* auth redirect + rbac leads + perfiles unicos ([4b8e5e1](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/4b8e5e18b9c5eb01c36accca35f4f03cb64f43e7))
+* **auth:** auto-create profile and infer inmobiliaria on login ([0aa4c63](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/0aa4c637ea64325fffd50b83a7f1d0deed22ada2))
+* **branding:** show company logo when available, fallback to Rentaflow ([371dfcb](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/371dfcba97391b5b9a29abd9cce36c79d869267a))
+* **build:** postcss config typing ([e5e00d4](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/e5e00d45c1b1d703dd9876807e1e4296a9c1b822))
+* **comunicaciones:** editor en página y orden ([c3755c2](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/c3755c2919cea5043a3323560062d6b4853ee8f9))
+* **config:** prevent removing last local admin (and fix agenda duplicate key) ([cde4fe5](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/cde4fe5cec5d7f5846b90f9335b4d8492e0f858e))
+* **demo:** blur pii en modal agenda ([bd80761](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/bd807613e8ce562fc4838d8cdaee924c1c821a06))
+* **docker:** incluir scripts en imagen ([0853d91](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/0853d91d53032744376dfa062481e3b66f3fb3ae))
+* fire Pedir Aval via DB trigger (avoid browser webhook fetch) ([b6f1ff0](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/b6f1ff060dfe4fabe01d146e50cdc87bc1521a85))
+* incluir whatsapp sin idi/idc ([0fe9c30](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/0fe9c304d22b7ae1e60bb4ec73e99ae045092e8a))
+* normalizar logo_url de supabase ([ddaa2d2](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/ddaa2d29bc2a78735254c974160aba136ce90864))
+* permisos comunicaciones y payloads webhooks ([4205c1b](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/4205c1b3f48d5a35da245b519384bf5c6cb34ae8))
+* **rbac:** decouple global superuser from local admin to enforce tenant isolation ([2811237](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/28112378bf8a7286e03671f7af5d982a9f20c60f))
+* **rbac:** prevent non-super admins from selecting all inmobiliarias ([54fac5a](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/54fac5a8c259f2a3a830978b7d44d2874ed4883d))
+* **rbac:** stop promoting administrador to is_admin; drop legacy sync triggers ([b13143f](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/b13143f63fa7cbc141716c57bb8e680e04064d73))
+* render loop + ts errors ([9b69889](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/9b6988914409bfd191faff60e734ff6de0153356))
+* sanitize supabase url env + improve scripts typing ([367e5d2](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/367e5d2f244c8a3e17bad57bb6351096d09a845a))
+* **sidebar:** ignore broken logo_url ([75ba7ef](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/75ba7ef67e24ab0cbeac11221e1dbfc2d58ca4db))
+* trigger n8n webhook on Pedir Aval ([c5989d4](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/c5989d4d6e559720e33dbad9fac6a32650723e86))
+* **ui:** modo oscuro + stats anuncios antiguos ([c59f6b9](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/c59f6b9b09c7b2aa0b01be8296c5fea6e4d416a3))
+* **webhook:** debug + sanitize peticion_aval url ([e296f17](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/e296f17a157424a8cbe80169331e2e8d39824055))
+* **webhook:** evitar host incorrecto en peticion_aval + debug resolvedFrom ([0c03a46](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/0c03a468325022c5fe4a9035f2a27ce74972ccad))
+* **webhook:** forzar url peticion_aval + mejor logging ([c8ec05b](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/c8ec05b4386414d3a83781bc84e9ee58b7c708bc))
+* **webhook:** no usar auth global + exponer authSent en peticion_aval ([67c2878](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/67c2878b1d8bccf2548db594a31b818482fc12f8))
+* **webhooks:** enrich peticion_aval payload + n8n UA ([8cf6e25](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/8cf6e2520ad60011747cf4cae7b98793b452efee))
+* **webhook:** soportar auth header/basic para peticion_aval ([5acdb23](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/5acdb232c8d875528ed7155a2204d78505a1ed3c))
+
+
+### Features
+
+* **branding:** allow setting logo via URL ([e07c9b2](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/e07c9b29d42e8b8035295b91c4742e7165c7474d))
+* **onboarding:** add supervised full signup (inmobiliaria + initial admin) ([c83e003](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/commit/c83e00361bdcd5882df122c0d39cd52689076fbd))
+
+
+
 ## [0.9.22](https://github.com/jiglesiasdile4g-dot/Rentaflow_Trae/compare/v0.9.21...v0.9.22) (2026-04-29)
 
 

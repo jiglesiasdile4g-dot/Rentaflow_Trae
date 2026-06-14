@@ -256,6 +256,7 @@ export default function AnunciosPage() {
   const [loadingAvailability, setLoadingAvailability] = useState(false)
   const [availableDates, setAvailableDates] = useState<string[]>([])
   const [loadingDates, setLoadingDates] = useState(false)
+  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading, role } = useInmobiliaria()
   
   // Persistencia de estado (filtros)
   const [isStateRestored, setIsStateRestored] = useState(false)
@@ -431,8 +432,6 @@ export default function AnunciosPage() {
     faqs: [{ pregunta: "", respuesta: "" }],
   })
 
-  const rawDataRef = useRef<{ leads: any[]; emails: any[]; whatsapp: any[] } | null>(null)
-
   const getCurrentBillingCycle = (resetAtValue: Date | string | null, now = new Date()) => {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
     const resetAt = resetAtValue ? new Date(resetAtValue) : null
@@ -546,35 +545,141 @@ export default function AnunciosPage() {
     }
   }
 
-  const handleLocalMetricsPeriodChange = (
+  const getAnuncioStatsSource = useCallback(async (
+    anuncio: Pick<AnuncioCard, "referencia" | "direccion" | "fecha_activacion" | "created_at">,
+    signal?: AbortSignal,
+    includeStatusHistory: boolean = false,
+  ) => {
+    const supabaseClient = createClient()
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const maxLeadLookbackMs = 365 * 24 * 60 * 60 * 1000
+    const maxLeadDataAgeCap = new Date(now.getTime() - maxLeadLookbackMs)
+
+    const parseDate = (value: any) => {
+      if (!value) return null
+      const d = new Date(value)
+      return isNaN(d.getTime()) ? null : d
+    }
+
+    let leadStartDate =
+      parseDate(anuncio.fecha_activacion) ||
+      parseDate(anuncio.created_at) ||
+      monthStart
+
+    if (leadStartDate < maxLeadDataAgeCap) {
+      leadStartDate = maxLeadDataAgeCap
+    }
+
+    const sanitize = (value: any) => {
+      const s = String(value || "").trim()
+      if (!s) return ""
+      if (s.includes(",") || s.includes("(") || s.includes(")")) return ""
+      return s
+    }
+
+    const ref = sanitize(anuncio.referencia)
+    const dir = sanitize(anuncio.direccion)
+    const orParts = [ref, dir]
+      .filter(Boolean)
+      .map((v) => `Inmueble.ilike.%${v}%`)
+    const orFilter = orParts.join(",")
+
+    const leadSelect = includeStatusHistory
+      ? "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos, Inmueble, status_history"
+      : "IDC, Estado, created_at, Correo, visita_completada, Fecha_Datos_Completos, Inmueble"
+
+    let leads: any[] = []
+    if (orFilter) {
+      let leadsQuery = supabaseClient
+        .from("Clientes")
+        .select(leadSelect)
+        .gte("created_at", leadStartDate.toISOString())
+        .or(orFilter)
+
+      if (inmobiliariaId) leadsQuery = leadsQuery.eq("usuario", inmobiliariaId)
+      if (signal) leadsQuery = leadsQuery.abortSignal(signal)
+
+      const { data, error } = await leadsQuery
+      if (error && !error.message.includes("Abort")) {
+        console.log("[v0] Error fetching stats leads for anuncio:", anuncio.referencia, error)
+      }
+      leads = data || []
+    }
+
+    const leadEmails = [...new Set(leads.map((l) => l.Correo).filter(Boolean))]
+    const leadIDCs = [...new Set(leads.map((l) => l.IDC).filter((id: any) => Number.isFinite(id)))]
+
+    const commsSince = leadStartDate
+    let emails: any[] = []
+    let whatsapp: any[] = []
+
+    if (leadEmails.length > 0) {
+      const emailChunks: string[][] = []
+      for (let i = 0; i < leadEmails.length; i += 20) emailChunks.push(leadEmails.slice(i, i + 20))
+      const emailResults = await Promise.all(emailChunks.map(async (chunk) => {
+        let q = supabaseClient
+          .from("Correos")
+          .select("id, to, Tipo, created_at")
+          .in("to", chunk)
+          .gte("created_at", commsSince.toISOString())
+        if (signal) q = q.abortSignal(signal)
+        const { data, error } = await q
+        if (error && !error.message.includes("Abort")) {
+          console.log("[v0] Error fetching stats emails chunk:", error)
+        }
+        return data || []
+      }))
+      emails = emailResults.flat()
+    }
+
+    if (leadIDCs.length > 0) {
+      const waChunks: number[][] = []
+      for (let i = 0; i < leadIDCs.length; i += 20) waChunks.push(leadIDCs.slice(i, i + 20))
+      const waResults = await Promise.all(waChunks.map(async (chunk) => {
+        let q = supabaseClient
+          .from("Whatsapp")
+          .select("id, IDC, Tipo, created_at")
+          .in("IDC", chunk)
+          .gte("created_at", commsSince.toISOString())
+        if (signal) q = q.abortSignal(signal)
+        const { data, error } = await q
+        if (error && !error.message.includes("Abort")) {
+          console.log("[v0] Error fetching stats whatsapp chunk:", error)
+        }
+        return data || []
+      }))
+      whatsapp = waResults.flat()
+    }
+
+    return { leads, emails, whatsapp, leadStartDate }
+  }, [inmobiliariaId])
+
+  const handleLocalMetricsPeriodChange = async (
     anuncioId: string,
     period: "hoy" | "esteMes" | "ultimoMes" | "periodoActual",
   ) => {
-    setAnunciosCards((prev) =>
-      prev.map((card) => {
-        // Ensure strictly string comparison for IDs to avoid type mismatches
-        if (String(card.id) !== String(anuncioId)) return card
+    const card = anunciosCards.find((c) => String(c.id) === String(anuncioId))
+    if (!card) return
 
-        if (!rawDataRef.current) {
-            return { ...card, localMetricsPeriod: period }
-        }
-
-        const { leads, emails, whatsapp } = rawDataRef.current
-        const normalize = (s: string | null | undefined) => (s ? s.trim().toLowerCase() : "")
-        // Filter leads for this anuncio
-        const leadsForAnuncio = leads.filter((l) => {
-          if (!l.Inmueble) return false
-          const inmueble = normalize(l.Inmueble)
-          const refNorm = normalize(card.referencia)
-          const dirNorm = normalize(card.direccion)
-          return inmueble && (inmueble === refNorm || (dirNorm && inmueble === dirNorm))
-        })
-
-        const metrics = calculateAnuncioMetrics(card, period, leadsForAnuncio, emails, whatsapp)
-
-        return { ...card, ...metrics, localMetricsPeriod: period }
-      }),
-    )
+    try {
+      const { leads, emails, whatsapp } = await getAnuncioStatsSource(card)
+      const metrics = calculateAnuncioMetrics(card, period, leads, emails, whatsapp)
+      setAnunciosCards((prev) =>
+        prev.map((item) =>
+          String(item.id) === String(anuncioId)
+            ? { ...item, ...metrics, localMetricsPeriod: period }
+            : item,
+        ),
+      )
+    } catch (error) {
+      console.log("[v0] Error recalculating local anuncio metrics:", error)
+      setAnunciosCards((prev) =>
+        prev.map((item) =>
+          String(item.id) === String(anuncioId) ? { ...item, localMetricsPeriod: period } : item,
+        ),
+      )
+    }
   }
   const startStripeCheckout = async (planId: number) => {
     try {
@@ -785,8 +890,6 @@ export default function AnunciosPage() {
     setAttachmentPreviewKind(kind)
     setAttachmentPreviewUrl(proxied)
   }
-
-  const { inmobiliariaId, inmobiliariaNombre, loading: inmobiliariaLoading, role } = useInmobiliaria()
 
   const openNextcloudFiles = async (anuncio: AnuncioCard) => {
     const inmo = inmobiliariaNombre || (inmobiliariaId != null ? String(inmobiliariaId) : "")
@@ -2046,6 +2149,7 @@ export default function AnunciosPage() {
       }
 
       console.log("[v0] Filtering anuncios by agency IDI (inmobiliariaId):", inmobiliariaId)
+      const activacionObjetivo = filterEstado === "archivado" ? "Archivado" : "Activo"
 
       // Calcular offset para paginación
       const offset = (page - 1) * itemsPerPage
@@ -2054,6 +2158,7 @@ export default function AnunciosPage() {
         .from("Anuncios")
         .select("ida, Referencia, Nombre, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion, duracion_visita, tiempo_entre_visitas, whatsapp_activo")
         .order("created_at", { ascending: false })
+        .eq("Activacion", activacionObjetivo)
         .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
         .range(offset, offset + itemsPerPage - 1) // Límite de 20 anuncios por página
       
@@ -2074,6 +2179,7 @@ export default function AnunciosPage() {
             "ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion, duracion_visita, tiempo_entre_visitas",
           )
           .order("created_at", { ascending: false })
+          .eq("Activacion", activacionObjetivo)
           .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
         
         if (signal) fallbackQuery = fallbackQuery.abortSignal(signal)
@@ -2097,6 +2203,7 @@ export default function AnunciosPage() {
       const { count: totalCount } = await supabase
         .from("Anuncios")
         .select("*", { count: "exact", head: true })
+        .eq("Activacion", activacionObjetivo)
         .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
 
       const totalAnunciosCount = totalCount || 0
@@ -2119,14 +2226,7 @@ export default function AnunciosPage() {
       let totalLeadsSum = 0
       let totalCompletosSum = 0
       let totalEjecucionesSum = 0
-      let totalLeadsMesSum = 0
-
       const now = new Date()
-      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      // Lead history affects anuncio stats (emails/whatsapps). Keep leads wider than comms to support anuncios antiguos.
-      const maxLeadDataAge = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
-      const maxCommsDataAge = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
       let cutoffDate = planResetAt ? planResetAt : monthStart
       if (inmobiliariaId) {
@@ -2153,332 +2253,109 @@ export default function AnunciosPage() {
           }
       } catch {}
       }
-      // Pre-fetch all leads, emails, and whatsapps to avoid N+1 queries
-      console.log("[v0] Pre-fetching leads and communications...")
-      
-      const references = anuncios.map((a) => a.Referencia).filter(Boolean)
-      const addresses = anuncios.map((a) => a.Direccion).filter(Boolean)
-      // Combine and deduplicate
-      const propertyIdentifiers = [...new Set([...references, ...addresses])]
+      const cardsResults = await Promise.all(
+        anuncios.map(async (anuncio: any) => {
+          const referencia = anuncio.Referencia || `REF-${anuncio.ida}`
+          console.log(`[v0] Processing anuncio with dedicated stats query: ${referencia}`)
 
-      let allLeadsRaw: any[] = []
-
-      // Fetch leads in parallel (by IDI and by Property Name) to ensure we catch everything
-      // Con límite de 30 días para optimizar el rendimiento
-      let qIdi = inmobiliariaId 
-        ? supabase
-            .from("Clientes")
-            .select(
-              "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos, Inmueble",
-            )
-            .eq("usuario", inmobiliariaId)
-            .gte("created_at", maxLeadDataAge.toISOString())
-        : null
-      
-      if (qIdi && signal) qIdi = qIdi.abortSignal(signal)
-
-      // Also fetch by property name (exact match) as a backup for leads missing the agency ID
-      // or for cases where we rely on string matching
-      let qProp = propertyIdentifiers.length > 0
-        ? supabase
-            .from("Clientes")
-            .select(
-              "IDC, Estado, created_at, Correo, Nombre, Telefono, Ingresos, aceptado, visita_propuesta, visita_completada, fecha_de_visita, Fecha_Datos_Completos, Inmueble",
-            )
-            .in("Inmueble", propertyIdentifiers)
-            .gte("created_at", maxLeadDataAge.toISOString())
-        : null
-      
-      if (qProp && signal) qProp = qProp.abortSignal(signal)
-
-      const pIdi = qIdi ? qIdi : Promise.resolve({ data: [], error: null })
-      const pProp = qProp ? qProp : Promise.resolve({ data: [], error: null })
-
-      const [resIdi, resProp] = await Promise.all([pIdi, pProp])
-      
-      if (signal?.aborted) return
-
-      const leadsIdi = resIdi.data || []
-      const leadsProp = resProp.data || []
-      
-      // Merge and deduplicate by IDC
-      const leadsMap = new Map()
-      leadsIdi.forEach((l) => leadsMap.set(l.IDC, l))
-      leadsProp.forEach((l) => leadsMap.set(l.IDC, l))
-      
-      allLeadsRaw = Array.from(leadsMap.values())
-      console.log(`[v0] Leads fetched: ${leadsIdi.length} by IDI, ${leadsProp.length} by Property. Total unique: ${allLeadsRaw.length}`)
-
-      // Collect IDs and Emails for bulk fetching
-      const allEmails = [...new Set(allLeadsRaw.map((l) => l.Correo).filter(Boolean))]
-      const allIDCs = [...new Set(allLeadsRaw.map((l) => l.IDC).filter((id: any) => Number.isFinite(id)))]
-
-      let allCorreosRaw: any[] = []
-      if (allEmails.length > 0) {
-        // Fetch in chunks to avoid URL limits
-        const chunks = []
-        // Reduced chunk size from 50 to 20 to prevent "URI too long" errors with long email addresses
-        for (let i = 0; i < allEmails.length; i += 20) {
-          chunks.push(allEmails.slice(i, i + 20))
-        }
-        for (const chunk of chunks) {
-          if (signal?.aborted) break
-          let q = supabase.from("Correos").select("id, created_at, to, Tipo").in("to", chunk).gte("created_at", maxCommsDataAge.toISOString())
-          if (signal) q = q.abortSignal(signal)
-          const { data, error } = await q
-          if (error) {
-             console.log("[v0] Error fetching emails chunk:", error)
-             if (error.message.includes('URI too long')) {
-               console.log("[v0] URI too long error - consider reducing chunk size further")
-             }
-             // Continue with other chunks but log the error
-          }
-          if (data) allCorreosRaw.push(...data)
-        }
-      }
-      
-      if (signal?.aborted) return
-
-      let allWhatsappRaw: any[] = []
-      if (allIDCs.length > 0) {
-        const chunks = []
-        // Reduced chunk size from 50 to 20 to prevent "URI too long" errors
-        for (let i = 0; i < allIDCs.length; i += 20) {
-          chunks.push(allIDCs.slice(i, i + 20))
-        }
-        for (const chunk of chunks) {
-          if (signal?.aborted) break
-          let q = supabase.from("Whatsapp").select("id, created_at, IDC, Tipo").in("IDC", chunk).gte("created_at", maxCommsDataAge.toISOString())
-          if (signal) q = q.abortSignal(signal)
-          const { data, error } = await q
-          if (error) {
-             console.log("[v0] Error fetching whatsapp chunk:", error)
-             if (error.message.includes('URI too long')) {
-               console.log("[v0] URI too long error - consider reducing chunk size further")
-             }
-             // Continue with other chunks but log the error
-          }
-          if (data) allWhatsappRaw.push(...data)
-        }
-      }
-
-      if (signal?.aborted) return
-
-      console.log(
-        `[v0] Pre-fetch complete: ${allLeadsRaw.length} leads, ${allCorreosRaw.length} emails, ${allWhatsappRaw.length} whatsapps`,
-      )
-
-      // Save raw data for local period recalculation
-      rawDataRef.current = {
-        leads: allLeadsRaw,
-        emails: allCorreosRaw,
-        whatsapp: allWhatsappRaw,
-      }
-
-      const normalize = (s: string | null | undefined) => (s ? s.trim().toLowerCase() : "")
-
-      for (const anuncio of anuncios) {
-        const referencia = anuncio.Referencia || `REF-${anuncio.ida}`
-        const refNorm = normalize(referencia)
-        const dirNorm = normalize(anuncio.Direccion)
-        
-        console.log(`[v0] Processing anuncio: ${referencia}`)
-
-        // Filter leads from memory
-        const rawLeads = allLeadsRaw.filter((l) => {
-          if (!l.Inmueble) return false
-          const inmueble = normalize(l.Inmueble)
-          if (!inmueble) return false
-          const refMatch = refNorm && (inmueble === refNorm || inmueble.includes(refNorm) || refNorm.includes(inmueble))
-          const dirMatch = dirNorm && (inmueble === dirNorm || inmueble.includes(dirNorm) || dirNorm.includes(inmueble))
-          return refMatch || dirMatch
-        })
-
-        let allLeads = rawLeads || []
-        
-        // Filter leads by activation date if available (User request: count from last activation)
-        // if (anuncio.fecha_activacion) {
-        //    const activationDate = new Date(anuncio.fecha_activacion)
-        //    // Check if date is valid
-        //    if (!isNaN(activationDate.getTime())) {
-        //      allLeads = allLeads.filter((lead) => {
-        //        const createdAt = new Date(lead.created_at)
-        //        return createdAt >= activationDate
-        //      })
-        //    }
-        // }
-
-        let leadsTotales = allLeads.length
-        if (leadsTotales === 0 && inmobiliariaId) {
-          const inmuebleValues = [referencia, anuncio.Direccion].filter(Boolean) as string[]
-          if (inmuebleValues.length > 0) {
-            try {
-              let q = supabase
-                .from("Clientes")
-                .select("id", { count: "exact", head: true })
-                .eq("usuario", inmobiliariaId)
-                .in("Inmueble", inmuebleValues)
-              if (signal) q = q.abortSignal(signal)
-              const { count, error } = await q
-              if (!error && typeof count === "number" && count > 0) {
-                leadsTotales = count
-              }
-            } catch {}
-          }
-        }
-
-        const leadsDesdeCorte = allLeads?.filter((lead) => {
-          const createdAt = new Date(lead.created_at)
-          return createdAt >= cutoffDate
-        }) || []
-        const leadsMes = leadsDesdeCorte.length
-        console.log(`[v0] Total leads for ${referencia}: ${leadsTotales}`)
-
-        const dayStart = new Date(now)
-        dayStart.setHours(0, 0, 0, 0)
-        const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
-
-        const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-        const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 1) // exclusive end
-        const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-        const periodStart = metricsPeriod === "hoy" ? dayStart : metricsPeriod === "ultimoMes" ? prevMonthStart : metricsPeriod === "esteMes" ? thisMonthStart : cutoffDate
-        const periodEnd = metricsPeriod === "hoy" ? dayEnd : metricsPeriod === "ultimoMes" ? prevMonthEnd : now
-
-        const nuevosHoy =
-          allLeads?.filter((lead: any) => {
-            const createdAt = lead.created_at ? new Date(lead.created_at) : null
-            return createdAt && createdAt >= periodStart && createdAt < periodEnd
-          }).length || 0
-
-        const datosCompletosCount =
-          allLeads?.filter((lead) => {
-            const estado = (lead as any).Estado?.toLowerCase() || ""
-            const fdc = (lead as any).Fecha_Datos_Completos ? new Date((lead as any).Fecha_Datos_Completos) : null
-            return estado === "datos completos" && fdc && fdc >= periodStart && fdc < periodEnd
-          }).length || 0
-
-        console.log("[v0] Datos Completos for anuncio", anuncio.ida, ":", datosCompletosCount)
-
-        const aLaEspera = leadsTotales - datosCompletosCount
-
-        // We'll match by email addresses from the leads
-        const leadEmails = allLeads?.map((lead) => lead.Correo).filter(Boolean) || []
-        const leadIDCs = (allLeads || [])
-          .map((lead: any) => lead.IDC)
-          .filter((idc: any) => Number.isFinite(idc))
-        let emailsEnviadosMes = 0
-        let emailsTotal = 0
-        let whatsappsPeriodo = 0
-        let whatsappsTotal = 0
-
-        // Conteo optimizado usando datos en memoria
-        if (leadEmails.length > 0) {
-          const correosMatch = allCorreosRaw.filter((c) => 
-            leadEmails.includes(c.to) && c.Tipo?.toLowerCase() === "enviado"
+          const { leads: allLeads, emails, whatsapp } = await getAnuncioStatsSource(
+            {
+              referencia,
+              direccion: anuncio.Direccion || "",
+              fecha_activacion: anuncio.fecha_activacion || null,
+              created_at: anuncio.created_at,
+            },
+            signal,
           )
-          emailsTotal = correosMatch.length
 
-          const correosPeriodo = correosMatch.filter((c) => {
-            const d = new Date(c.created_at)
-            return d >= periodStart && d < periodEnd
-          })
-          emailsEnviadosMes = correosPeriodo.length
-        }
+          if (signal?.aborted) return null
 
-        if (leadIDCs.length > 0) {
-          const whatsMatch = allWhatsappRaw.filter((w) => leadIDCs.includes(w.IDC) && w.Tipo === "Enviado")
-          whatsappsTotal = whatsMatch.length
+          const leadsDesdeCorte = allLeads.filter((lead) => new Date(lead.created_at) >= cutoffDate)
+          const leadsMes = leadsDesdeCorte.length
+          const metrics = calculateAnuncioMetrics(
+            {
+              id: anuncio.ida,
+              codPortal: anuncio.CodPortal || "",
+              referencia,
+              nombre: String(anuncio.Nombre ?? (anuncio as any).nombre ?? "").trim(),
+              direccion: anuncio.Direccion || "",
+              precio: anuncio.Precio || 0,
+              portal: anuncio.Portal || "Sin especificar",
+              descripcion: anuncio.Descripcion || "",
+              activacion: anuncio.Activacion || "Inactivo",
+              fotoUrl: anuncio.Foto_Url || "",
+              nuevosHoy: 0,
+              emailsEnviados: 0,
+              whatsappsTotal: 0,
+              emailsPeriodo: 0,
+              whatsappsPeriodo: 0,
+              datosCompletos: 0,
+              leadsTotales: 0,
+              aLaEspera: 0,
+              tiempoAhorrado: 0,
+              tiempoAhorradoTotal: 0,
+              ultimaActividad: "",
+              fechaUltimaActividad: null,
+              estado: "activo",
+              healthScore: 0,
+              porcentajeCompletos: 0,
+              sparklineData: [],
+              ejecuciones: 0,
+              consumoMes: 0,
+            },
+            metricsPeriod,
+            allLeads,
+            emails,
+            whatsapp,
+          )
 
-          const whatsPeriodo = whatsMatch.filter((w) => {
-            const d = new Date(w.created_at)
-            return d >= periodStart && d < periodEnd
-          })
-          whatsappsPeriodo = whatsPeriodo.length
-        }
-
-        const sparklineData: number[] = []
-        for (let i = 6; i >= 0; i--) {
-          const dayStart = new Date(now.getTime() - i * 24 * 60 * 60 * 1000)
-          dayStart.setHours(0, 0, 0, 0)
-          const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
-
-          const leadsInDay =
-            allLeads?.filter((lead) => {
+          const sparklineData: number[] = []
+          for (let i = 6; i >= 0; i--) {
+            const dayStart = new Date(now.getTime() - i * 24 * 60 * 60 * 1000)
+            dayStart.setHours(0, 0, 0, 0)
+            const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
+            sparklineData.push(allLeads.filter((lead) => {
               const createdAt = new Date(lead.created_at)
               return createdAt >= dayStart && createdAt < dayEnd
-            }).length || 0
+            }).length)
+          }
 
-          sparklineData.push(leadsInDay)
-        }
-
-        const activityData: number[] = []
-        for (let i = 83; i >= 0; i--) {
-          const ds = new Date(now.getTime() - i * 24 * 60 * 60 * 1000)
-          ds.setHours(0, 0, 0, 0)
-          const de = new Date(ds.getTime() + 24 * 60 * 60 * 1000)
-          const cnt =
-            allLeads?.filter((lead) => {
+          const activityData: number[] = []
+          for (let i = 83; i >= 0; i--) {
+            const ds = new Date(now.getTime() - i * 24 * 60 * 60 * 1000)
+            ds.setHours(0, 0, 0, 0)
+            const de = new Date(ds.getTime() + 24 * 60 * 60 * 1000)
+            activityData.push(allLeads.filter((lead) => {
               const createdAt = new Date(lead.created_at)
               return createdAt >= ds && createdAt < de
-            }).length || 0
-          activityData.push(cnt)
-        }
-
-        let ultimaActividadFecha: Date | null = null
-        if (allLeads && allLeads.length > 0) {
-          const sortedLeads = [...allLeads].sort(
-            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-          )
-          ultimaActividadFecha = new Date(sortedLeads[0].created_at)
-        }
-
-        let ultimaActividad = "Sin actividad"
-        if (ultimaActividadFecha) {
-          const diffHours = (now.getTime() - ultimaActividadFecha.getTime()) / (1000 * 60 * 60)
-          if (diffHours < 1) {
-            ultimaActividad = "Hace menos de 1 hora"
-          } else if (diffHours < 24) {
-            ultimaActividad = `Hace ${Math.floor(diffHours)} horas`
-          } else if (diffHours < 48) {
-            ultimaActividad = "Ayer"
-          } else {
-            const diffDays = Math.floor(diffHours / 24)
-            ultimaActividad = `Hace ${diffDays} días`
+            }).length)
           }
-        }
 
-        const porcentajeCompletos = leadsTotales > 0 ? (datosCompletosCount / leadsTotales) * 100 : 0
-        const tiempoAhorrado = ((emailsEnviadosMes + whatsappsPeriodo) * 1.27) / 60
-        const tiempoAhorradoTotal = ((emailsTotal + whatsappsTotal) * 1.27) / 60
+          let ultimaActividadFecha: Date | null = null
+          if (allLeads.length > 0) {
+            const sortedLeads = [...allLeads].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+            ultimaActividadFecha = new Date(sortedLeads[0].created_at)
+          }
 
-        const estado: "activo" | "pausado" | "error" | "archivado" =
-          anuncio.Activacion === "Activo"
-            ? "activo"
-            : anuncio.Activacion === "Pausado"
-              ? "pausado"
-              : anuncio.Activacion === "Archivado"
-                ? "archivado"
-                : "error"
+          let ultimaActividad = "Sin actividad"
+          if (ultimaActividadFecha) {
+            const diffHours = (now.getTime() - ultimaActividadFecha.getTime()) / (1000 * 60 * 60)
+            if (diffHours < 1) ultimaActividad = "Hace menos de 1 hora"
+            else if (diffHours < 24) ultimaActividad = `Hace ${Math.floor(diffHours)} horas`
+            else if (diffHours < 48) ultimaActividad = "Ayer"
+            else ultimaActividad = `Hace ${Math.floor(diffHours / 24)} días`
+          }
 
-        let healthScore = 100
-        if (porcentajeCompletos < 20) healthScore -= 25 // Low completion rate
-        if (aLaEspera > leadsTotales * 0.7) healthScore -= 20 // Too many waiting
-        if (nuevosHoy === 0 && leadsTotales > 0) healthScore -= 15
-        if (leadsTotales === 0) healthScore -= 40 // No leads at all
+          const emailsTotal = emails.filter((c) => String(c.Tipo || "").toLowerCase() === "enviado").length
+          const whatsappsTotal = whatsapp.filter((w) => w.Tipo === "Enviado").length
+          const tiempoAhorradoTotal = ((emailsTotal + whatsappsTotal) * 1.27) / 60
+          const estado: "activo" | "pausado" | "error" | "archivado" =
+            anuncio.Activacion === "Activo" ? "activo" : anuncio.Activacion === "Pausado" ? "pausado" : anuncio.Activacion === "Archivado" ? "archivado" : "error"
+          const ejecuciones = leadsMes + metrics.emailsPeriodo
+          const fechaCreacion = anuncio.created_at ? new Date(anuncio.created_at).toLocaleDateString("es-ES") : "N/A"
+          const descartados = allLeads.filter((lead) => String(lead.Estado || "").toLowerCase() === "descartado").length
 
-        const ejecuciones = leadsMes + emailsEnviadosMes
-
-        // Add fechaCreacion for stats modal
-        const fechaCreacion = anuncio.created_at ? new Date(anuncio.created_at).toLocaleDateString("es-ES") : "N/A"
-
-        // Added descartados calculation
-        const descartados =
-          allLeads?.filter((lead) => {
-            const estado = lead.Estado?.toLowerCase() || ""
-            return estado === "descartado"
-          }).length || 0
-
-        cards.push({
+          return {
           id: anuncio.ida, // Use "ida" instead of "id"
           ida: anuncio.ida, // For agenda-utils compatibility
           codPortal: anuncio.CodPortal || "",
@@ -2493,21 +2370,21 @@ export default function AnunciosPage() {
           adjuntos: anuncio.Adjuntos || [],
           duracion_visita: anuncio.duracion_visita,
           tiempo_entre_visitas: anuncio.tiempo_entre_visitas,
-          nuevosHoy,
-          emailsEnviados: emailsEnviadosMes,
-          whatsappsTotal: whatsappsPeriodo,
-          emailsPeriodo: emailsEnviadosMes,
-          whatsappsPeriodo,
-          datosCompletos: datosCompletosCount,
-          leadsTotales,
-          aLaEspera,
-          tiempoAhorrado,
+          nuevosHoy: metrics.nuevosHoy,
+          emailsEnviados: metrics.emailsPeriodo,
+          whatsappsTotal,
+          emailsPeriodo: metrics.emailsPeriodo,
+          whatsappsPeriodo: metrics.whatsappsPeriodo,
+          datosCompletos: metrics.datosCompletos,
+          leadsTotales: allLeads.length,
+          aLaEspera: metrics.aLaEspera,
+          tiempoAhorrado: metrics.tiempoAhorrado,
           tiempoAhorradoTotal,
           ultimaActividad,
           fechaUltimaActividad: ultimaActividadFecha,
           estado,
-          healthScore: Math.max(0, healthScore),
-          porcentajeCompletos,
+          healthScore: metrics.healthScore,
+          porcentajeCompletos: metrics.porcentajeCompletos,
           sparklineData,
           activityData,
           ejecuciones,
@@ -2519,17 +2396,20 @@ export default function AnunciosPage() {
           descartados, // Added descartados
           Fecha_Activacion_Programada: anuncio.Fecha_Activacion_Programada || null, // Pass scheduled date
           phaseMetrics: {
-            aceptados: allLeads?.filter((lead) => lead.Estado === "Aceptado").length || 0,
-            visitaPropuesta: allLeads?.filter((lead) => lead.Estado === "Visita Propuesta").length || 0,
-            visitaCompletada: allLeads?.filter((lead) => String(lead.Estado || "").toLowerCase() === "visita completada" || isVisitCompleted(lead.visita_completada)).length || 0,
-            datosCompletos: allLeads?.filter((lead) => lead.Estado?.toLowerCase() === "datos completos").length || 0,
+            aceptados: allLeads.filter((lead) => lead.Estado === "Aceptado").length || 0,
+            visitaPropuesta: allLeads.filter((lead) => lead.Estado === "Visita Propuesta").length || 0,
+            visitaCompletada: allLeads.filter((lead) => String(lead.Estado || "").toLowerCase() === "visita completada" || isVisitCompleted(lead.visita_completada)).length || 0,
+            datosCompletos: allLeads.filter((lead) => lead.Estado?.toLowerCase() === "datos completos").length || 0,
           },
-        })
+          } satisfies AnuncioCard
+        }),
+      )
 
-        totalLeadsSum += leadsTotales
-        totalCompletosSum += datosCompletosCount
-        totalEjecucionesSum += ejecuciones
-        totalLeadsMesSum += leadsMes
+      for (const card of cardsResults.filter(Boolean) as AnuncioCard[]) {
+        cards.push(card)
+        totalLeadsSum += card.leadsTotales
+        totalCompletosSum += card.datosCompletos
+        totalEjecucionesSum += card.ejecuciones
       }
 
       // Sort by last activity, keeping archived ads at the bottom
@@ -2610,7 +2490,7 @@ export default function AnunciosPage() {
         setCardsLoading(false)
       }
     }
-  }, [supabase, inmobiliariaId, planResetAt, metricsPeriod, itemsPerPage])
+  }, [supabase, inmobiliariaId, planResetAt, metricsPeriod, itemsPerPage, filterEstado])
 
   useEffect(() => {
     console.log("[DEBUG] useEffect triggered - inmobiliariaLoading:", inmobiliariaLoading, "inmobiliariaId:", inmobiliariaId);
@@ -2765,7 +2645,7 @@ export default function AnunciosPage() {
 
   useEffect(() => {
     fetchAnuncios(undefined, currentPage)
-  }, [metricsPeriod, fetchAnuncios, currentPage])
+  }, [metricsPeriod, fetchAnuncios, currentPage, filterEstado])
 
   const handleToggleEstado = async (anuncioId: string, currentActivacion: string) => {
     setProcessingId(anuncioId)
@@ -3268,101 +3148,7 @@ export default function AnunciosPage() {
     // console.log(`[v0] Loading statistics for anuncio ${anuncio.id}`, anuncio)
 
     try {
-      let leads: any[] = []
-      
-      // Use in-memory raw data if available for consistency
-      if (rawDataRef.current) {
-        // console.log("[v0] Using in-memory raw data")
-        const normalize = (s: string | null | undefined) => (s ? s.trim().toLowerCase() : "")
-        const refNorm = normalize(anuncio.referencia)
-        const dirNorm = normalize(anuncio.direccion)
-        
-        leads = rawDataRef.current.leads.filter((l) => {
-          if (!l.Inmueble) return false
-          const inmueble = normalize(l.Inmueble)
-          if (!inmueble) return false
-          const refMatch = refNorm && (inmueble === refNorm || inmueble.includes(refNorm) || refNorm.includes(inmueble))
-          const dirMatch = dirNorm && (inmueble === dirNorm || inmueble.includes(dirNorm) || dirNorm.includes(inmueble))
-          return refMatch || dirMatch
-        })
-      } else {
-        console.log("[v0] Fetching leads from DB")
-        // Fallback to DB fetch if raw data not available
-        const fetchByRef = supabase
-          .from("Clientes")
-          .select("*, status_history")
-          .ilike("Inmueble", `%${anuncio.referencia.trim()}%`)
-  
-        let fetchByAddr = null
-        if (anuncio.direccion) {
-          fetchByAddr = supabase
-            .from("Clientes")
-            .select("*, status_history")
-            .ilike("Inmueble", `%${anuncio.direccion.trim()}%`)
-        }
-  
-        const [resRef, resAddr] = await Promise.all([fetchByRef, fetchByAddr ? fetchByAddr : Promise.resolve({ data: [], error: null })])
-        
-        const leadsRef = resRef.data || []
-        const leadsAddr = resAddr?.data || []
-        
-        // Merge and deduplicate by IDC
-        const allLeadsMap = new Map()
-        leadsRef.forEach(l => allLeadsMap.set(l.IDC, l))
-        leadsAddr.forEach(l => allLeadsMap.set(l.IDC, l))
-        
-        leads = Array.from(allLeadsMap.values())
-      }
-      const fetchAllLeadsByPattern = async (pattern: string) => {
-        const pageSize = 1000
-        const collected: any[] = []
-        let from = 0
-        while (true) {
-          let q = supabase
-            .from("Clientes")
-            .select("*, status_history")
-            .ilike("Inmueble", pattern)
-            .order("created_at", { ascending: false })
-            .range(from, from + pageSize - 1)
-
-          if (inmobiliariaId) {
-            q = q.eq("usuario", inmobiliariaId)
-          }
-
-          const { data, error } = await q
-          if (error) throw error
-          const rows = data || []
-          collected.push(...rows)
-          if (rows.length < pageSize) break
-          from += pageSize
-          if (from > 50000) break
-        }
-        return collected
-      }
-
-      try {
-        const ref = anuncio.referencia?.trim()
-        const dir = anuncio.direccion?.trim()
-        const patterns = [
-          ref ? `%${ref}%` : null,
-          dir ? `%${dir}%` : null,
-        ].filter(Boolean) as string[]
-
-        if (patterns.length > 0) {
-          const [byRef, byDir] = await Promise.all([
-            patterns[0] ? fetchAllLeadsByPattern(patterns[0]) : Promise.resolve([]),
-            patterns[1] ? fetchAllLeadsByPattern(patterns[1]) : Promise.resolve([]),
-          ])
-
-          const merged = new Map<any, any>()
-          ;(leads || []).forEach((l) => merged.set(l.IDC, l))
-          ;(byRef || []).forEach((l) => merged.set(l.IDC, l))
-          ;(byDir || []).forEach((l) => merged.set(l.IDC, l))
-          leads = Array.from(merged.values())
-        }
-      } catch (e) {
-        console.log("[v0] Error fetching full lead history for stats:", e)
-      }
+      const { leads, emails: currentEmails, whatsapp: currentWhatsapps } = await getAnuncioStatsSource(anuncio, undefined, true)
 
       console.log(`[v0] Found ${leads.length} leads for stats`)
 
@@ -3396,81 +3182,6 @@ export default function AnunciosPage() {
       // }
 
       setStatsLeads(leads) // Store leads for reuse in calculateTrendData
-
-      // Prepare emails and whatsapps
-      let currentEmails: any[] = []
-      let currentWhatsapps: any[] = []
-
-      const leadEmails = leads.map((l) => l.Correo).filter(Boolean)
-      const leadIDCs = leads.map((l) => l.IDC).filter((id: any) => Number.isFinite(id))
-
-      if (rawDataRef.current) {
-        currentEmails = rawDataRef.current.emails?.filter((e) => leadEmails.includes(e.to)) || []
-        currentWhatsapps = rawDataRef.current.whatsapp?.filter((w) => leadIDCs.includes(w.IDC)) || []
-      }
-
-      try {
-        const now = new Date()
-        const commsSince = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
-
-        if (leadEmails.length > 0) {
-          const chunkSize = 20
-          const emailChunks: any[] = []
-          for (let i = 0; i < leadEmails.length; i += chunkSize) {
-            emailChunks.push(leadEmails.slice(i, i + chunkSize))
-          }
-
-          const emailResults = await Promise.all(
-            emailChunks.map((chunk) =>
-              supabase
-                .from("Correos")
-                .select("id, to, Tipo, created_at")
-                .in("to", chunk)
-                .gte("created_at", commsSince.toISOString())
-            )
-          )
-
-          const fetchedEmails = emailResults.flatMap((r) => r.data || [])
-          const seen = new Set<string>()
-          const merged = [...(currentEmails || []), ...(fetchedEmails || [])].filter((e: any) => {
-            const k = String(e?.id ?? `${e?.to}-${e?.Tipo}-${e?.created_at}`)
-            if (seen.has(k)) return false
-            seen.add(k)
-            return true
-          })
-          currentEmails = merged
-        }
-
-        if (leadIDCs.length > 0) {
-          const chunkSize = 20
-          const idcChunks: any[] = []
-          for (let i = 0; i < leadIDCs.length; i += chunkSize) {
-            idcChunks.push(leadIDCs.slice(i, i + chunkSize))
-          }
-
-          const waResults = await Promise.all(
-            idcChunks.map((chunk) =>
-              supabase
-                .from("Whatsapp")
-                .select("id, IDC, Tipo, created_at")
-                .in("IDC", chunk)
-                .gte("created_at", commsSince.toISOString())
-            )
-          )
-
-          const fetchedWhatsapps = waResults.flatMap((r) => r.data || [])
-          const seen = new Set<string>()
-          const merged = [...(currentWhatsapps || []), ...(fetchedWhatsapps || [])].filter((w: any) => {
-            const k = String(w?.id ?? `${w?.IDC}-${w?.Tipo}-${w?.created_at}`)
-            if (seen.has(k)) return false
-            seen.add(k)
-            return true
-          })
-          currentWhatsapps = merged
-        }
-      } catch (e) {
-        console.log("[v0] Error fetching communications for stats:", e)
-      }
 
       setStatsEmails(currentEmails)
       setStatsWhatsapps(currentWhatsapps)
