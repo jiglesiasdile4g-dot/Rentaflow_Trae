@@ -2149,7 +2149,7 @@ export default function AnunciosPage() {
       }
 
       console.log("[v0] Filtering anuncios by agency IDI (inmobiliariaId):", inmobiliariaId)
-      const activacionObjetivo = filterEstado === "archivado" ? "Archivado" : "Activo"
+      const activacionesObjetivo = filterEstado === "archivado" ? ["Archivado"] : ["Activo", "Pausado"]
 
       // Calcular offset para paginación
       const offset = (page - 1) * itemsPerPage
@@ -2158,7 +2158,7 @@ export default function AnunciosPage() {
         .from("Anuncios")
         .select("ida, Referencia, Nombre, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion, duracion_visita, tiempo_entre_visitas, whatsapp_activo")
         .order("created_at", { ascending: false })
-        .eq("Activacion", activacionObjetivo)
+        .in("Activacion", activacionesObjetivo)
         .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
         .range(offset, offset + itemsPerPage - 1) // Límite de 20 anuncios por página
       
@@ -2179,7 +2179,7 @@ export default function AnunciosPage() {
             "ida, Referencia, Direccion, Precio, Portal, Descripcion, Activacion, Foto_Url, created_at, Fecha_Activacion_Programada, CodPortal, Adjuntos, fecha_activacion, duracion_visita, tiempo_entre_visitas",
           )
           .order("created_at", { ascending: false })
-          .eq("Activacion", activacionObjetivo)
+          .in("Activacion", activacionesObjetivo)
           .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
         
         if (signal) fallbackQuery = fallbackQuery.abortSignal(signal)
@@ -2203,7 +2203,7 @@ export default function AnunciosPage() {
       const { count: totalCount } = await supabase
         .from("Anuncios")
         .select("*", { count: "exact", head: true })
-        .eq("Activacion", activacionObjetivo)
+        .in("Activacion", activacionesObjetivo)
         .match(inmobiliariaId ? { usuario: inmobiliariaId } : {})
 
       const totalAnunciosCount = totalCount || 0
@@ -5155,7 +5155,7 @@ export default function AnunciosPage() {
                           <div>
                             <p className="font-semibold">Campo crítico:</p>
                             <p className="mt-0.5">
-                              Este campo debe coincidir exactamente con la &quot;Referencia Interna&quot; de Idealista o Fotocasa para
+                              Este campo debe coincidir exactamente con el "número de anuncio" de Idealista o Fotocasa para
                               que los leads se listen correctamente y evitar conflictos.
                             </p>
                           </div>
