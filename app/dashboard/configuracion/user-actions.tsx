@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { MoreVertical, Trash2, ShieldCheck, UserCheck, Power, PowerOff, Mail, Loader2, UserPlus, UserMinus, Edit } from "lucide-react"
+import { MoreVertical, Trash2, ShieldCheck, UserCheck, Power, PowerOff, Mail, Loader2, UserPlus, UserMinus, Edit, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -71,6 +71,8 @@ export function UserActions({
   const [loading, setLoading] = useState(false)
   const [showDeleteAlert, setShowDeleteAlert] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
+  const [showErrorDialog, setShowErrorDialog] = useState(false)
+  const [errorDetail, setErrorDetail] = useState<string>("")
   const [editName, setEditName] = useState(user.nombre || "")
   const [editPhone, setEditPhone] = useState(user.telefono || "")
   const { toast } = useToast()
@@ -91,10 +93,12 @@ export function UserActions({
       const result = await action(formData)
 
       if (result?.error) {
+        setErrorDetail(String(result.error || "Error"))
+        setShowErrorDialog(true)
         toast({
             variant: "destructive",
             title: "Error",
-            description: result.error
+            description: "Se produjo un error. Abre detalles para copiar el mensaje."
         })
       } else if (result?.success) {
         toast({
@@ -319,6 +323,40 @@ export function UserActions({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showErrorDialog} onOpenChange={setShowErrorDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Error</DialogTitle>
+            <DialogDescription>Usa el botón para copiar el mensaje.</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md border bg-muted/30 p-3 text-xs whitespace-pre-wrap break-words select-text">
+            {errorDetail || "Error"}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(errorDetail || "")
+                  toast({ title: "Copiado", description: "Mensaje copiado al portapapeles" })
+                } catch {
+                  toast({ title: "Error", description: "No se pudo copiar al portapapeles", variant: "destructive" })
+                }
+              }}
+              disabled={!errorDetail}
+              className="gap-2"
+            >
+              <Copy className="h-4 w-4" />
+              Copiar
+            </Button>
+            <Button type="button" onClick={() => setShowErrorDialog(false)}>
+              Cerrar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

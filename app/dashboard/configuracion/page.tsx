@@ -369,7 +369,8 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
   const createUserMsg = createUserMsgRaw && createUserMsgRaw !== "NEXT_REDIRECT" ? createUserMsgRaw : undefined
   const manageMsg = manageMsgRaw && manageMsgRaw !== "NEXT_REDIRECT" ? manageMsgRaw : undefined
   const planData = !isAllInmobiliarias && planIdNum ? getPlanData(planIdNum) : null
-  const limitUsers = Number(planData?.Usuarios || 0)
+  const limitUsersRaw = Number((planData as any)?.Usuarios)
+  const limitUsers = Number.isFinite(limitUsersRaw) && limitUsersRaw > 0 ? limitUsersRaw : 1000000
   const unlimited = !isAllInmobiliarias && limitUsers >= 1000000
   const canCreateAgents = !!inmobiliariaData && (unlimited || agentCount < limitUsers)
   const remainingUsers = !isAllInmobiliarias && unlimited ? 1000000 : Math.max(limitUsers - agentCount, 0)
@@ -696,7 +697,7 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                       <DialogHeader>
                         <DialogTitle>Nuevo Usuario</DialogTitle>
                         <DialogDescription>
-                          Invita a un nuevo usuario a tu equipo. Recibirá un correo para configurar su contraseña.
+                          Puedes invitar por email o crear el usuario directamente con contraseña (sin email).
                         </DialogDescription>
                       </DialogHeader>
                       <form action={createAgentAction} className="space-y-4 py-4">
@@ -713,9 +714,20 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                           <Label htmlFor="newPhone">Teléfono</Label>
                           <Input id="newPhone" name="newPhone" type="tel" placeholder="+34 600 000 000" />
                         </div>
+                        <div className="flex items-center gap-2">
+                          <input id="skipEmail" name="skipEmail" type="checkbox" className="h-4 w-4" />
+                          <Label htmlFor="skipEmail">Crear y activar sin email</Label>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="newPassword">Contraseña</Label>
+                          <Input id="newPassword" name="newPassword" type="password" placeholder="Contraseña temporal o definitiva" />
+                          <p className="text-xs text-muted-foreground">
+                            Si marcas “Crear y activar sin email”, debes indicar una contraseña.
+                          </p>
+                        </div>
                         <DialogFooter>
                           <Button type="submit" disabled={!canCreateAgents}>
-                            Enviar invitación
+                            Crear usuario
                           </Button>
                         </DialogFooter>
                       </form>

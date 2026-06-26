@@ -225,20 +225,19 @@ async function findProfileAndColumns(admin: any, email: string, idi: number) {
 }
 
 async function fetchPerfilesByIdiAnyCase(admin: any, idi: number) {
-    const selectFields = "usuario, Usuario, role, Role, is_admin, Is_admin, es_agente, Es_agente, activo, Activo, id, idp"
     const idiVariants = ["inmobiliaria", "Inmobiliaria"]
     for (const field of idiVariants) {
         try {
             const { data, error } = await admin
                 .from("Perfiles")
-                .select(selectFields)
+                .select("*")
                 .eq(field, idi)
                 .limit(5000)
             if (!error) return data || []
         } catch {}
     }
     try {
-        const { data, error } = await admin.from("Perfiles").select(selectFields).limit(5000)
+        const { data, error } = await admin.from("Perfiles").select("*").limit(5000)
         if (!error) {
             return (data || []).filter((p: any) => String(p?.inmobiliaria ?? p?.Inmobiliaria ?? "") === String(idi))
         }
@@ -251,17 +250,21 @@ function normalizeRole(value: any) {
 }
 
 function isPerfilActive(perfil: any) {
-    const v = perfil?.es_agente ?? perfil?.Es_agente ?? perfil?.activo ?? perfil?.Activo
-    if (typeof v === "boolean") return v !== false
-    if (v === null || v === undefined) return true
-    const s = String(v).trim().toLowerCase()
+    const hasLowerActivo = perfil && Object.prototype.hasOwnProperty.call(perfil, "activo")
+    const hasUpperActivo = perfil && Object.prototype.hasOwnProperty.call(perfil, "Activo")
+    const raw = hasLowerActivo || hasUpperActivo ? (perfil?.activo ?? perfil?.Activo) : (perfil?.es_agente ?? perfil?.Es_agente)
+    if (typeof raw === "boolean") return raw !== false
+    if (raw === null || raw === undefined) return true
+    const s = String(raw).trim().toLowerCase()
     if (s === "false" || s === "0" || s === "no") return false
     return true
 }
 
-function isLocalAdministrador(perfil: any) {
+function isAdministradorPerfil(perfil: any) {
     const roleStr = normalizeRole(perfil?.role ?? perfil?.Role)
-    return roleStr === "administrador" || roleStr === "admin"
+    const isSuperuser = perfil?.is_admin === true || perfil?.Is_admin === true || roleStr === "superuser" || roleStr === "superadmin"
+    const isLocalAdmin = roleStr === "administrador" || roleStr === "admin"
+    return isSuperuser || isLocalAdmin
 }
 
 export async function triggerVisitReminderAction() {
@@ -801,42 +804,93 @@ export async function createAgentAction(formData: FormData) {
     const email = String(formData.get("newEmail")).toLowerCase().trim()
     const name = String(formData.get("newName") || "").trim() || email.split('@')[0]
     const phone = String(formData.get("newPhone") || "").trim()
+    const password = String(formData.get("newPassword") || "").trim()
+    const skipEmail = String(formData.get("skipEmail") || "").toLowerCase() === "true" || String(formData.get("skipEmail") || "").toLowerCase() === "on"
+    const createWithPassword = skipEmail || !!password
 
     if (!email || !email.includes("@")) {
         redirect(`/dashboard/configuracion?createUser=error&msg=${encodeURIComponent("Email inválido")}`)
     }
 
     try {
-        // 1. Invite user via Supabase Auth
-        const siteUrl = getPublicAppBaseUrl() || "http://localhost:3000"
-        const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`
-        
         await assertSingleInmobiliariaPerEmail(admin, email, idi)
 
-        console.log(`[createAgentAction] Inviting ${email} to idi ${idi}`)
-
-        const { data: authData, error: authError } = await admin.auth.admin.inviteUserByEmail(email, {
-            redirectTo: redirectUrl
-        })
-
-        if (authError) {
-            console.error("Error inviting user:", authError)
-            const rawMsg = String((authError as any)?.message || "")
-            const status = (authError as any)?.status
-            const code = (authError as any)?.code
-
-            if (/Error sending invite email/i.test(rawMsg)) {
-                const detail = [code ? `code=${code}` : null, status ? `status=${status}` : null].filter(Boolean).join(" ")
-                throw new Error(
-                    `No se pudo enviar el email de invitación. Revisa la configuración de correo (SMTP) en Supabase Auth/GoTrue.${detail ? ` (${detail})` : ""}`
-                )
+        if (createWithPassword) {
+            if (!password) {
+                redirect(`/dashboard/configuracion?createUser=error&msg=${encodeURIComponent("Contraseña requerida para crear/activar sin email")}`)
             }
 
-            const detail = [rawMsg, code ? `code=${code}` : null, status ? `status=${status}` : null].filter(Boolean).join(" ")
-            throw new Error(detail || "Error al invitar usuario")
-        }
+            let authUserId: string | null = null
+            const { data: created, error: createErr } = await admin.auth.admin.createUser({
+                email,
+                password,
+                email_confirm: true,
+                user_metadata: { name },
+            } as any)
 
-        console.log("[createAgentAction] Invite sent successfully")
+            if (createErr) {
+                const rawMsg = String((createErr as any)?.message || "")
+                const msgLower = rawMsg.toLowerCase()
+                const looksLikeExists =
+                    msgLower.includes("already") ||
+                    msgLower.includes("exists") ||
+                    msgLower.includes("registered") ||
+                    msgLower.includes("duplicate") ||
+                    msgLower.includes("user") && msgLower.includes("registered")
+
+                if (!looksLikeExists) {
+                    throw new Error(rawMsg || "Error creando usuario")
+                }
+
+                const { data: listData } = await admin.auth.admin.listUsers({ perPage: 1000 } as any)
+                const users = (listData as any)?.users || []
+                const existing = users.find((u: any) => String(u?.email || "").toLowerCase() === email.toLowerCase())
+                if (!existing?.id) {
+                    throw new Error("El usuario ya existe en Auth pero no se pudo recuperar para actualizar contraseña")
+                }
+                authUserId = String(existing.id)
+                const { error: updErr } = await admin.auth.admin.updateUserById(authUserId, {
+                    password,
+                    email_confirm: true,
+                    user_metadata: { name },
+                } as any)
+                if (updErr) {
+                    throw new Error(String((updErr as any)?.message || "No se pudo actualizar la contraseña del usuario existente"))
+                }
+            } else {
+                authUserId = (created as any)?.user?.id ? String((created as any).user.id) : null
+            }
+
+            console.log(`[createAgentAction] User created/updated without email. Auth user id=${authUserId || "N/A"}`)
+        } else {
+            const siteUrl = getPublicAppBaseUrl() || "http://localhost:3000"
+            const redirectUrl = `${siteUrl}/auth/callback?next=${encodeURIComponent("/update-password")}`
+
+            console.log(`[createAgentAction] Inviting ${email} to idi ${idi}`)
+
+            const { error: authError } = await admin.auth.admin.inviteUserByEmail(email, {
+                redirectTo: redirectUrl
+            })
+
+            if (authError) {
+                console.error("Error inviting user:", authError)
+                const rawMsg = String((authError as any)?.message || "")
+                const status = (authError as any)?.status
+                const code = (authError as any)?.code
+
+                if (/Error sending invite email/i.test(rawMsg)) {
+                    const detail = [code ? `code=${code}` : null, status ? `status=${status}` : null].filter(Boolean).join(" ")
+                    throw new Error(
+                        `No se pudo enviar el email de invitación. Revisa la configuración de correo (SMTP) en Supabase Auth/GoTrue.${detail ? ` (${detail})` : ""}`
+                    )
+                }
+
+                const detail = [rawMsg, code ? `code=${code}` : null, status ? `status=${status}` : null].filter(Boolean).join(" ")
+                throw new Error(detail || "Error al invitar usuario")
+            }
+
+            console.log("[createAgentAction] Invite sent successfully")
+        }
 
         // 2. Create profile entry if not exists
         const found = await findProfileAndColumns(admin, email, idi)
@@ -898,7 +952,11 @@ export async function createAgentAction(formData: FormData) {
     }
 
     revalidatePath("/dashboard/configuracion")
-    redirect(`/dashboard/configuracion?createUser=success&msg=${encodeURIComponent("Invitación enviada correctamente")}`)
+    redirect(
+        `/dashboard/configuracion?createUser=success&msg=${encodeURIComponent(
+            createWithPassword ? "Usuario creado y activado (sin email)" : "Invitación enviada correctamente"
+        )}`
+    )
 }
 
 export async function deleteAgentAction(formData: FormData) {
@@ -910,13 +968,13 @@ export async function deleteAgentAction(formData: FormData) {
         const found = await findProfileAndColumns(admin, email, idi)
         if (found) {
             const currentRole = normalizeRole(found.profile?.role ?? found.profile?.Role)
-            const currentIsLocalAdmin = currentRole === "administrador" || currentRole === "admin"
-            if (currentIsLocalAdmin && isPerfilActive(found.profile)) {
+            const currentCanManage = isAdministradorPerfil(found.profile)
+            if (currentCanManage && isPerfilActive(found.profile)) {
                 const perfiles = await fetchPerfilesByIdiAnyCase(admin, idi)
                 const remainingAdmins = perfiles.filter((p: any) => {
                     const pEmail = String(p?.usuario ?? p?.Usuario ?? "").trim().toLowerCase()
                     if (pEmail && pEmail === String(email).trim().toLowerCase()) return false
-                    return isPerfilActive(p) && isLocalAdministrador(p)
+                    return isPerfilActive(p) && isAdministradorPerfil(p)
                 })
                 if (remainingAdmins.length === 0) {
                     return { error: "No se puede eliminar el último administrador de esta inmobiliaria. Crea otro administrador antes." }
@@ -968,24 +1026,44 @@ export async function toggleActiveAction(formData: FormData) {
     const found = await findProfileAndColumns(admin, email, idi)
     if (!found) return
 
-    // Determine correct active column (es_agente) and id field
-    const activeCol = found.columns.u === 'Usuario' ? 'Es_agente' : 'es_agente'
+    const activeCol = (() => {
+        if (found.profile && Object.prototype.hasOwnProperty.call(found.profile, "activo")) return "activo"
+        if (found.profile && Object.prototype.hasOwnProperty.call(found.profile, "Activo")) return "Activo"
+        return found.columns.u === "Usuario" ? "Es_agente" : "es_agente"
+    })()
     const idField = found.profile.id ? "id" : "idp"
     
     const currentActive = found.profile[activeCol] !== false // Default true if null/undefined
     const newActive = !currentActive
 
     const currentRole = normalizeRole(found.profile?.role ?? found.profile?.Role)
-    const currentIsLocalAdmin = currentRole === "administrador" || currentRole === "admin"
-    if (currentIsLocalAdmin && currentActive === true && newActive === false) {
+    const currentCanManage = isAdministradorPerfil(found.profile)
+    if (currentCanManage && currentActive === true && newActive === false) {
         const perfiles = await fetchPerfilesByIdiAnyCase(admin, idi)
         const remainingAdmins = perfiles.filter((p: any) => {
             const pEmail = String(p?.usuario ?? p?.Usuario ?? "").trim().toLowerCase()
             if (pEmail && pEmail === String(email).trim().toLowerCase()) return false
-            return isPerfilActive(p) && isLocalAdministrador(p)
+            return isPerfilActive(p) && isAdministradorPerfil(p)
         })
         if (remainingAdmins.length === 0) {
-            return { error: "No se puede desactivar el último administrador de esta inmobiliaria. Crea otro administrador antes." }
+            const debugAdmins = perfiles
+                .filter((p: any) => isAdministradorPerfil(p))
+                .slice(0, 8)
+                .map((p: any) => {
+                    const pEmail = String(p?.usuario ?? p?.Usuario ?? "").trim().toLowerCase()
+                    const roleStr = normalizeRole(p?.role ?? p?.Role)
+                    const isSuperuser = p?.is_admin === true || p?.Is_admin === true || roleStr === "superuser" || roleStr === "superadmin"
+                    const hasActivo = Object.prototype.hasOwnProperty.call(p, "activo") || Object.prototype.hasOwnProperty.call(p, "Activo")
+                    const activeVal = hasActivo ? (p?.activo ?? p?.Activo) : (p?.es_agente ?? p?.Es_agente)
+                    const activeComputed = isPerfilActive(p)
+                    return `${pEmail || "?"}{role=${roleStr || "?"},is_admin=${isSuperuser ? "1" : "0"},raw_active=${String(activeVal)},active=${activeComputed ? "1" : "0"}}`
+                })
+                .join(" | ")
+            return {
+                error:
+                    "No se puede desactivar el último administrador de esta inmobiliaria. Crea otro administrador antes." +
+                    ` (Debug idi=${idi} email=${String(email).trim().toLowerCase()} activeCol=${activeCol} admins=${debugAdmins || "none"})`,
+            }
         }
     }
 
@@ -1038,7 +1116,7 @@ export async function toggleRoleAction(formData: FormData) {
         const remainingAdmins = perfiles.filter((p: any) => {
             const pEmail = String(p?.usuario ?? p?.Usuario ?? "").trim().toLowerCase()
             if (pEmail && pEmail === String(email).trim().toLowerCase()) return false
-            return isPerfilActive(p) && isLocalAdministrador(p)
+            return isPerfilActive(p) && isAdministradorPerfil(p)
         })
         if (remainingAdmins.length === 0) {
             return { error: "No se puede quitar el rol al último administrador de esta inmobiliaria. Crea otro administrador antes." }
