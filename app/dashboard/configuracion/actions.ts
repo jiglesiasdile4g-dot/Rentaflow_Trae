@@ -740,6 +740,7 @@ export async function updateInmobiliariaAction(formData: FormData) {
     const colorSecundario = (formData.get("color_secundario") ?? "").toString().trim()
     const firmaHtml = (formData.get("firma_html") ?? "").toString().trim()
     const whatsappActivo = formData.get("whatsapp_activo") != null
+    const primerMensaje = String(formData.get("primer_mensaje") || "").trim().toLowerCase() === "html" ? "html" : "texto"
     const inmobiliariaAct = (formData.get("inmobiliaria_act") ?? "").toString().trim()
 
     const updates: Record<string, any> = {}
@@ -757,6 +758,7 @@ export async function updateInmobiliariaAction(formData: FormData) {
     if (firmaHtml) updates.firma_html = firmaHtml
     if (inmobiliariaAct) updates.inmobiliaria_act = inmobiliariaAct
     updates.whatsapp_activo = whatsappActivo
+    updates.primer_mail = primerMensaje
 
     const { error } = await admin.from("Inmobiliarias").update(updates).eq("idi", idi)
     if (error) {

@@ -37,7 +37,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Switch } from "@/components/ui/switch"
 import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "@/hooks/use-toast"
-import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink, Copy, History as HistoryIcon, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Target, CheckCircle, Settings, Loader2, MoreVertical, Calendar, Plus, Eye, Edit, ShoppingCart, BarChart3, X, Archive, UserCheck, Lock, LockOpen, AlertCircle, Trash2, Info, RefreshCw, FileText, Image as ImageIcon, File, ExternalLink, Copy, History as HistoryIcon, MessageSquare, ChevronLeft, ChevronRight, Zap } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { loadStripe, type Stripe as StripeJS } from "@stripe/stripe-js"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
@@ -152,6 +152,42 @@ const DEFAULT_FAQ_QUESTIONS = [
   "¿Hay vecinos ruidosos?",
 ]
 
+function isReferenciaAuto(anuncioOrRef: AnuncioCard | { id?: string | number; ida?: string | number; referencia?: string } | string | null | undefined, idaFallback?: string | number | null) {
+  if (anuncioOrRef == null) return false
+  let ref: string | null = null
+  let ida: string | number | null = null
+  if (typeof anuncioOrRef === "string") {
+    ref = anuncioOrRef
+    ida = idaFallback ?? null
+  } else {
+    ref = anuncioOrRef.referencia ?? null
+    ida = anuncioOrRef.ida ?? anuncioOrRef.id ?? idaFallback ?? null
+  }
+  if (!ref) return false
+  const trimmed = ref.trim()
+  if (!/^REF-\d+$/i.test(trimmed)) return false
+  const idNum = trimmed.replace(/^REF-/i, "")
+  if (ida != null && String(ida) === idNum) return true
+  return false
+}
+
+function REFERENCIA_AUTO_WARNING_JSX() {
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-800 mt-2">
+      <div className="flex gap-1.5">
+        <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+        <div>
+          <p className="font-semibold">Referencia generada automáticamente</p>
+          <p className="mt-0.5">
+            Este campo debe coincidir exactamente con la &quot;Referencia Interna&quot; de Idealista o Fotocasa para
+            que los leads se listen correctamente y evitar conflictos.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AnunciosPage() {
   const [user, setUser] = useState<any>(null)
   const [anunciosCards, setAnunciosCards] = useState<(AnuncioCard & { localMetricsPeriod?: "hoy" | "esteMes" | "ultimoMes" | "periodoActual" })[]>([])
@@ -207,6 +243,14 @@ export default function AnunciosPage() {
       activacion: "Pausado",
     },
   })
+  const [creationUrlAnuncio, setCreationUrlAnuncio] = useState("")
+  const [creationSendingWebhook, setCreationSendingWebhook] = useState(false)
+  const [creationUrlMode, setCreationUrlMode] = useState<"url" | "manual">("url")
+  const [creationN8nMode, setCreationN8nMode] = useState<"test" | "prod">(() => {
+    const envMode = (process.env.NEXT_PUBLIC_N8N_MODE || "prod").toLowerCase()
+    return envMode === "test" ? "test" : "prod"
+  })
+  const [isSuperuser, setIsSuperuser] = useState(false)
   const [filterPortal, setFilterPortal] = useState<string>("all")
   const [filterEstado, setFilterEstado] = useState<string>("all")
   const [metricsPeriod, setMetricsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual">("hoy")
@@ -2134,6 +2178,7 @@ export default function AnunciosPage() {
         const { data: perfil } = await qProfile.single()
 
         isAdmin = perfil?.is_admin === true
+        setIsSuperuser(isAdmin)
         console.log("[v0] User is admin:", isAdmin)
       }
 
@@ -2270,6 +2315,10 @@ export default function AnunciosPage() {
 
           if (signal?.aborted) return null
 
+          const precioRaw =
+            (anuncio as any)?.Precio ??
+            (anuncio as any)?.precio ??
+            0
           const leadsDesdeCorte = allLeads.filter((lead) => new Date(lead.created_at) >= cutoffDate)
           const leadsMes = leadsDesdeCorte.length
           const metrics = calculateAnuncioMetrics(
@@ -2279,7 +2328,7 @@ export default function AnunciosPage() {
               referencia,
               nombre: String(anuncio.Nombre ?? (anuncio as any).nombre ?? "").trim(),
               direccion: anuncio.Direccion || "",
-              precio: anuncio.Precio || 0,
+              precio: precioRaw,
               portal: anuncio.Portal || "Sin especificar",
               descripcion: anuncio.Descripcion || "",
               activacion: anuncio.Activacion || "Inactivo",
@@ -2362,7 +2411,7 @@ export default function AnunciosPage() {
           nombre: String(anuncio.Nombre ?? (anuncio as any).nombre ?? "").trim(),
           referencia,
           direccion: anuncio.Direccion || "",
-          precio: anuncio.Precio || 0,
+          precio: precioRaw,
           portal: anuncio.Portal || "Sin especificar",
           descripcion: anuncio.Descripcion || "",
           activacion: anuncio.Activacion || "Inactivo",
@@ -2944,17 +2993,29 @@ export default function AnunciosPage() {
             : null
         setEditAdjuntosSelected(Array.isArray(adj) ? (adj as any[]).map((v) => String(v)) : null)
       }
+      const getCol = (obj: any, names: string[]) => {
+        if (!obj || typeof obj !== "object") return undefined
+        const keys = Object.keys(obj)
+        for (const n of names) {
+          const low = n.toLowerCase()
+          const hit = keys.find((k) => k === n || k.toLowerCase() === low)
+          if (hit != null) return obj[hit]
+        }
+        return undefined
+      }
+      const safeStr = (v: any) => (v == null ? "" : String(v))
+
       setEditFormData({
-        codPortal: anuncioData.CodPortal || "",
-        nombre: anuncioData.Nombre || "",
-        referencia: anuncioData.Referencia || "",
-        direccion: anuncioData.Direccion || "",
-        descripcion: anuncioData.Descripcion || "",
-        precio: (anuncioData.Precio || 0).toString(),
-        portal: anuncioData.Portal || "",
-        activacion: anuncioData.Activacion || "Inactivo",
-        duracion_visita: (anuncioData.duracion_visita || 20).toString(),
-        tiempo_entre_visitas: (anuncioData.tiempo_entre_visitas || 5).toString(),
+        codPortal: safeStr(getCol(anuncioData, ["CodPortal", "codportal"]) ?? getCol(anuncio, ["CodPortal", "codportal"])),
+        nombre: safeStr(getCol(anuncioData, ["Nombre", "nombre"]) ?? getCol(anuncio, ["Nombre", "nombre"])),
+        referencia: safeStr(getCol(anuncioData, ["Referencia", "referencia"]) ?? getCol(anuncio, ["Referencia", "referencia"])),
+        direccion: safeStr(getCol(anuncioData, ["Direccion", "direccion"]) ?? getCol(anuncio, ["Direccion", "direccion"])),
+        descripcion: safeStr(getCol(anuncioData, ["Descripcion", "descripcion"]) ?? getCol(anuncio, ["Descripcion", "descripcion"])),
+        precio: safeStr(getCol(anuncioData, ["Precio", "precio"]) ?? getCol(anuncio, ["Precio", "precio"])),
+        portal: safeStr(getCol(anuncioData, ["Portal", "portal"]) ?? getCol(anuncio, ["Portal", "portal"])),
+        activacion: safeStr(getCol(anuncioData, ["Activacion", "activacion"]) ?? getCol(anuncio, ["Activacion", "activacion"])) || "Inactivo",
+        duracion_visita: safeStr(getCol(anuncioData, ["duracion_visita"]) ?? getCol(anuncio, ["duracion_visita"]) ?? "20"),
+        tiempo_entre_visitas: safeStr(getCol(anuncioData, ["tiempo_entre_visitas"]) ?? getCol(anuncio, ["tiempo_entre_visitas"]) ?? "5"),
       })
 
       console.log("[v0] Edit form preloaded with database data")
@@ -2975,15 +3036,16 @@ export default function AnunciosPage() {
     console.log("[v0] Form data to save:", editFormData)
 
     try {
-      const updateData = {
-        CodPortal: editFormData.codPortal,
-        Nombre: editFormData.nombre,
-        Referencia: editFormData.referencia,
-        Direccion: editFormData.direccion,
-        Descripcion: editFormData.descripcion,
-        Precio: Number.parseFloat(editFormData.precio) || 0,
-        Portal: editFormData.portal,
-        Activacion: editFormData.activacion,
+      const rawPrecio = editFormData.precio ?? ""
+      const updateData: any = {
+        ["CodPortal"]: editFormData.codPortal,
+        ["Nombre"]: editFormData.nombre,
+        ["Referencia"]: editFormData.referencia,
+        ["Direccion"]: editFormData.direccion,
+        ["Descripcion"]: editFormData.descripcion,
+        ["Precio"]: rawPrecio,
+        ["Portal"]: editFormData.portal,
+        ["Activacion"]: editFormData.activacion,
         duracion_visita: Number.parseInt(editFormData.duracion_visita || "20") || 20,
         tiempo_entre_visitas: Number.parseInt(editFormData.tiempo_entre_visitas || "5") || 5,
       }
@@ -2992,10 +3054,39 @@ export default function AnunciosPage() {
 
       if (error) {
         const msg = String(error?.message || "")
-        if (msg.toLowerCase().includes("nombre") || msg.toLowerCase().includes("column") || error.code === "PGRST204") {
-          const retryData: any = { ...updateData }
-          delete retryData.Nombre
-          retryData.nombre = editFormData.nombre
+        const code = String(error?.code || "")
+        const isColumnError =
+          msg.toLowerCase().includes("column") ||
+          code === "PGRST204" ||
+          msg.toLowerCase().includes("nombre") ||
+          msg.toLowerCase().includes("precio") ||
+          msg.toLowerCase().includes("portal") ||
+          msg.toLowerCase().includes("referencia") ||
+          msg.toLowerCase().includes("direccion") ||
+          msg.toLowerCase().includes("descripcion") ||
+          msg.toLowerCase().includes("activacion") ||
+          msg.toLowerCase().includes("codportal") ||
+          msg.toLowerCase().includes("duracion") ||
+          msg.toLowerCase().includes("tiempo")
+
+        if (isColumnError) {
+          const retryData: any = {}
+          const map: any = {
+            CodPortal: "codportal",
+            Nombre: "nombre",
+            Referencia: "referencia",
+            Direccion: "direccion",
+            Descripcion: "descripcion",
+            Precio: "precio",
+            Portal: "portal",
+            Activacion: "activacion",
+            duracion_visita: "duracion_visita",
+            tiempo_entre_visitas: "tiempo_entre_visitas",
+          }
+          for (const k of Object.keys(updateData)) {
+            const targetKey = map[k] || k
+            retryData[targetKey] = updateData[k]
+          }
           const retry = await supabase.from("Anuncios").update(retryData).eq("ida", editingAnuncio.id)
           error = retry.error
         }
@@ -3004,18 +3095,29 @@ export default function AnunciosPage() {
       if (error) {
         console.log("[v0] Error saving changes:", error)
         let fallbackUpdate: any = {
-          Referencia: updateData.Referencia,
-          Nombre: updateData.Nombre,
-          Direccion: updateData.Direccion,
-          Descripcion: updateData.Descripcion,
-          Precio: updateData.Precio,
-          Portal: updateData.Portal,
-          Activacion: updateData.Activacion,
+          ["Referencia"]: updateData["Referencia"],
+          ["Nombre"]: updateData["Nombre"],
+          ["Direccion"]: updateData["Direccion"],
+          ["Descripcion"]: updateData["Descripcion"],
+          ["Precio"]: updateData["Precio"],
+          ["Portal"]: updateData["Portal"],
+          ["Activacion"]: updateData["Activacion"],
         }
         const fallbackMsg = String(error?.message || "")
-        if (fallbackMsg.toLowerCase().includes("nombre") || fallbackMsg.toLowerCase().includes("column") || error.code === "PGRST204") {
-          delete fallbackUpdate.Nombre
-          fallbackUpdate.nombre = editFormData.nombre
+        const fallbackCode = String(error?.code || "")
+        const isFallbackColumnError =
+          fallbackMsg.toLowerCase().includes("column") ||
+          fallbackCode === "PGRST204" ||
+          fallbackMsg.toLowerCase().includes("nombre") ||
+          fallbackMsg.toLowerCase().includes("precio")
+
+        if (isFallbackColumnError) {
+          const fixed: any = {}
+          for (const k of Object.keys(fallbackUpdate)) {
+            const lower = k.toLowerCase()
+            fixed[lower] = fallbackUpdate[k]
+          }
+          fallbackUpdate = fixed
         }
         const { error: fallbackError } = await supabase
           .from("Anuncios")
@@ -3027,7 +3129,7 @@ export default function AnunciosPage() {
           return
         }
 
-        
+
 
         console.log("[v0] Changes saved with fallback")
         toast({ title: "Éxito", description: "Anuncio actualizado correctamente" })
@@ -3309,6 +3411,92 @@ export default function AnunciosPage() {
     }))
   }
 
+  const handleEnviarUrlAnuncio = async () => {
+    if (!creationUrlAnuncio.trim()) {
+      toast({
+        title: "Error",
+        description: "Introduce la URL del anuncio",
+        variant: "destructive",
+      })
+      return
+    }
+    if (!inmobiliariaId) {
+      toast({
+        title: "Error",
+        description: "No se pudo identificar tu inmobiliaria",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const webhookBase = process.env.NEXT_PUBLIC_N8N_BASE_URL
+      ? process.env.NEXT_PUBLIC_N8N_BASE_URL.replace(/\/$/, "")
+      : "https://acesalquiler-n8n.ibdvf1.easypanel.host"
+    const envMode = (process.env.NEXT_PUBLIC_N8N_MODE || "prod").toLowerCase()
+    const rawN8nMode: "test" | "prod" = creationN8nMode === "test" ? "test" : envMode === "test" ? "test" : "prod"
+    const finalN8nMode: "test" | "prod" = isSuperuser ? rawN8nMode : "prod"
+    const pathMode = finalN8nMode === "test" ? "webhook-test" : "webhook"
+    const webhookUrl = `${webhookBase}/${pathMode}/datos_anuncio`
+
+    setCreationSendingWebhook(true)
+    try {
+      const res = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: creationUrlAnuncio.trim(),
+          idi: inmobiliariaId,
+          inmobiliaria: inmobiliariaNombre || null,
+          usuarioEmail: user?.email || null,
+          usuarioId: user?.id || null,
+        }),
+      })
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "")
+        throw new Error(`${res.status} ${res.statusText} ${txt}`.trim())
+      }
+
+      toast({
+        title: "URL enviada",
+        description: "Se ha enviado la URL al proceso de importación. Los datos se cargarán en breve.",
+      })
+
+      setShowCreationModal(false)
+      setCreationUrlAnuncio("")
+      setCreationFilesList([])
+      setCreationAdjuntosSelected(null)
+      setCreationStep({
+        step: 1,
+        data: {
+          codPortal: "",
+          nombre: "",
+          referencia: "",
+          direccion: "",
+          portal: "",
+          descripcion: "",
+          precio: "",
+          activacion: "Pausado",
+        },
+      })
+      setCreationUrlMode("url")
+      setCreationN8nMode(() => {
+        if (!isSuperuser) return "prod"
+        const envMode = (process.env.NEXT_PUBLIC_N8N_MODE || "prod").toLowerCase()
+        return envMode === "test" ? "test" : "prod"
+      })
+    } catch (err: any) {
+      console.error("[v0] Error enviando URL a webhook de importación:", err)
+      toast({
+        title: "Error al enviar URL",
+        description: err?.message || "No se pudo conectar con el proceso de importación",
+        variant: "destructive",
+      })
+    } finally {
+      setCreationSendingWebhook(false)
+    }
+  }
+
   const handleCrearAnuncio = async () => {
     if (!inmobiliariaId) {
       toast({
@@ -3392,14 +3580,28 @@ export default function AnunciosPage() {
 
       console.log("[v0] Anuncio created successfully with agency IDI:", data)
 
+      const createdId = Array.isArray(data) && data.length > 0 ? (data[0] as any)?.ida : undefined
+      const insertedRow: any = Array.isArray(data) && data.length > 0 ? data[0] : null
+      const finalReferencia: string =
+        (insertedRow?.Referencia ?? insertedRow?.referencia ?? creationStep.data.referencia ?? "") as string
+
       toast({
         title: "Éxito",
-        description: `${creationStep.data.referencia} se ha creado correctamente`,
+        description: `${finalReferencia || "Anuncio"} se ha creado correctamente`,
       })
 
-      const createdId = Array.isArray(data) && data.length > 0 ? (data[0] as any)?.ida : undefined
+      if (createdId != null && isReferenciaAuto(finalReferencia, createdId)) {
+        toast({
+          title: "Referencia automática",
+          description:
+            "La referencia se ha generado automáticamente (REF-IDA). Recuerda actualizarla para que coincida con la Referencia Interna del portal y los leads se asignen bien.",
+        })
+      }
+
       const selectedAdjuntos = creationAdjuntosSelected ?? fileNamesFromNextcloudFiles(creationFilesList)
-      if (createdId != null) {
+      if (createdId != null && finalReferencia) {
+        await persistAdjuntosSelection(finalReferencia, selectedAdjuntos, createdId)
+      } else if (createdId != null) {
         await persistAdjuntosSelection(creationStep.data.referencia, selectedAdjuntos, createdId)
       }
 
@@ -3561,6 +3763,16 @@ export default function AnunciosPage() {
   useEffect(() => {
     whatsappActivoRef.current = selectedAnuncioForStats?.whatsapp_activo
   }, [selectedAnuncioForStats?.whatsapp_activo])
+
+  // Hardening: solo superusuarios pueden usar entorno de pruebas
+  useEffect(() => {
+    if (!isSuperuser) {
+      setCreationN8nMode(() => {
+        const envMode = (process.env.NEXT_PUBLIC_N8N_MODE || "prod").toLowerCase()
+        return envMode === "test" ? "prod" : "prod"
+      })
+    }
+  }, [isSuperuser])
 
   // Sincronizar selectedAnuncioForStats con anunciosCards cuando cambie la lista
   useEffect(() => {
@@ -4620,7 +4832,23 @@ export default function AnunciosPage() {
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
                               <div className="space-y-0.5">
-                                {displayReferencia && <p className="text-[11px] text-muted-foreground truncate">{displayReferencia}</p>}
+                                {displayReferencia && (
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-[11px] text-muted-foreground truncate">{displayReferencia}</p>
+                                    {isReferenciaAuto(anuncio) && (
+                                      <span className="inline-flex items-center gap-1 shrink-0 px-1.5 py-0.5 text-[10px] font-semibold rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                                        <Zap className="h-2.5 w-2.5" />
+                                        Auto
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                {!displayReferencia && isReferenciaAuto(anuncio) && (
+                                  <span className="inline-flex items-center gap-1 self-start px-1.5 py-0.5 text-[10px] font-semibold rounded-md bg-amber-100 text-amber-800 border border-amber-200 w-max">
+                                    <Zap className="h-2.5 w-2.5" />
+                                    Referencia Auto
+                                  </span>
+                                )}
                                 <h3 className="font-semibold text-base truncate">{displayName}</h3>
                                 <UITooltip>
                                   <TooltipTrigger asChild>
@@ -5086,350 +5314,501 @@ export default function AnunciosPage() {
           </div>
         )}
 
-        <Dialog open={showCreationModal} onOpenChange={setShowCreationModal}>
-          <DialogContent className="w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto">
+        <Dialog
+          open={showCreationModal}
+          onOpenChange={(open) => {
+            setShowCreationModal(open)
+            if (!open) {
+              setCreationUrlAnuncio("")
+              setCreationUrlMode("url")
+              setCreationN8nMode(() => {
+                if (!isSuperuser) return "prod"
+                const envMode = (process.env.NEXT_PUBLIC_N8N_MODE || "prod").toLowerCase()
+                return envMode === "test" ? "test" : "prod"
+              })
+              setCreationStep({
+                step: 1,
+                data: {
+                  codPortal: "",
+                  nombre: "",
+                  referencia: "",
+                  direccion: "",
+                  portal: "",
+                  descripcion: "",
+                  precio: "",
+                  activacion: "Pausado",
+                },
+              })
+              setCreationFilesList([])
+              setCreationAdjuntosSelected(null)
+            }
+          }}
+        >
+          <DialogContent
+            className={
+              creationUrlMode === "url"
+                ? "max-w-lg overflow-y-auto"
+                : "w-[95vw] sm:w-[92vw] sm:max-w-none h-[92vh] overflow-y-auto"
+            }
+          >
             <DialogHeader>
-              <DialogTitle>Crear Anuncio - Paso {creationStep.step} de 3</DialogTitle>
+              <DialogTitle>
+                {creationUrlMode === "url"
+                  ? "Crear Anuncio desde URL del portal"
+                  : `Crear Anuncio - Paso ${creationStep.step} de 3`}
+              </DialogTitle>
               <DialogDescription>
-                Complete los datos del anuncio en 3 pasos para publicarlo en el portal seleccionado.
+                {creationUrlMode === "url"
+                  ? "Introduce la URL del anuncio publicado en el portal. Se procesará automáticamente para extraer los datos y guardarlos en base de datos."
+                  : "Modo manual: completa los datos del anuncio en 3 pasos para publicarlo en el portal seleccionado."}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4">
-              {/* Progress indicator */}
-              <div className="flex items-center gap-2">
-                {[1, 2, 3].map((step) => (
-                  <div
-                    key={step}
-                    className={`flex-1 h-2 rounded-full ${step <= creationStep.step ? "bg-primary" : "bg-muted"}`}
+            {creationUrlMode === "url" ? (
+              <div className="space-y-5 pt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="creation-url">URL del anuncio</Label>
+                  <Input
+                    id="creation-url"
+                    type="url"
+                    placeholder="https://www.idealista.com/inmueble/... o https://www.fotocasa.es/..."
+                    value={creationUrlAnuncio}
+                    onChange={(e) => setCreationUrlAnuncio(e.target.value)}
                   />
-                ))}
-              </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Idealista, Fotocasa, u otros portales soportados.
+                  </p>
+                </div>
 
-              {creationStep.step === 1 && (
-                <div className="space-y-4">
-                  <h3 className="font-semibold">Datos básicos</h3>
-                  <div className="grid gap-4">
-                    <div>
-                      <Label htmlFor="titulo">Título</Label>
-                      <Input
-                        id="titulo"
-                        value={creationStep.data.referencia}
-                        onChange={(e) =>
-                          setCreationStep((prev) => ({
-                            ...prev,
-                            data: { ...prev.data, referencia: e.target.value },
-                          }))
-                        }
-                        placeholder="Referencia del anuncio"
-                      />
-                      <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-800 mt-2">
-                        <div className="flex gap-1.5">
-                          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                          <div>
-                            <p className="font-semibold">Campo crítico:</p>
-                            <p className="mt-0.5">
-                              Este campo debe coincidir exactamente con la &quot;Referencia Interna&quot; de Idealista o Fotocasa para
-                              que los leads se listen correctamente y evitar conflictos.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
+                {isSuperuser && (
+                  <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-medium">Entorno de pruebas</span>
+                      <span className="text-muted-foreground">
+                        (usa {creationN8nMode === "test" ? "webhook-test" : "webhook"})
+                      </span>
                     </div>
-                    <div>
-                      <Label htmlFor="codPortal">Código del anuncio</Label>
-                      <Input
-                        id="codPortal"
-                        value={creationStep.data.codPortal}
-                        onChange={(e) =>
-                          setCreationStep((prev) => ({
-                            ...prev,
-                            data: { ...prev.data, codPortal: e.target.value },
-                          }))
-                        }
-                        placeholder="Código del anuncio en el portal"
-                      />
-                      <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-800 mt-2">
-                        <div className="flex gap-1.5">
-                          <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                          <div>
-                            <p className="font-semibold">Campo crítico:</p>
-                            <p className="mt-0.5">
-                              Este campo debe coincidir exactamente con el "número de anuncio" de Idealista o Fotocasa para
-                              que los leads se listen correctamente y evitar conflictos.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor="nombre">Nombre</Label>
-                        <UITooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex items-center text-muted-foreground">
-                              <Info className="h-4 w-4" />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Nombre descriptivo del anuncio.</p>
-                          </TooltipContent>
-                        </UITooltip>
-                      </div>
-                      <Input
-                        id="nombre"
-                        value={creationStep.data.nombre}
-                        onChange={(e) =>
-                          setCreationStep((prev) => ({
-                            ...prev,
-                            data: { ...prev.data, nombre: e.target.value },
-                          }))
-                        }
-                        placeholder="Nombre descriptivo"
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className={creationN8nMode === "test" ? "text-amber-600" : "text-emerald-600"}>
+                        {creationN8nMode === "test" ? "Test" : "Producción"}
+                      </span>
+                      <Switch
+                        checked={creationN8nMode === "test"}
+                        onCheckedChange={(v) => setCreationN8nMode(v ? "test" : "prod")}
+                        aria-label="Cambiar a entorno pruebas"
                       />
                     </div>
+                  </div>
+                )}
+
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-xs text-blue-800">
+                  <div className="flex gap-1.5">
+                    <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                     <div>
-                      <Label htmlFor="direccion">Dirección</Label>
-                      <Input
-                        id="direccion"
-                        value={creationStep.data.direccion}
-                        onChange={(e) =>
-                          setCreationStep((prev) => ({
-                            ...prev,
-                            data: { ...prev.data, direccion: e.target.value },
-                          }))
-                        }
-                        placeholder="Dirección completa"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="portal">Portal</Label>
-                      <Select
-                        value={creationStep.data.portal}
-                        onValueChange={(value) =>
-                          setCreationStep((prev) => ({
-                            ...prev,
-                            data: { ...prev.data, portal: value },
-                          }))
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Seleccionar portal" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {portalesList.length === 0 ? (
-                            <SelectItem value="__no_portales__" disabled>
-                              {portalesLoading ? "Cargando..." : "Sin portales"}
-                            </SelectItem>
-                          ) : (
-                            portalesList.map((portal) => (
-                              <SelectItem key={String(portal.id ?? portal.nombre)} value={portal.nombre}>
-                                {portal.nombre}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
+                      <p className="font-semibold">Cómo funciona:</p>
+                      <ul className="list-disc list-inside mt-0.5 space-y-0.5">
+                        <li>Se extraen automáticamente los datos del anuncio (referencia, precio, dirección, fotos, etc.)</li>
+                        <li>Se guarda el anuncio en la base de datos como <span className="font-medium">Pausado</span></li>
+                        <li>Podrás revisarlo y activarlo desde la lista de anuncios</li>
+                      </ul>
                     </div>
                   </div>
                 </div>
-              )}
 
-              {creationStep.step === 2 && (
-                <div className="space-y-4">
-                  <h3 className="font-semibold">Detalles completos</h3>
-                  <div className="grid gap-4">
-                    <div>
-                      <Label htmlFor="descripcion">Descripción</Label>
-                      <Textarea
-                        id="descripcion"
-                        value={creationStep.data.descripcion}
-                        onChange={(e) =>
-                          setCreationStep((prev) => ({
-                            ...prev,
-                            data: { ...prev.data, descripcion: e.target.value },
-                          }))
-                        }
-                        placeholder="Descripción del inmueble"
+                <div className="flex justify-between items-center pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCreationUrlMode("manual")}
+                  >
+                    <Settings className="h-4 w-4 mr-2" />
+                    Modo manual
+                  </Button>
+
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowCreationModal(false)
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={handleEnviarUrlAnuncio}
+                      disabled={creationSendingWebhook || !creationUrlAnuncio.trim()}
+                    >
+                      {creationSendingWebhook && (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      )}
+                      {creationSendingWebhook ? "Enviando..." : "Importar desde URL"}
+                      <ExternalLink className="h-4 w-4 ml-2" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCreationUrlMode("url")}
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" />
+                    Volver a modo URL
+                  </Button>
+
+                  <div className="flex items-center gap-2">
+                    {[1, 2, 3].map((step) => (
+                      <div
+                        key={step}
+                        className={`w-10 h-2 rounded-full ${
+                          step <= creationStep.step ? "bg-primary" : "bg-muted"
+                        }`}
                       />
-                    </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="precio">Precio</Label>
+                    ))}
+                  </div>
+                </div>
+
+                {creationStep.step === 1 && (
+                  <div className="space-y-4">
+                    <h3 className="font-semibold">Datos básicos</h3>
+                    <div className="grid gap-4">
+                      <div>
+                        <Label htmlFor="titulo">Título</Label>
+                        <div className="flex gap-2 items-center">
                           <Input
-                            id="precio"
-                            type="number"
-                            value={creationStep.data.precio}
+                            id="titulo"
+                            value={creationStep.data.referencia}
                             onChange={(e) =>
                               setCreationStep((prev) => ({
                                 ...prev,
-                                data: { ...prev.data, precio: e.target.value },
+                                data: { ...prev.data, referencia: e.target.value },
                               }))
                             }
-                            placeholder="0"
+                            placeholder="Referencia del anuncio"
+                            className="flex-1"
                           />
-                        </div>
-                        
-                      </div>
-                  </div>
-                </div>
-              )}
-
-              {creationStep.step === 3 && (
-                <div className="space-y-4">
-                  <h3 className="font-semibold">Activación</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <Label>Estado inicial</Label>
-                      <Select
-                        value={creationStep.data.activacion}
-                        onValueChange={(value) =>
-                          setCreationStep((prev) => ({
-                            ...prev,
-                            data: { ...prev.data, activacion: value },
-                          }))
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Activo">Crear como Activo</SelectItem>
-                          <SelectItem value="Pausado">Guardar en Pausado</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                      <div className="space-y-2 mt-2">
-                        <Label>Archivos del anuncio</Label>
-                        <div
-                          className={`relative border-2 border-dashed rounded-md p-4 h-28 flex items-center justify-center text-sm ${
-                            creationDragActive ? "border-ring bg-muted/40" : "border-input bg-transparent"
-                          }`}
-                          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setCreationDragActive(true) }}
-                          onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setCreationDragActive(false) }}
-                          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); uploadFilesForAnuncio(e.dataTransfer.files, creationStep.data.referencia, "creation"); setCreationDragActive(false) }}
-                        >
-                          <Input type="file" multiple disabled={creationUploadUploading || (!inmobiliariaNombre && inmobiliariaId == null)} onChange={(e) => uploadFilesForAnuncio(e.target.files, creationStep.data.referencia, "creation")} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                          <div className="pointer-events-none text-muted-foreground">Arrastra y suelta archivos o haz clic</div>
-                        </div>
-                        <div className="text-[11px] text-muted-foreground">Se subirán bajo la referencia indicada.</div>
-                        {creationUploadUploading && (
-                          <div className="text-[12px] text-muted-foreground flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" /> Subiendo archivos...</div>
-                        )}
-                        <div className="mt-3">
-                          <div className="flex items-center justify-end gap-2">
-                            <Button size="sm" variant="outline" onClick={loadCreationFiles}>Refrescar</Button>
-                          </div>
-                          <h4 className="text-sm font-semibold mt-2">Archivos existentes</h4>
-                          <div className="text-xs text-muted-foreground">Marca los archivos que se adjuntarán en correos.</div>
-                          {creationFilesLoading ? (
-                            <div className="text-xs text-muted-foreground">Cargando…</div>
-                          ) : creationFilesList.length === 0 ? (
-                            <div className="text-xs text-muted-foreground">Sin archivos</div>
-                          ) : (
-                            <div className="space-y-2">
-                              {creationFilesList.map((f: any, idx: number) => {
-                                const label = f.name || (f.path ? decodeURIComponent(String(f.path).split("/").pop() || "") : "") || "Archivo"
-                                const href = f.path ? `/api/nextcloud/file?path=${encodeURIComponent(f.path)}` : "#"
-                                const lower = (f.name || f.path || "").toLowerCase()
-                                const ct = String(f.contentType || "")
-                                const isPdf = /\.pdf$/.test(lower) || /application\/pdf/.test(ct)
-                                const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(lower) || /image\//.test(ct)
-                                const sizeLabel = typeof f.size === "number" ? (f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)} MB` : f.size >= 1024 ? `${(f.size / 1024).toFixed(1)} KB` : `${f.size} B`) : "-"
-                                const fileName = fileNameFromNextcloudEntry(f)
-                                const selectedList = creationAdjuntosSelected ?? fileNamesFromNextcloudFiles(creationFilesList)
-                                const isSelected = selectedList.some((v) => String(v).toLowerCase() === fileName.toLowerCase())
-                                return (
-                                  <div key={`creation-file-${idx}-${f.path || f.name}`} className="flex items-center justify-between gap-2 text-xs">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <Checkbox
-                                        checked={isSelected}
-                                        onCheckedChange={(checked) => {
-                                          const nextChecked = checked === true
-                                          setCreationAdjuntosSelected((prevSelected) => {
-                                            const base = prevSelected ?? fileNamesFromNextcloudFiles(creationFilesList)
-                                            const needle = fileName.toLowerCase()
-                                            const next = nextChecked
-                                              ? base.some((v) => String(v).toLowerCase() === needle)
-                                                ? base
-                                                : [...base, fileName]
-                                              : base.filter((v) => String(v).toLowerCase() !== needle)
-                                            return next
-                                          })
-                                        }}
-                                      />
-                                      <div className="truncate">
-                                      <a href={href} target="_blank" rel="noreferrer" className="hover:underline">
-                                        {label}
-                                      </a>
-                                    </div>
-                                    </div>
-                                    <div className="text-muted-foreground">
-                                      {isPdf ? "PDF" : isImage ? "Imagen" : "Archivo"} · {sizeLabel}
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
+                          {/^REF-\d+$/i.test(creationStep.data.referencia.trim()) && (
+                            <span className="inline-flex items-center gap-1 shrink-0 px-2 py-1 text-[11px] font-semibold rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                              <Zap className="h-3 w-3" />
+                              Auto
+                            </span>
                           )}
                         </div>
-                      </div>
-                      <div className="bg-muted p-4 rounded-lg">
-                        <h4 className="font-medium mb-2">Resumen</h4>
-                        <div className="text-sm space-y-1">
-                          <p>
-                            <span className="font-medium">Referencia:</span> {creationStep.data.referencia}
-                          </p>
-                          <p>
-                            <span className="font-medium">Código del anuncio:</span> {creationStep.data.codPortal}
-                          </p>
-                          <p>
-                            <span className="font-medium">Dirección:</span> {creationStep.data.direccion}
-                          </p>
-                          <p>
-                            <span className="font-medium">Portal:</span> {creationStep.data.portal}
-                          </p>
-                          <p>
-                            <span className="font-medium">Estado:</span> {creationStep.data.activacion}
-                          </p>
+                        {/^REF-\d+$/i.test(creationStep.data.referencia.trim()) && (
+                          <REFERENCIA_AUTO_WARNING_JSX />
+                        )}
+                        <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-800 mt-2">
+                          <div className="flex gap-1.5">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-semibold">Campo crítico:</p>
+                              <p className="mt-0.5">
+                                Este campo debe coincidir exactamente con la &quot;Referencia Interna&quot; de Idealista o Fotocasa para
+                                que los leads se listen correctamente y evitar conflictos.
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       </div>
+                      <div>
+                        <Label htmlFor="codPortal">Código del anuncio</Label>
+                        <Input
+                          id="codPortal"
+                          value={creationStep.data.codPortal}
+                          onChange={(e) =>
+                            setCreationStep((prev) => ({
+                              ...prev,
+                              data: { ...prev.data, codPortal: e.target.value },
+                            }))
+                          }
+                          placeholder="Código del anuncio en el portal"
+                        />
+                        <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-800 mt-2">
+                          <div className="flex gap-1.5">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-semibold">Campo crítico:</p>
+                              <p className="mt-0.5">
+                                Este campo debe coincidir exactamente con el "número de anuncio" de Idealista o Fotocasa para
+                                que los leads se listen correctamente y evitar conflictos.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="nombre">Nombre</Label>
+                          <UITooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex items-center text-muted-foreground">
+                                <Info className="h-4 w-4" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Nombre descriptivo del anuncio.</p>
+                            </TooltipContent>
+                          </UITooltip>
+                        </div>
+                        <Input
+                          id="nombre"
+                          value={creationStep.data.nombre}
+                          onChange={(e) =>
+                            setCreationStep((prev) => ({
+                              ...prev,
+                              data: { ...prev.data, nombre: e.target.value },
+                            }))
+                          }
+                          placeholder="Nombre descriptivo"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="direccion">Dirección</Label>
+                        <Input
+                          id="direccion"
+                          value={creationStep.data.direccion}
+                          onChange={(e) =>
+                            setCreationStep((prev) => ({
+                              ...prev,
+                              data: { ...prev.data, direccion: e.target.value },
+                            }))
+                          }
+                          placeholder="Dirección completa"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="portal">Portal</Label>
+                        <Select
+                          value={creationStep.data.portal}
+                          onValueChange={(value) =>
+                            setCreationStep((prev) => ({
+                              ...prev,
+                              data: { ...prev.data, portal: value },
+                            }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar portal" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {portalesList.length === 0 ? (
+                              <SelectItem value="__no_portales__" disabled>
+                                {portalesLoading ? "Cargando..." : "Sin portales"}
+                              </SelectItem>
+                            ) : (
+                              portalesList.map((portal) => (
+                                <SelectItem key={String(portal.id ?? portal.nombre)} value={portal.nombre}>
+                                  {portal.nombre}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
                   </div>
+                )}
+
+                {creationStep.step === 2 && (
+                  <div className="space-y-4">
+                    <h3 className="font-semibold">Detalles completos</h3>
+                    <div className="grid gap-4">
+                      <div>
+                        <Label htmlFor="descripcion">Descripción</Label>
+                        <Textarea
+                          id="descripcion"
+                          value={creationStep.data.descripcion}
+                          onChange={(e) =>
+                            setCreationStep((prev) => ({
+                              ...prev,
+                              data: { ...prev.data, descripcion: e.target.value },
+                            }))
+                          }
+                          placeholder="Descripción del inmueble"
+                        />
+                      </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="precio">Precio</Label>
+                            <Input
+                              id="precio"
+                              type="text"
+                              inputMode="text"
+                              value={creationStep.data.precio}
+                              onChange={(e) =>
+                                setCreationStep((prev) => ({
+                                  ...prev,
+                                  data: { ...prev.data, precio: e.target.value },
+                                }))
+                              }
+                              placeholder="Ej: 2.100 €/mes"
+                            />
+                          </div>
+
+                        </div>
+                    </div>
+                  </div>
+                )}
+
+                {creationStep.step === 3 && (
+                  <div className="space-y-4">
+                    <h3 className="font-semibold">Activación</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <Label>Estado inicial</Label>
+                        <Select
+                          value={creationStep.data.activacion}
+                          onValueChange={(value) =>
+                            setCreationStep((prev) => ({
+                              ...prev,
+                              data: { ...prev.data, activacion: value },
+                            }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Activo">Crear como Activo</SelectItem>
+                            <SelectItem value="Pausado">Guardar en Pausado</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                        <div className="space-y-2 mt-2">
+                          <Label>Archivos del anuncio</Label>
+                          <div
+                            className={`relative border-2 border-dashed rounded-md p-4 h-28 flex items-center justify-center text-sm ${
+                              creationDragActive ? "border-ring bg-muted/40" : "border-input bg-transparent"
+                            }`}
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setCreationDragActive(true) }}
+                            onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setCreationDragActive(false) }}
+                            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); uploadFilesForAnuncio(e.dataTransfer.files, creationStep.data.referencia, "creation"); setCreationDragActive(false) }}
+                          >
+                            <Input type="file" multiple disabled={creationUploadUploading || (!inmobiliariaNombre && inmobiliariaId == null)} onChange={(e) => uploadFilesForAnuncio(e.target.files, creationStep.data.referencia, "creation")} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                            <div className="pointer-events-none text-muted-foreground">Arrastra y suelta archivos o haz clic</div>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">Se subirán bajo la referencia indicada.</div>
+                          {creationUploadUploading && (
+                            <div className="text-[12px] text-muted-foreground flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" /> Subiendo archivos...</div>
+                          )}
+                          <div className="mt-3">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button size="sm" variant="outline" onClick={loadCreationFiles}>Refrescar</Button>
+                            </div>
+                            <h4 className="text-sm font-semibold mt-2">Archivos existentes</h4>
+                            <div className="text-xs text-muted-foreground">Marca los archivos que se adjuntarán en correos.</div>
+                            {creationFilesLoading ? (
+                              <div className="text-xs text-muted-foreground">Cargando…</div>
+                            ) : creationFilesList.length === 0 ? (
+                              <div className="text-xs text-muted-foreground">Sin archivos</div>
+                            ) : (
+                              <div className="space-y-2">
+                                {creationFilesList.map((f: any, idx: number) => {
+                                  const label = f.name || (f.path ? decodeURIComponent(String(f.path).split("/").pop() || "") : "") || "Archivo"
+                                  const href = f.path ? `/api/nextcloud/file?path=${encodeURIComponent(f.path)}` : "#"
+                                  const lower = (f.name || f.path || "").toLowerCase()
+                                  const ct = String(f.contentType || "")
+                                  const isPdf = /\.pdf$/.test(lower) || /application\/pdf/.test(ct)
+                                  const isImage = /\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(lower) || /image\//.test(ct)
+                                  const sizeLabel = typeof f.size === "number" ? (f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)} MB` : f.size >= 1024 ? `${(f.size / 1024).toFixed(1)} KB` : `${f.size} B`) : "-"
+                                  const fileName = fileNameFromNextcloudEntry(f)
+                                  const selectedList = creationAdjuntosSelected ?? fileNamesFromNextcloudFiles(creationFilesList)
+                                  const isSelected = selectedList.some((v) => String(v).toLowerCase() === fileName.toLowerCase())
+                                  return (
+                                    <div key={`creation-file-${idx}-${f.path || f.name}`} className="flex items-center justify-between gap-2 text-xs">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <Checkbox
+                                          checked={isSelected}
+                                          onCheckedChange={(checked) => {
+                                            const nextChecked = checked === true
+                                            setCreationAdjuntosSelected((prevSelected) => {
+                                              const base = prevSelected ?? fileNamesFromNextcloudFiles(creationFilesList)
+                                              const needle = fileName.toLowerCase()
+                                              const next = nextChecked
+                                                ? base.some((v) => String(v).toLowerCase() === needle)
+                                                  ? base
+                                                  : [...base, fileName]
+                                                : base.filter((v) => String(v).toLowerCase() !== needle)
+                                              return next
+                                            })
+                                          }}
+                                        />
+                                        <div className="truncate">
+                                        <a href={href} target="_blank" rel="noreferrer" className="hover:underline">
+                                          {label}
+                                        </a>
+                                      </div>
+                                      </div>
+                                      <div className="text-muted-foreground">
+                                        {isPdf ? "PDF" : isImage ? "Imagen" : "Archivo"} · {sizeLabel}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="bg-muted p-4 rounded-lg">
+                          <h4 className="font-medium mb-2">Resumen</h4>
+                          <div className="text-sm space-y-1">
+                            <p>
+                              <span className="font-medium">Referencia:</span> {creationStep.data.referencia}
+                            </p>
+                            <p>
+                              <span className="font-medium">Código del anuncio:</span> {creationStep.data.codPortal}
+                            </p>
+                            <p>
+                              <span className="font-medium">Dirección:</span> {creationStep.data.direccion}
+                            </p>
+                            <p>
+                              <span className="font-medium">Portal:</span> {creationStep.data.portal}
+                            </p>
+                            <p>
+                              <span className="font-medium">Estado:</span> {creationStep.data.activacion}
+                            </p>
+                          </div>
+                        </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (creationStep.step > 1) {
+                        setCreationStep((prev) => ({ ...prev, step: prev.step - 1 }))
+                      } else {
+                        setShowCreationModal(false)
+                      }
+                    }}
+                  >
+                    {creationStep.step === 1 ? "Cancelar" : "Anterior"}
+                  </Button>
+
+                  <Button
+                    onClick={() => {
+                      if (creationStep.step < 3) {
+                        setCreationStep((prev) => ({ ...prev, step: prev.step + 1 }))
+                      } else {
+                        handleCrearAnuncio()
+                      }
+                    }}
+                    disabled={creatingAnuncio}
+                  >
+                    {creatingAnuncio && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    {creationStep.step === 3 ? "Crear Anuncio" : "Siguiente"}
+                  </Button>
                 </div>
-              )}
-
-              <div className="flex justify-between pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (creationStep.step > 1) {
-                      setCreationStep((prev) => ({ ...prev, step: prev.step - 1 }))
-                    } else {
-                      setShowCreationModal(false)
-                      setCreationFilesList([])
-                      setCreationAdjuntosSelected(null)
-                    }
-                  }}
-                >
-                  {creationStep.step === 1 ? "Cancelar" : "Anterior"}
-                </Button>
-
-                <Button
-                  onClick={() => {
-                    if (creationStep.step < 3) {
-                      setCreationStep((prev) => ({ ...prev, step: prev.step + 1 }))
-                    } else {
-                      handleCrearAnuncio()
-                    }
-                  }}
-                  disabled={creatingAnuncio}
-                >
-                  {creatingAnuncio && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  {creationStep.step === 3 ? "Crear Anuncio" : "Siguiente"}
-                </Button>
               </div>
-            </div>
+            )}
           </DialogContent>
         </Dialog>
 
@@ -5477,15 +5856,23 @@ export default function AnunciosPage() {
                   Referencia
                 </Label>
                 <div className="col-span-3 space-y-2">
-                  <div className="flex gap-2">
-                    <Input
-                      id="referencia"
-                      value={editFormData.referencia}
-                      onChange={(e) => setEditFormData((prev) => ({ ...prev, referencia: e.target.value }))}
-                      className="flex-1"
-                      placeholder="Referencia del inmueble"
-                      disabled={!isReferenciaEditable}
-                    />
+                  <div className="flex gap-2 items-center">
+                    <div className="flex-1 flex gap-2 items-center">
+                      <Input
+                        id="referencia"
+                        value={editFormData.referencia}
+                        onChange={(e) => setEditFormData((prev) => ({ ...prev, referencia: e.target.value }))}
+                        className="flex-1"
+                        placeholder="Referencia del inmueble"
+                        disabled={!isReferenciaEditable}
+                      />
+                      {editingAnuncio && isReferenciaAuto(editingAnuncio) && (
+                        <span className="inline-flex items-center gap-1 shrink-0 px-2 py-1 text-[11px] font-semibold rounded-md bg-amber-100 text-amber-800 border border-amber-200">
+                          <Zap className="h-3 w-3" />
+                          Auto
+                        </span>
+                      )}
+                    </div>
                     <Button
                       type="button"
                       variant={isReferenciaEditable ? "default" : "outline"}
@@ -5496,6 +5883,9 @@ export default function AnunciosPage() {
                       {isReferenciaEditable ? <LockOpen className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
                     </Button>
                   </div>
+                  {editingAnuncio && isReferenciaAuto(editingAnuncio) && (
+                    <REFERENCIA_AUTO_WARNING_JSX />
+                  )}
                   <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-800">
                     <div className="flex gap-1.5">
                       <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -5623,11 +6013,12 @@ export default function AnunciosPage() {
                 </Label>
                 <Input
                   id="precio"
-                  type="number"
+                  type="text"
+                  inputMode="text"
                   value={editFormData.precio}
                   onChange={(e) => setEditFormData((prev) => ({ ...prev, precio: e.target.value }))}
                   className="col-span-3"
-                  placeholder="0"
+                  placeholder="Ej: 2.100 €/mes"
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">

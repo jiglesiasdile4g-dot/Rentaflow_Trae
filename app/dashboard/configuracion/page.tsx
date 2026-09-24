@@ -608,6 +608,32 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                             <Input id="inmo-color-secundario-edit" name="color_secundario" type="color" defaultValue={inmobiliariaData.color_secundario || "#ffffff"} />
                           </div>
                         </div>
+                        {(() => {
+                          const primerMensajeActual = String((inmobiliariaData as any).primer_mail ?? (inmobiliariaData as any).primer_mensaje ?? "texto").toLowerCase() === "html" ? "html" : "texto"
+                          return (
+                        <div className="space-y-2">
+                          <Label htmlFor="primer-mensaje-switch">Primer mensaje</Label>
+                          <div className="flex items-center gap-3 rounded-md border p-3">
+                            <span className={`text-sm ${primerMensajeActual === "html" ? "text-muted-foreground" : "font-medium"}`}>
+                              texto
+                            </span>
+                            <Switch
+                              id="primer-mensaje-switch"
+                              name="primer_mensaje"
+                              value="html"
+                              defaultChecked={primerMensajeActual === "html"}
+                              aria-label="Primer mensaje"
+                            />
+                            <span className={`text-sm ${primerMensajeActual === "html" ? "font-medium" : "text-muted-foreground"}`}>
+                              html
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Si el switch esta desactivado envia el primer mail en formato "texto", si esta activado en formato "html"
+                          </p>
+                        </div>
+                          )
+                        })()}
                         <DialogFooter>
                           <Button type="submit">Actualizar inmobiliaria</Button>
                         </DialogFooter>
@@ -641,6 +667,20 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                     <Input id="mail-sistema" value={mailSistema} disabled className="bg-muted" />
                   </div>
                 ) : null
+              })()}
+              {(() => {
+                const primerMensajeActual = String((inmobiliariaData as any).primer_mail ?? (inmobiliariaData as any).primer_mensaje ?? "texto").toLowerCase() === "html" ? "html" : "texto"
+                return (
+              <div className="space-y-2">
+                <Label htmlFor="primer-mensaje-actual">Primer mensaje</Label>
+                <Input
+                  id="primer-mensaje-actual"
+                  value={primerMensajeActual}
+                  disabled
+                  className="bg-muted w-full sm:w-[180px]"
+                />
+              </div>
+                )
               })()}
               {inmobiliariaData.telefono && (
                 <div className="space-y-2">

@@ -105,6 +105,38 @@ export async function createAnuncioAction(anuncioData: any) {
       return { error: error.message }
     }
 
+    // 4. Ensure Referencia is stored in DB: if missing, assign REF-{ida} and update
+    const insertedRow: any = Array.isArray(data) && data.length > 0 ? data[0] : null
+    if (insertedRow && insertedRow.ida != null) {
+      const rawRef: any = insertedRow.Referencia ?? insertedRow.referencia
+      const trimmedRef = typeof rawRef === "string" ? rawRef.trim() : rawRef
+      if (!trimmedRef) {
+        const autoReferencia = `REF-${insertedRow.ida}`
+        try {
+          const { error: upErr } = await supabaseAdmin
+            .from("Anuncios")
+            .update({ Referencia: autoReferencia } as any)
+            .eq("ida", insertedRow.ida)
+
+          if (upErr) {
+            const msg = String(upErr?.message || "")
+            if (msg.toLowerCase().includes("referencia") || msg.toLowerCase().includes("column") || upErr.code === "PGRST204") {
+              await supabaseAdmin
+                .from("Anuncios")
+                .update({ referencia: autoReferencia } as any)
+                .eq("ida", insertedRow.ida)
+            }
+          }
+        } catch (e) {
+          console.warn(`[createAnuncioAction] No se pudo actualizar Referencia a ${autoReferencia}:`, e)
+        }
+
+        if (insertedRow.Referencia != null) insertedRow.Referencia = autoReferencia
+        if (insertedRow.referencia != null) insertedRow.referencia = autoReferencia
+        data = [insertedRow]
+      }
+    }
+
     revalidatePath("/dashboard/anuncios")
     return { data }
   } catch (err: any) {
