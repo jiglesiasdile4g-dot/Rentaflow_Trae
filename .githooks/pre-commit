@@ -1,0 +1,13 @@
+#!/bin/sh
+# Hook pre-commit: incrementa automáticamente la versión patch en cada commit.
+# Ej.: 0.9.28 -> 0.9.29 -> 0.9.30 ...
+# Se omite el incremento si el commit ya incluye un cambio de versión (npm version).
+
+node scripts/bump-version.js || exit 1
+
+git add package.json
+if [ -f package-lock.json ]; then
+  git add package-lock.json
+fi
+
+exit 0

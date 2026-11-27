@@ -17,24 +17,26 @@ interface SidebarLayoutProps {
 }
 
 export default function SidebarLayout({ user, children }: SidebarLayoutProps) {
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    if (typeof window === "undefined") return false
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
+
+  useEffect(() => {
     try {
       let next = window.innerWidth < 1024
       const saved = localStorage.getItem("rf_sidebar_collapsed")
       if (saved === "1") next = true
       if (saved === "0") next = false
-      return next
-    } catch {
-      return false
-    }
-  })
+      setIsCollapsed(next)
+    } catch {}
+    setHydrated(true)
+  }, [])
 
   useEffect(() => {
+    if (!hydrated) return
     try {
       localStorage.setItem("rf_sidebar_collapsed", isCollapsed ? "1" : "0")
     } catch {}
-  }, [isCollapsed])
+  }, [isCollapsed, hydrated])
 
   return (
     <div className="flex h-screen bg-background">

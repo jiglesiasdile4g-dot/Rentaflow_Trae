@@ -431,6 +431,59 @@ export async function triggerVisitReminderAction() {
     )
 }
 
+export async function triggerIncompleteDataReminderAction() {
+    const supabase = await createClient()
+    const admin = createAdminClient()
+    const {
+        data: { user },
+    } = await supabase.auth.getUser()
+    if (!user?.email) {
+        redirect(`/dashboard/configuracion?reminder=error&rmsg=${encodeURIComponent("Usuario no autenticado")}`)
+    }
+    const { data: perfil } = await admin
+        .from("Perfiles")
+        .select("is_admin, role")
+        .ilike("usuario", user.email)
+        .limit(1)
+        .maybeSingle()
+    const roleStr = String(perfil?.role || "").toLowerCase()
+    const isAdmin = perfil?.is_admin === true || ["administrador", "admin", "superuser", "superadmin"].includes(roleStr)
+    if (!isAdmin) {
+        redirect(`/dashboard/configuracion?reminder=error&rmsg=${encodeURIComponent("Sin permisos para ejecutar el recordatorio")}`)
+    }
+
+    const secret =
+        process.env.RECORDATORIO_INCOMPLETOS_SECRET ||
+        process.env.RECORDATORIO_VISITA_SECRET ||
+        process.env.REMINDER_WEBHOOK_SECRET ||
+        ""
+    const base = getPublicAppBaseUrl()
+    let ok = false
+    let detail = ""
+    try {
+        const url = new URL(`${base}/api/recordatorio-datos-incompletos`)
+        if (secret) url.searchParams.set("secret", secret)
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+        })
+        const json: any = await res.json().catch(() => null)
+        ok = res.ok && json?.ok !== false
+        if (json?.skipped) detail = json?.reason || "sin leads elegibles"
+        else if (typeof json?.count === "number") detail = `${json.count} lead(s)`
+    } catch {
+        ok = false
+    }
+    revalidatePath("/dashboard/configuracion")
+    redirect(
+        `/dashboard/configuracion?reminder=${ok ? "success" : "error"}&rmsg=${encodeURIComponent(
+            ok
+                ? `Recordatorio de datos incompletos ejecutado${detail ? `: ${detail}` : ""}`
+                : "Error ejecutando el recordatorio de datos incompletos"
+        )}`
+    )
+}
+
 export async function createInmobiliariaAction(formData: FormData) {
     const supabase = await createClient()
     const admin = createAdminClient()

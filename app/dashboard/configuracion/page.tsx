@@ -29,6 +29,7 @@ import {
   resendUserConfirmationAction,
   updateUserDetailsAction,
   triggerVisitReminderAction,
+  triggerIncompleteDataReminderAction,
   onboardInmobiliariaAction,
   updateInmobiliariaAction,
   syncAgentNamesAction
@@ -717,6 +718,12 @@ export default async function ConfiguracionPage(props: { searchParams: Promise<R
                     <Button type="submit" size="sm" className="h-8 text-xs" variant="outline">
                       <Bell className="mr-2 h-3 w-3" />
                       Ejecutar recordatorio
+                    </Button>
+                  </form>
+                  <form action={triggerIncompleteDataReminderAction}>
+                    <Button type="submit" size="sm" className="h-8 text-xs" variant="outline">
+                      <Mail className="mr-2 h-3 w-3" />
+                      Recordar datos incompletos
                     </Button>
                   </form>
                   <form action={syncAgentNamesAction}>

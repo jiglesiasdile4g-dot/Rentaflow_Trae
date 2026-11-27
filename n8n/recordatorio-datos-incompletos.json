@@ -1,0 +1,220 @@
+{
+  "name": "Recordatorio Datos Incompletos",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "recordatorio_datos_incompletos",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "a1f0c1a0-0001-4000-8000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-460, 0],
+      "webhookId": "recordatorio_datos_incompletos",
+      "notes": "Recibe POST del endpoint /api/recordatorio-datos-incompletos. Responde 200 al instante para que la app marque Recordatorio=true."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Normaliza la entrada: el body puede llegar como array raíz o como { body: [...] }.\nconst out = [];\nfor (const item of $input.all()) {\n  const j = item.json;\n  let arr = null;\n  if (Array.isArray(j)) arr = j;\n  else if (j && Array.isArray(j.body)) arr = j.body;\n  if (arr) {\n    for (const el of arr) out.push({ json: el });\n  } else {\n    out.push({ json: j });\n  }\n}\nreturn out;"
+      },
+      "id": "a1f0c1a0-0002-4000-8000-000000000002",
+      "name": "Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-260, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-email",
+              "leftValue": "={{ $json.Canales }}",
+              "rightValue": "email",
+              "operator": {
+                "type": "array",
+                "operation": "contains",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1f0c1a0-0003-4000-8000-000000000003",
+      "name": "¿Tiene email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-60, 0]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.Lead.Mail }}",
+        "subject": "Recuerda completar tu solicitud de alquiler",
+        "emailType": "html",
+        "message": "={{ $json.Mensaje.Email.replace(/\\n/g, '<br>') }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "a1f0c1a0-0004-4000-8000-000000000004",
+      "name": "Enviar Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [160, -100],
+      "notes": "Selecciona tu credencial Gmail (Gmail OAuth2). Si usas SMTP, cambia este nodo por 'Send Email'."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-wa",
+              "leftValue": "={{ $json.Canales }}",
+              "rightValue": "whatsapp",
+              "operator": {
+                "type": "array",
+                "operation": "contains",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1f0c1a0-0005-4000-8000-000000000005",
+      "name": "¿Tiene WhatsApp?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [160, 80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://TU-PROVEEDOR-WHATSAPP/message/sendText/TU_INSTANCIA",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "TU_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $json.Lead.WhatsApp, text: $json.Mensaje.WhatsApp }) }}",
+        "options": {}
+      },
+      "id": "a1f0c1a0-0006-4000-8000-000000000006",
+      "name": "Enviar WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [380, -40],
+      "notes": "Ajusta URL, cabeceras y body al proveedor de WhatsApp que uses (Evolution API, WABA, etc.). El teléfono está en Lead.WhatsApp y el texto en Mensaje.WhatsApp."
+    },
+    {
+      "parameters": {},
+      "id": "a1f0c1a0-0007-4000-8000-000000000007",
+      "name": "Fin",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [380, 160]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalizar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar": {
+      "main": [
+        [
+          {
+            "node": "¿Tiene email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tiene email?": {
+      "main": [
+        [
+          {
+            "node": "Enviar Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Tiene WhatsApp?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Email": {
+      "main": [
+        [
+          {
+            "node": "¿Tiene WhatsApp?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tiene WhatsApp?": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

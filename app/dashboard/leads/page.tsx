@@ -36,6 +36,7 @@ import React from "react" // Imported React
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { LeadApproveWrapper } from "@/components/lead-approve-wrapper"
+import { RemindIncompleteButton } from "@/components/remind-incomplete-button"
 import { LeadDenyWrapper } from "@/components/lead-deny-wrapper"
 import { ProposeVisitDialog } from "@/components/propose-visit-dialog"
 import { getPlanData, formatPlanValue } from "@/lib/plan-data"
@@ -6045,6 +6046,7 @@ export default function LeadsPage() {
                       </button>
                     </div>
                     <div className={`${planInactive ? "pointer-events-none opacity-50" : ""} flex gap-2 flex-wrap`}>
+                      <RemindIncompleteButton lead={selectedLead} />
                       <LeadApproveWrapper
                         lead={selectedLead}
                         updateLeadStatus={updateLeadStatus}

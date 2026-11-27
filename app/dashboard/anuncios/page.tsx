@@ -246,11 +246,6 @@ export default function AnunciosPage() {
   const [creationUrlAnuncio, setCreationUrlAnuncio] = useState("")
   const [creationSendingWebhook, setCreationSendingWebhook] = useState(false)
   const [creationUrlMode, setCreationUrlMode] = useState<"url" | "manual">("url")
-  const [creationN8nMode, setCreationN8nMode] = useState<"test" | "prod">(() => {
-    const envMode = (process.env.NEXT_PUBLIC_N8N_MODE || "prod").toLowerCase()
-    return envMode === "test" ? "test" : "prod"
-  })
-  const [isSuperuser, setIsSuperuser] = useState(false)
   const [filterPortal, setFilterPortal] = useState<string>("all")
   const [filterEstado, setFilterEstado] = useState<string>("all")
   const [metricsPeriod, setMetricsPeriod] = useState<"hoy" | "esteMes" | "ultimoMes" | "periodoActual">("hoy")
@@ -2178,7 +2173,6 @@ export default function AnunciosPage() {
         const { data: perfil } = await qProfile.single()
 
         isAdmin = perfil?.is_admin === true
-        setIsSuperuser(isAdmin)
         console.log("[v0] User is admin:", isAdmin)
       }
 
@@ -3432,11 +3426,7 @@ export default function AnunciosPage() {
     const webhookBase = process.env.NEXT_PUBLIC_N8N_BASE_URL
       ? process.env.NEXT_PUBLIC_N8N_BASE_URL.replace(/\/$/, "")
       : "https://acesalquiler-n8n.ibdvf1.easypanel.host"
-    const envMode = (process.env.NEXT_PUBLIC_N8N_MODE || "prod").toLowerCase()
-    const rawN8nMode: "test" | "prod" = creationN8nMode === "test" ? "test" : envMode === "test" ? "test" : "prod"
-    const finalN8nMode: "test" | "prod" = isSuperuser ? rawN8nMode : "prod"
-    const pathMode = finalN8nMode === "test" ? "webhook-test" : "webhook"
-    const webhookUrl = `${webhookBase}/${pathMode}/datos_anuncio`
+    const webhookUrl = `${webhookBase}/webhook/datos_anuncio`
 
     setCreationSendingWebhook(true)
     try {
@@ -3480,11 +3470,6 @@ export default function AnunciosPage() {
         },
       })
       setCreationUrlMode("url")
-      setCreationN8nMode(() => {
-        if (!isSuperuser) return "prod"
-        const envMode = (process.env.NEXT_PUBLIC_N8N_MODE || "prod").toLowerCase()
-        return envMode === "test" ? "test" : "prod"
-      })
     } catch (err: any) {
       console.error("[v0] Error enviando URL a webhook de importación:", err)
       toast({
@@ -3763,16 +3748,6 @@ export default function AnunciosPage() {
   useEffect(() => {
     whatsappActivoRef.current = selectedAnuncioForStats?.whatsapp_activo
   }, [selectedAnuncioForStats?.whatsapp_activo])
-
-  // Hardening: solo superusuarios pueden usar entorno de pruebas
-  useEffect(() => {
-    if (!isSuperuser) {
-      setCreationN8nMode(() => {
-        const envMode = (process.env.NEXT_PUBLIC_N8N_MODE || "prod").toLowerCase()
-        return envMode === "test" ? "prod" : "prod"
-      })
-    }
-  }, [isSuperuser])
 
   // Sincronizar selectedAnuncioForStats con anunciosCards cuando cambie la lista
   useEffect(() => {
@@ -5321,11 +5296,6 @@ export default function AnunciosPage() {
             if (!open) {
               setCreationUrlAnuncio("")
               setCreationUrlMode("url")
-              setCreationN8nMode(() => {
-                if (!isSuperuser) return "prod"
-                const envMode = (process.env.NEXT_PUBLIC_N8N_MODE || "prod").toLowerCase()
-                return envMode === "test" ? "test" : "prod"
-              })
               setCreationStep({
                 step: 1,
                 data: {
@@ -5379,27 +5349,6 @@ export default function AnunciosPage() {
                     Idealista, Fotocasa, u otros portales soportados.
                   </p>
                 </div>
-
-                {isSuperuser && (
-                  <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="font-medium">Entorno de pruebas</span>
-                      <span className="text-muted-foreground">
-                        (usa {creationN8nMode === "test" ? "webhook-test" : "webhook"})
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className={creationN8nMode === "test" ? "text-amber-600" : "text-emerald-600"}>
-                        {creationN8nMode === "test" ? "Test" : "Producción"}
-                      </span>
-                      <Switch
-                        checked={creationN8nMode === "test"}
-                        onCheckedChange={(v) => setCreationN8nMode(v ? "test" : "prod")}
-                        aria-label="Cambiar a entorno pruebas"
-                      />
-                    </div>
-                  </div>
-                )}
 
                 <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-xs text-blue-800">
                   <div className="flex gap-1.5">
